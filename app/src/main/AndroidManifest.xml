@@ -28,8 +28,10 @@
     <application
         android:name="com.dji.sdk.sample.takpilot2.TAKPilot2Application"
         android:allowBackup="false"
-        android:label="@string/app_name"
-        android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/sample_app_name"
+        android:theme="@style/AppTheme"
+        android:extractNativeLibs="true"
         tools:replace="android:allowBackup">
 
         <!-- DJI key. Fed from dji-key.properties through build.gradle. -->
@@ -54,8 +56,63 @@
                 android:resource="@xml/accessory_filter" />
         </activity>
 
-        <!-- Phase 2 adds: flight, connect, data-sync, field-guide, debug
-             activities, TakForegroundService, ScreenCaptureService,
-             FileProvider. -->
+        <activity
+            android:name="com.dji.sdk.sample.takpilot2.TAKPilot2GoFlightActivity"
+            android:label="@string/sample_app_name"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="false" />
+
+        <activity
+            android:name="com.dji.sdk.sample.tak.TakConnectActivity"
+            android:label="Pre-Flight Setup"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="false" />
+
+        <activity
+            android:name="com.dji.sdk.sample.DataSyncActivity"
+            android:label="Data Sync"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="false" />
+
+        <activity
+            android:name="com.dji.sdk.sample.takpilot2.FieldGuideActivity"
+            android:label="Field Guide"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="false" />
+
+        <activity
+            android:name="com.dji.sdk.sample.tak.DebugActivity"
+            android:label="Debug Log"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="false" />
+
+        <service
+            android:name="com.dji.sdk.sample.tak.TakForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!-- Hosts the screen-capture RTSP stream (MediaProjection). -->
+        <service
+            android:name="com.dji.sdk.sample.tak.ScreenCaptureService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

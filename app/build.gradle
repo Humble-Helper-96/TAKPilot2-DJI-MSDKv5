@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt'
 
 // The DJI key lives in app/dji-key.properties (gitignored).
 // The placeholder from gradle.properties is used when the file is absent.
@@ -29,6 +30,8 @@ android {
         versionCode 1
         // Stays -dev until something has flown.
         versionName "1.0.0-dev"
+        buildConfigField "String", "BUILD_TIME",
+                "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -114,6 +117,15 @@ android {
         checkReleaseBuilds false
         abortOnError false
     }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    testOptions {
+        // Pure-logic tests only; android.util.Log calls return defaults instead of throwing.
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -126,6 +138,18 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+
+    // Map. Same major version as the v4 app for behavior parity.
+    // MapLibre 9.x keeps the com.mapbox.* package names the ported code uses.
+    implementation('org.maplibre.gl:android-sdk:9.6.0') {
+        exclude group: 'androidx.lifecycle'
+        exclude group: 'androidx.fragment'
+        exclude group: 'com.google.android.gms'
+    }
+
+    // Terrain (DTED) and FAA-ceiling (UASFM) tile indexes.
+    implementation 'androidx.room:room-runtime:2.6.1'
+    kapt 'androidx.room:room-compiler:2.6.1'
 
     testImplementation 'junit:junit:4.13.2'
 }
