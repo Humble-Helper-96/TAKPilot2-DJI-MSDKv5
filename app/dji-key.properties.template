@@ -1,0 +1,5 @@
+# Copy this file to dji-key.properties and add the real key.
+# The key comes from the DJI developer console entry whose package name
+# is com.anchortak.takpilot2djiv5.
+# dji-key.properties is gitignored. Never commit the real key.
+AIRCRAFT_API_KEY=your_dji_app_key_here

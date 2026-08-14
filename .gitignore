@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+app/dji-key.properties
+app/keystore.properties
+app/*.jks
+captures/
+.DS_Store
