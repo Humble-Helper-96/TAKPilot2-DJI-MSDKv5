@@ -35,6 +35,10 @@ class TakConnectActivity : AppCompatActivity() {
 
     private lateinit var status: TextView
 
+    /** True only while code writes the battery fields for display — see the watcher in
+     *  [setupBattery], which must not mistake that for the pilot typing. */
+    private var suppressBatterySave = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_tak_connect)
@@ -222,6 +226,7 @@ class TakConnectActivity : AppCompatActivity() {
 
         setupBattery()
         setupStickMode()
+        setupControlResponse()
         setupFailsafe()
         setupAvoidance()
         setupApplyButton()
@@ -236,6 +241,9 @@ class TakConnectActivity : AppCompatActivity() {
         crit.setText(FlightLimitsController.savedCriticalBatteryPct(this))
         val watcher = object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) {
+                // The read-back writes into these fields when the aircraft refuses the write.
+                // Without this guard that write would be saved back as a pilot edit.
+                if (suppressBatterySave) return
                 FlightLimitsController.saveBattery(
                     this@TakConnectActivity, low.text.toString(), crit.text.toString())
             }
@@ -243,18 +251,80 @@ class TakConnectActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
         listOf(low, crit).forEach { it.addTextChangedListener(watcher) }
-        renderBatteryReadBack()
+        renderLimitsReadBack()
     }
 
     /** Shows what the AIRCRAFT reports, not what was typed. Blank until a read-back has landed —
      *  "unknown" and "what you asked for" must not look the same. */
-    private fun renderBatteryReadBack() {
-        val w = FlightLimitsController.aircraftWarningPct
-        val c = FlightLimitsController.aircraftCriticalPct
-        findViewById<TextView>(R.id.limitBatteryStatus).text =
-            if (w == null && c == null) ""
-            else "Aircraft reports: warning ${w?.let { "$it%" } ?: "—"}, " +
-                "critical ${c?.let { "$it%" } ?: "—"}"
+    private fun renderLimitsReadBack() {
+        val f = FlightLimitsController
+        // Metres in, feet out: the fields above take feet, so a read-back in metres would make
+        // the pilot convert to check their own entry.
+        fun ft(m: Int?) = m?.let { "${Math.round(it * 3.28084)} ft" } ?: "—"
+        val parts = listOfNotNull(
+            f.aircraftMaxAltM?.let { "max alt ${ft(it)}" },
+            f.aircraftMaxRadiusM?.let { "max dist ${ft(it)}" },
+            f.aircraftRthAltM?.let { "RTH ${ft(it)}" },
+            f.aircraftWarningPct?.let { "warning $it%" },
+            f.aircraftCriticalPct?.let { "critical $it%" },
+            f.aircraftFailsafe?.let { "signal loss ${it.name.replace('_', ' ').lowercase()}" },
+        )
+        findViewById<TextView>(R.id.limitReadBackStatus).text =
+            if (parts.isEmpty()) "" else "Aircraft reports: " + parts.joinToString(" · ")
+
+        // Once the aircraft has refused them, the two battery fields stop pretending. They are
+        // left in place rather than removed: the getters still work, so the levels the aircraft
+        // holds are worth showing, and an airframe that DOES accept them should get working
+        // fields. A field that takes a number and silently discards it is the worst of the three.
+        if (f.batteryThresholdsRefused) {
+            val low = findViewById<EditText>(R.id.limitLowBattery)
+            val crit = findViewById<EditText>(R.id.limitCriticalBattery)
+            suppressBatterySave = true
+            try {
+                f.aircraftWarningPct?.let { low.setText(it.toString()) }
+                f.aircraftCriticalPct?.let { crit.setText(it.toString()) }
+            } finally {
+                suppressBatterySave = false
+            }
+            for (field in listOf(low, crit)) {
+                field.isEnabled = false
+                field.isFocusable = false
+                field.isFocusableInTouchMode = false
+            }
+            findViewById<TextView>(R.id.limitBatteryNotice).apply {
+                visibility = View.VISIBLE
+                text = "This aircraft sets its own battery levels. The app cannot change them. " +
+                    "It warns at ${f.aircraftWarningPct ?: "—"}% and lands at " +
+                    "${f.aircraftCriticalPct ?: "—"}%."
+            }
+        }
+    }
+
+    /**
+     * Control response. Applies on selection rather than on the Apply button: it is a camera-feel
+     * setting the pilot wants to try, not a flight limit, and waiting for Apply to feel it would
+     * make it hard to compare the two. Specification §5.4.
+     */
+    private fun setupControlResponse() {
+        val group = findViewById<RadioGroup>(R.id.controlResponseGroup)
+        group.check(
+            if (ControlResponse.saved(this) == ControlResponse.Mode.PRECISION)
+                R.id.controlResponsePrecision else R.id.controlResponseNormal
+        )
+        renderControlResponse()
+        group.setOnCheckedChangeListener { _, id ->
+            val mode = if (id == R.id.controlResponsePrecision) ControlResponse.Mode.PRECISION
+                       else ControlResponse.Mode.NORMAL
+            ControlResponse.save(this, mode)
+            ControlResponse.apply(this) { runOnUiThread { renderControlResponse() } }
+        }
+    }
+
+    /** What the GIMBAL reports holding. Blank until a read-back lands. */
+    private fun renderControlResponse() {
+        val v = ControlResponse.aircraftPitchSpeed
+        findViewById<TextView>(R.id.controlResponseStatus).text =
+            if (v == null) "" else "Aircraft reports: gimbal speed $v"
     }
 
     private fun setupStickMode() {
@@ -305,8 +375,10 @@ class TakConnectActivity : AppCompatActivity() {
                     bar.visibility = View.GONE
                     status.text = summary
                     status.setTextColor(ContextCompat.getColor(applicationContext,
-                        if (ok) R.color.tp_state_go else R.color.tp_state_unknown))
-                    renderBatteryReadBack()
+                        // The apply finished and something did not take. That is an answer,
+                        // so it is caution — unknown is for "the aircraft never replied". §6.1.
+                        if (ok) R.color.tp_state_go else R.color.tp_state_caution))
+                    renderLimitsReadBack()
                 },
             )
         }

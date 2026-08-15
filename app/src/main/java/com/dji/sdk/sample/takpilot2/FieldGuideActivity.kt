@@ -1,5 +1,6 @@
 package com.dji.sdk.sample.takpilot2
 
+import androidx.annotation.ColorRes
 import androidx.core.content.ContextCompat
 import android.graphics.Color
 import android.os.Bundle
@@ -126,21 +127,26 @@ class FieldGuideActivity : AppCompatActivity() {
         bullet("Battery Warning - the level where the aircraft tells you the battery is low.")
         bullet("Battery Critical - the level where the aircraft lands on its own. Set this " +
             "level with care. The aircraft lands where it is.")
+        warn("Do not rely on these two fields. Some aircraft keep their own battery levels and " +
+            "refuse a change. If your aircraft refuses them, the app makes the two fields " +
+            "read-only and shows an amber line with the levels the aircraft holds. Read that " +
+            "line and plan your flight for those levels.")
         bullet("Stick mode - what the two sticks do. Mode 2 is usual. Change this only if you " +
             "know the aircraft uses a different mode.")
         bullet("If the signal is lost - the action of the aircraft if it loses the " +
             "controller: Return Home, Hover or Land. The aircraft does this action without " +
-            "the app. It works if your phone stops during the flight. Usually, select Return " +
+            "the app. It works if the app stops during the flight. Usually, select Return " +
             "Home.")
         note("To keep the value that is already in the aircraft, leave the field empty.")
         warn("If the RTH altitude is more than the Max altitude, the app shows a warning " +
             "below the fields. The aircraft cannot climb to its return height. Correct one of " +
             "the two values.")
 
-        body("Apply to Aircraft sends all of these to the aircraft now. Then the app asks the " +
+        body("Apply Updated Settings to Aircraft sends all of these to the aircraft now. Then the app asks the " +
             "aircraft what it holds and shows the answer below the button. Read that line. It " +
             "shows the aircraft, not what you typed.")
-        note("The stick mode goes to the aircraft only when you touch Apply to Aircraft. The " +
+        note("The stick mode goes to the aircraft only when you touch Apply Updated Settings " +
+            "to Aircraft. The " +
             "app never changes the sticks on its own.")
         note("Lock these settings makes the fields read-only. To unlock them, the app asks " +
             "for a password. The lock stops a change by accident. It is not security.")
@@ -157,7 +163,8 @@ class FieldGuideActivity : AppCompatActivity() {
             "The boxes show what you selected, but this line shows the aircraft.")
         note("The app sends these settings only when the aircraft is on the ground. If the " +
             "aircraft is armed or in the air, the app does not change them.")
-        note("The Mini 2 has no obstacle sensors. These settings do nothing on a Mini 2.")
+        note("These settings do nothing if your aircraft has no obstacle sensors. The line "
+            + "above shows what the aircraft reports, which is the way to tell.")
 
         sub("2. Video Streaming")
         body("This section is optional. If your team has a video server, type its address, " +
@@ -177,7 +184,7 @@ class FieldGuideActivity : AppCompatActivity() {
         body("The channel list is below these fields. These are the groups for your login. " +
             "The channels you select receive the position of the aircraft and your markers. " +
             "If you select no channel, the server selects the channels.")
-        note("If the phone has no network, the app tells you. It does not show an error " +
+        note("If the controller has no network, the app tells you. It does not show an error " +
             "about the server. Look at the Network line on the home screen first.")
 
         sub("4. Elevation Data (DTED)")
@@ -194,7 +201,7 @@ class FieldGuideActivity : AppCompatActivity() {
             "screen then shows the ceiling at your position. Type a center point and a " +
             "radius, or touch Use My Location. Check the size, then download the data.")
         note("Download this data on a wifi connection before you go to the flight area. In " +
-            "flight, the app reads the data from the phone and does not need a signal.")
+            "flight, the app reads the data from the controller and does not need a signal.")
         warn("Do not use this data as an approval to fly. It shows the altitude that the FAA " +
             "usually approves, but it is not an approval. The FAA changes these maps and the " +
             "data can become out of date. You must get your own airspace approval.")
@@ -203,8 +210,8 @@ class FieldGuideActivity : AppCompatActivity() {
         body("This sets the map type for the small map on the flight screen. Select Street, " +
             "Hybrid (satellite images), or a custom map of your team. Then touch Save Map " +
             "Display.")
-        note("This section is last because the Autel app does not have it. Sections 1 to 5 " +
-            "are the same on the two aircraft.")
+        note("A custom map of your team comes from your own map server. If you do not have " +
+            "one, use Street or Hybrid.")
     }
 
     // ---------------------------------------------------------------- Section 3
@@ -243,9 +250,9 @@ class FieldGuideActivity : AppCompatActivity() {
             ),
             "Battery",
             "This ring shows the charge in the battery of the aircraft. The ring becomes " +
-                "empty as you fly. Green shows more than one third of the charge. Yellow " +
-                "shows less than one third, and red shows less than 15%. Land the aircraft " +
-                "when the ring is yellow. Do not wait for red.",
+                "empty as you fly. Green shows more than 30%. Yellow shows 16% to 30%, and " +
+                "red shows 15% or less. Land the aircraft when the ring is yellow. Do not " +
+                "wait for red.",
         )
 
         entry(
@@ -306,8 +313,14 @@ class FieldGuideActivity : AppCompatActivity() {
             listOf(
                 "If the aircraft does not have a GPS position and a gimbal position, the app " +
                     "does not put the marker.",
+                "If the ring of the crosshair is red, the app does not put the marker. The " +
+                    "angle of the camera is too small for an accurate position. Point the " +
+                    "camera down more.",
+                "If the aircraft is less than 25 ft above the ground, the app does not put " +
+                    "the marker. Near the ground the app cannot calculate a position: the " +
+                    "marker would go to the position of the aircraft. Climb higher.",
                 "If you delete a marker, the app removes it from your screen only. It stays " +
-                    "on the screens of your team for about 14 hours.",
+                    "on the screens of your team for 3 days.",
             ),
         )
 
@@ -344,7 +357,7 @@ class FieldGuideActivity : AppCompatActivity() {
             listOf(image(R.drawable.ic_camera_shutter) to "Photo"),
             "Photo",
             "This button takes a photo. The app saves the photo to the card in the aircraft, " +
-                "not to your phone. The camera then goes back to video.",
+                "not to the controller. The camera then goes back to video.",
         )
 
         entry(
@@ -437,9 +450,8 @@ class FieldGuideActivity : AppCompatActivity() {
                 "aircraft gets nearer. Red is 13 ft or less.",
             listOf(
                 "An edge with no mark does not mean the direction is clear. It can also mean " +
-                    "the aircraft has no sensor for that direction. The Air 2S has sensors in " +
-                    "front, behind, up and down, but none at the sides. The Mini 2 has no " +
-                    "obstacle sensors, and this display always stays empty.",
+                    "the aircraft has no sensor for that direction. Know which directions your " +
+                    "aircraft senses before you use this display.",
                 "The app does not show the distance up or down yet.",
                 "These marks are an aid. They do not replace your eyes. Keep the aircraft in " +
                     "sight.",
@@ -467,19 +479,38 @@ class FieldGuideActivity : AppCompatActivity() {
                 "questions. The type is always Unknown and the name is always " +
                 "${com.dji.sdk.sample.tak.TakDropMarkers.QUICK_NAME}. Your team can " +
                 "identify it quickly.\n\n" +
-                "There is only one quick marker. To move it, point the camera at the new " +
-                "target and touch and hold the crosshair. The marker moves on the screens of " +
-                "all your team. If you touch the crosshair again, the app does not put a " +
-                "second marker.\n\n" +
+                "There is only one quick marker. Point the camera at a new target and " +
+                "touch the crosshair again: the marker MOVES to the new target. It moves " +
+                "on the screens of all your team. The app does not put a second marker.\n\n" +
                 "Use the quick marker to show your team what you look at now. To keep a " +
                 "record of a position, use the marker button. With that button you can set a " +
                 "name and a type.",
             listOf(
                 "To remove the quick marker, delete it from the marker list. Touch and hold " +
-                    "the marker button to open the list. Then you can put a new quick marker.",
-                "The quick marker has the same rules as other markers. If you delete it, the " +
-                    "app removes it from your screen only. It stays on the screens of your " +
-                    "team.",
+                    "the marker button to open the list.",
+                "The quick marker follows the same rules as other markers.",
+            ),
+        )
+
+        entry(
+            emptyList(),
+            "Unknown marker: touch and hold the crosshair",
+            "Touch the crosshair and hold it to put a marker of the type Unknown immediately. " +
+                "The controller makes a short vibration. The app does not ask you questions and " +
+                "sends the marker immediately.\n\n" +
+                "This marker DOES NOT MOVE. It stays at the position where you put it. If you " +
+                "touch and hold the crosshair again, the app puts a SECOND marker. This is " +
+                "different from the quick marker, which moves.\n\n" +
+                "The name is the callsign of the aircraft and a number, for example MINI2-P7. " +
+                "The number increases with each marker. This is the same name that the marker " +
+                "button gives.\n\n" +
+                "This is a quick way to put an Unknown marker. The result is the same as the " +
+                "marker button with the type Unknown, but with no windows.",
+            listOf(
+                "The rules of the crosshair ring apply. If the ring is red, the app does not " +
+                    "put the marker.",
+                "Use this to keep a record of a position. Use the quick marker to show your " +
+                    "team what you look at now.",
             ),
         )
 
@@ -587,12 +618,12 @@ class FieldGuideActivity : AppCompatActivity() {
         bullet("The recording stops when the aircraft is on the ground for 10 seconds. A " +
             "short touch on the ground does not divide the flight into two records.")
         bullet("A TAK server is not necessary. A network is not necessary. The app records " +
-            "each flight also when the phone is fully offline.")
+            "each flight also when the controller is fully offline.")
         bullet("No GPS, no points. When the aircraft flies without a GPS position, the app " +
             "records nothing for that time. It does not write a false position.")
 
         sub("Where the records are")
-        body("Open Downloads/TAKPilotFlights on the phone. Each flight makes two files with " +
+        body("Open Downloads/TAKPilotFlights on the controller. Each flight makes two files with " +
             "the same name:")
         bullet(".gpx - the track. Import it into ATAK or Google Earth to see the flight path " +
             "on a map.")
@@ -679,21 +710,30 @@ class FieldGuideActivity : AppCompatActivity() {
     })
 
     /** Neutral aside — worth knowing, not a hazard. */
-    private fun note(text: String) = calloutView(text, "#9AC4FF", "#14202C")
+    private fun note(text: String) =
+        calloutView(text, R.color.tp_accent, R.color.tp_surface_guide_note)
 
     /** Something that can bite you in the air or on the ground. */
-    private fun warn(text: String) = calloutView(text, "#EF5350", "#2A1616")
+    private fun warn(text: String) =
+        calloutView(text, R.color.tp_btn_danger_dialog, R.color.tp_surface_guide_warn)
 
-    private fun calloutView(text: String, barColor: String, bgColor: String) {
+    /**
+     * Callout row: a coloured tint bar against a low-saturation background of the same hue.
+     *
+     * Takes colour RESOURCES, not hex strings. These four values were literals here until
+     * 2026-08-14 (conformance X1) — a literal in Kotlin is easy to reach for and easy to miss
+     * in review, which is why §6.1 puts this file inside the token rule.
+     */
+    private fun calloutView(text: String, @ColorRes barColor: Int, @ColorRes bgColor: Int) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor(bgColor))
+            setBackgroundColor(ContextCompat.getColor(applicationContext, bgColor))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
                 topMargin = dp(4); bottomMargin = dp(10)
             }
         }
         row.addView(View(this).apply {
-            setBackgroundColor(Color.parseColor(barColor))
+            setBackgroundColor(ContextCompat.getColor(applicationContext, barColor))
             layoutParams = LinearLayout.LayoutParams(dp(3), MATCH)
         })
         row.addView(TextView(this).apply {

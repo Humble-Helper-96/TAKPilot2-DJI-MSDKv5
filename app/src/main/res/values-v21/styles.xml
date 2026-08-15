@@ -1,18 +1,30 @@
 <resources>
-            <style name="AppTheme.NoActionBar">
-            <item name="windowActionBar">false</item>
-            <item name="windowNoTitle">true</item>
-            <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-            <item name="android:statusBarColor">@android:color/transparent</item>
-        </style>
-            <!-- Home screen: no ActionBar/title, but a SOLID status bar (not transparent) —
-                 the home layout doesn't go immersive/fullscreen like the flight screen does
-                 (which manually handles insets via systemUiVisibility), so a transparent
-                 status bar here left an unpainted gap: content is inset below it via padding,
-                 but nothing draws INTO that inset strip, and the platform's default light
-                 status-bar scrim showed through instead of the app's dark background. -->
-            <style name="AppTheme.NoActionBar.SolidStatusBar">
-            <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-            <item name="android:statusBarColor">#0E0E10</item>
-        </style>
+
+    <!-- Flight screen. No ActionBar — this screen draws its own instrument toolbar.
+
+         The status bar is a SOLID colour matching the flight background, not transparent.
+         The screen IS immersive (SYSTEM_UI_FLAG_FULLSCREEN | IMMERSIVE_STICKY, re-applied in
+         onWindowFocusChanged), so the bar is hidden nearly all the time and this colour is only
+         seen when IMMERSIVE_STICKY shows the bar transiently after a swipe. That moment is
+         exactly why it is solid: SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN makes the window draw under
+         the bar, so a transparent bar puts the system clock and icons straight onto live video,
+         where a bright frame can make them unreadable. Same reasoning as the HUD panels — text
+         over video that the pilot does not control needs a backing. -->
+    <style name="AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@color/tp_bg_flight</item>
+    </style>
+
+    <!-- Home screen: no ActionBar, and a SOLID status bar. This one is NOT immersive — the home
+         activity sets no system-UI flags — so the bar is always on screen. Content is inset
+         below it by padding, but nothing draws INTO that strip, so a transparent status bar
+         here leaves the platform's default light scrim showing through instead of the app's
+         dark background. Colour matches the home layout. -->
+    <style name="AppTheme.NoActionBar.SolidStatusBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@color/tp_bg_home</item>
+    </style>
+
 </resources>

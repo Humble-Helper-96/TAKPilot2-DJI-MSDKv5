@@ -117,6 +117,7 @@ class DroneTakBridge(
     // One-shot guards, same pattern as v4: applied on the first sign of life from the
     // component, which is the reliable "it is actually up" signal.
     @Volatile private var exposureApplied = false
+    @Volatile private var controlResponseApplied = false
     @Volatile private var limitsApplied = false
     @Volatile private var gimbalRangeApplied = false
 
@@ -228,6 +229,19 @@ class DroneTakBridge(
             }
         }
         GimbalKey.KeyYawRelativeToAircraftHeading.create().listen(h) { lastGimbalYawRel = it }
+
+        // Control response at each connect, so the camera feels the same every flight whatever
+        // the last session or the DJI app left in the gimbal. Fires ONCE per connect: this is a
+        // write to flight hardware and safety rule 3 forbids putting it on a clock. Matches the
+        // MSDKv4 sibling, which applies it from its own gimbal-up signal.
+        GimbalKey.KeyConnection.create().listen(h) { connected ->
+            if (connected == true && !controlResponseApplied) {
+                controlResponseApplied = true
+                ControlResponse.apply(appContext)
+            } else if (connected != true) {
+                controlResponseApplied = false
+            }
+        }
 
         CameraKey.KeyIsRecording.create().listen(h) { lastIsRecording = it == true }
         CameraKey.KeyIsShootingPhoto.create().listen(h) { lastIsShootingPhoto = it == true }

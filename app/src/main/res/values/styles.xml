@@ -261,7 +261,7 @@
     <style name="homeCardTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:textColor">#7A7A7A</item>
+        <item name="android:textColor">@color/tp_text_caption</item>
         <item name="android:textSize">12sp</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>
@@ -341,6 +341,12 @@
         <item name="android:shadowDx">0</item>
         <item name="android:shadowDy">1</item>
         <item name="android:shadowRadius">3</item>
+    </style>
+
+    <!-- Every HUD readout uses THIS, not hudText directly, so the readouts scale with
+         the target device while the rest of the HUD text does not. Specification §6.4. -->
+    <style name="flightReadoutText" parent="hudText">
+        <item name="android:textSize">@dimen/flight_readout_text_size</item>
     </style>
 
     <!-- One cell of the flight-screen resource row. Equal weight so the four cells never move

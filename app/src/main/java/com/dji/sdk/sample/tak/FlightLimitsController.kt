@@ -38,6 +38,18 @@ import dji.v5.manager.KeyManager
  *
  * Rule carried from v4 (and the 2026-08-02 crash): flight-controller writes happen at
  * connect or on an explicit Apply, never on a timer.
+ *
+ * ⚠ **THE APPLY AND READ-BACK PATH IS NOT VERIFIED ON HARDWARE.** The read-back completeness,
+ * the refusal tracking and the barrier below were ported from the MSDKv4 sibling on
+ * 2026-08-13, where they are flight-verified. Here they compile and no aircraft has run them.
+ * Bench-check all of it on the M4T before any release:
+ *   - each of the six getters returns a value, and the units are metres (the screen converts)
+ *   - a refused write appears in the Apply summary and is NOT counted as applied
+ *   - the read-back barrier releases, so the Apply button re-enables
+ *   - the watchdog path works when a getter never answers
+ * The MSDKv5 key set is assumed to mirror the v4 getters: KeyHeightLimit for max altitude,
+ * KeyDistanceLimit for radius, KeyGoHomeHeight for RTH. If a key returns null on the M4T,
+ * the key is wrong, not the aircraft — check MSDKv5-SDK-Surface.md before changing the logic.
  */
 object FlightLimitsController {
     private const val TAG = "TP2Limits"
@@ -62,6 +74,34 @@ object FlightLimitsController {
         private set
     @Volatile var aircraftCriticalPct: Int? = null
         private set
+
+    /**
+     * The other four limits, also as READ BACK from the aircraft. Null until a read-back lands.
+     *
+     * These exist for the same reason the battery pair does: the Pre-Flight screen promises
+     * "values below are what the aircraft reports", and until 2026-08-13 this port could only
+     * report the battery pair, because nothing else was ever read back. An Apply that pushed
+     * six settings and reported two of them looks complete and is not.
+     */
+    @Volatile var aircraftMaxAltM: Int? = null
+        private set
+    @Volatile var aircraftMaxRadiusM: Int? = null
+        private set
+    @Volatile var aircraftRthAltM: Int? = null
+        private set
+    @Volatile var aircraftFailsafe: FailsafeAction? = null
+        private set
+
+    /**
+     * Set when the aircraft REFUSES a battery-threshold write. Some airframes own these levels
+     * and reject both setters outright, and the vendor documentation is wrong about which ones.
+     * The Pre-Flight screen uses this to stop the two fields pretending they can be edited.
+     */
+    @Volatile var batteryThresholdsRefused = false
+        private set
+
+    /** How long a read-back may take before the barrier is released without it. */
+    private const val READ_BACK_TIMEOUT_MS = 4000L
 
     /**
      * RC stick mapping. Mode 2 (left stick throttle/yaw) is the near-universal default.
@@ -139,13 +179,25 @@ object FlightLimitsController {
     // ------------------------------------------------------------------
     // Typed set/get helpers over KeyManager, with v4-style result logging.
     // ------------------------------------------------------------------
-    private fun <T> setKey(keyInfo: DJIKeyInfo<T>, value: T, label: String, next: () -> Unit = {}) {
+    /**
+     * @param onResult receives null on success and the error on refusal, BEFORE [next] runs.
+     *   The caller needs the refusal, not just the log line: a summary that counts a refused
+     *   write as applied reports the request rather than the aircraft, which is the same
+     *   failure as trusting a success callback.
+     */
+    private fun <T> setKey(
+        keyInfo: DJIKeyInfo<T>,
+        value: T,
+        label: String,
+        onResult: (IDJIError?) -> Unit = {},
+        next: () -> Unit = {},
+    ) {
         KeyManager.getInstance().setValue(
             KeyTools.createKey(keyInfo), value,
             object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() { AppLog.i(TAG, "$label: OK"); next() }
+                override fun onSuccess() { AppLog.i(TAG, "$label: OK"); onResult(null); next() }
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(TAG, "$label: ${error.description()}"); next()
+                    AppLog.i(TAG, "$label: ${error.description()}"); onResult(error); next()
                 }
             },
         )
@@ -221,51 +273,81 @@ object FlightLimitsController {
         data class Step(val name: String, val run: (() -> Unit) -> Unit)
         val steps = ArrayList<Step>()
 
+        // What the aircraft REFUSED. The summary used to say "Applied 7 setting(s)" whether or
+        // not the aircraft took them. Counting a refusal as applied is the same failure as
+        // trusting a success callback: it reports the request, not the aircraft.
+        val refused = java.util.Collections.synchronizedList(ArrayList<String>())
+        fun record(step: String, e: IDJIError?) {
+            if (e == null) return
+            synchronized(refused) { if (step !in refused) refused.add(step) }
+            if (step.endsWith("battery level")) batteryThresholdsRefused = true
+        }
+
         ftToM(savedMaxAltitudeFt(context))?.let { m ->
             steps.add(Step("Max altitude") { next ->
-                setKey(FlightControllerKey.KeyHeightLimit, m, "KeyHeightLimit($m)", next)
+                setKey(FlightControllerKey.KeyHeightLimit, m, "KeyHeightLimit($m)",
+                    { e -> record("Max altitude", e) }, next)
             })
         }
         ftToM(savedMaxRadiusFt(context))?.let { m ->
             steps.add(Step("Max distance") { next ->
                 setKey(FlightControllerKey.KeyDistanceLimitEnabled, true,
-                    "KeyDistanceLimitEnabled(true)") {
-                    setKey(FlightControllerKey.KeyDistanceLimit, m, "KeyDistanceLimit($m)", next)
+                    "KeyDistanceLimitEnabled(true)", { e -> record("Max distance", e) }) {
+                    setKey(FlightControllerKey.KeyDistanceLimit, m, "KeyDistanceLimit($m)",
+                        { e -> record("Max distance", e) }, next)
                 }
             })
         }
         ftToM(savedRthAltitudeFt(context))?.let { m ->
             steps.add(Step("RTH altitude") { next ->
-                setKey(FlightControllerKey.KeyGoHomeHeight, m, "KeyGoHomeHeight($m)", next)
+                setKey(FlightControllerKey.KeyGoHomeHeight, m, "KeyGoHomeHeight($m)",
+                    { e -> record("RTH altitude", e) }, next)
             })
         }
         steps.add(Step("Signal-loss behaviour") { next ->
             val b = savedFailsafe(context).sdk
-            setKey(FlightControllerKey.KeyFailsafeAction, b, "KeyFailsafeAction($b)", next)
+            setKey(FlightControllerKey.KeyFailsafeAction, b, "KeyFailsafeAction($b)",
+                { e -> record("Signal-loss behaviour", e) }, next)
         })
         if (lowPct != null) {
             steps.add(Step("Low battery level") { next ->
                 setKey(FlightControllerKey.KeyLowBatteryWarningThreshold, lowPct,
-                    "KeyLowBatteryWarningThreshold($lowPct)", next)
+                    "KeyLowBatteryWarningThreshold($lowPct)",
+                    { e -> record("Low battery level", e) }, next)
             })
         }
         if (critPct != null) {
             steps.add(Step("Critical battery level") { next ->
                 setKey(FlightControllerKey.KeySeriousLowBatteryWarningThreshold, critPct,
-                    "KeySeriousLowBatteryWarningThreshold($critPct)", next)
+                    "KeySeriousLowBatteryWarningThreshold($critPct)",
+                    { e -> record("Critical battery level", e) }, next)
             })
         }
         steps.add(Step("Stick mode") { next ->
             setKey(RemoteControllerKey.KeyControlMode, stick.sdk,
-                "KeyControlMode(${stick.sdk})", next)
+                "KeyControlMode(${stick.sdk})", { e -> record("Stick mode", e) }, next)
         })
-        steps.add(Step("Reading back") { next -> readBackAll(); next() })
+        // ⚠ `next` goes INTO readBackAll's completion, not after the call. It used to be
+        // `readBackAll(); next()`, which fired the "values below are what the aircraft reports"
+        // message before a single getter had answered — every other step here already threads
+        // `next` through its SDK callback, and this one did not. The values then arrived after
+        // the message and nothing re-rendered, so the line stayed empty.
+        steps.add(Step("Reading back") { next -> readBackAll { next() } })
 
         val total = steps.size
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         fun runStep(i: Int) {
             if (i >= total) {
-                main.post { onDone(true, "Applied ${total - 1} setting(s). Values below are what the aircraft reports.") }
+                val attempted = total - 1          // the read-back step is not a setting
+                val declined = synchronized(refused) { refused.toList() }
+                val summary = buildString {
+                    append("Applied ${attempted - declined.size} of $attempted setting(s).")
+                    if (declined.isNotEmpty()) {
+                        append(" This aircraft refused: ${declined.joinToString(", ")}.")
+                    }
+                    append(" Values below are what the aircraft reports.")
+                }
+                main.post { onDone(declined.isEmpty(), summary) }
                 return
             }
             main.post { onProgress(i, total, steps[i].name) }
@@ -282,17 +364,64 @@ object FlightLimitsController {
 
     /** Asks the aircraft what it actually holds now. The answer, not the request, is what the
      *  Pre-Flight screen shows. */
-    private fun readBackAll() {
-        readBackFailsafe()
-        getKey(FlightControllerKey.KeyLowBatteryWarningThreshold,
-            "aircraft low-battery level") { aircraftWarningPct = it }
-        getKey(FlightControllerKey.KeySeriousLowBatteryWarningThreshold,
-            "aircraft critical-battery level") { aircraftCriticalPct = it }
+    private fun readBackAll(done: () -> Unit) {
+        // Six getters in flight at once; `done` fires when the last one answers. A getter that
+        // never calls back would otherwise leave the Apply button disabled for good, so a
+        // watchdog releases the barrier once. `fired` makes both paths one-shot.
+        val outstanding = java.util.concurrent.atomic.AtomicInteger(6)
+        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        fun complete() {
+            if (fired.compareAndSet(false, true)) main.post { done() }
+        }
+        fun oneDown() {
+            if (outstanding.decrementAndGet() <= 0) complete()
+        }
+        main.postDelayed({
+            if (!fired.get()) {
+                AppLog.w(TAG, "read-back timed out with ${outstanding.get()} getter(s) unanswered")
+                complete()
+            }
+        }, READ_BACK_TIMEOUT_MS)
+
+        /** Every getter has the same shape: store it, log it, count it down. */
+        fun <T> read(keyInfo: DJIKeyInfo<T>, name: String, store: (T?) -> Unit) = runCatching {
+            KeyManager.getInstance().getValue(
+                KeyTools.createKey(keyInfo),
+                object : CommonCallbacks.CompletionCallbackWithParam<T> {
+                    override fun onSuccess(v: T?) {
+                        store(v)
+                        AppLog.i(TAG, "aircraft $name is now: $v")
+                        oneDown()
+                    }
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.w(TAG, "get $name failed: ${error.description()}")
+                        oneDown()
+                    }
+                },
+            )
+        }.onFailure {
+            AppLog.w(TAG, "get $name threw: ${it.message}")
+            oneDown()
+        }
+
+        read(FlightControllerKey.KeyFailsafeAction, "signal-loss behavior") { aircraftFailsafe = it }
+        read(FlightControllerKey.KeyLowBatteryWarningThreshold, "low-battery level") { aircraftWarningPct = it }
+        read(FlightControllerKey.KeySeriousLowBatteryWarningThreshold, "critical-battery level") { aircraftCriticalPct = it }
+        read(FlightControllerKey.KeyHeightLimit, "max altitude") { aircraftMaxAltM = it }
+        read(FlightControllerKey.KeyDistanceLimit, "max radius") { aircraftMaxRadiusM = it }
+        read(FlightControllerKey.KeyGoHomeHeight, "RTH height") { aircraftRthAltM = it }
     }
 
     /** Asks the aircraft what its signal-loss behavior actually is now, and logs it. */
     private fun readBackFailsafe() {
-        getKey(FlightControllerKey.KeyFailsafeAction, "aircraft signal-loss behavior")
+        // STORES the answer, it does not only log it. This runs at connect, so without the
+        // store the Pre-Flight screen showed no signal-loss value until the pilot pressed
+        // Apply — an aircraft that already held the right behaviour looked like one that
+        // held none.
+        getKey(FlightControllerKey.KeyFailsafeAction, "aircraft signal-loss behavior") {
+            aircraftFailsafe = it
+        }
     }
 
     /**
