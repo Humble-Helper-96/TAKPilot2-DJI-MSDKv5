@@ -2,10 +2,18 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
 
-// The DJI key lives in app/dji-key.properties (gitignored).
-// The placeholder from gradle.properties is used when the file is absent.
+// ⚠ THE DJI KEY LIVES IN app/dji-key.properties, WHICH IS GITIGNORED.
+//
+// Copy app/dji-key.properties.example to app/dji-key.properties and fill it in. Without it the
+// manifest placeholder is empty and the SDK registration fails with a clear error, which is
+// better than a build that silently produces an application no aircraft will talk to.
+//
+// The AIRCRAFT_API_KEY line in gradle.properties is a fallback and MUST STAY EMPTY. The key was
+// committed there until 2026-08-16 — it is still in this repository's history, which is why the
+// repository is private. Putting a key back in that file publishes it again.
+//
 // The key is bound to the applicationId in the DJI developer console.
-def djiApiKey = project.AIRCRAFT_API_KEY
+def djiApiKey = project.hasProperty('AIRCRAFT_API_KEY') ? project.AIRCRAFT_API_KEY : ''
 def djiKeyFile = file('dji-key.properties')
 if (djiKeyFile.exists()) {
     def p = new Properties()
