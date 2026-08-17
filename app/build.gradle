@@ -27,8 +27,12 @@ android {
         applicationId "com.anchortak.takpilot2djiv5"
         minSdkVersion Integer.parseInt(project.ANDROID_MIN_SDK_VERSION)
         targetSdkVersion Integer.parseInt(project.ANDROID_TARGET_SDK_VERSION)
-        versionCode 1
-        // Stays -dev until something has flown.
+        // 2: channels, by the method a TAK server accepts (2026-08-16). Bump this on every
+        //    build that goes on a device — it is what lets `install -r` replace the last one.
+        versionCode 2
+        // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
+        // does not move: the channel work is ported from the Autel tree and proved on Autel
+        // hardware, which says nothing about this airframe.
         versionName "1.0.0-dev"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
