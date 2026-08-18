@@ -40,11 +40,16 @@ android {
         // 3: the Autel v1.6.2 Pre-Flight pass, ported via the MSDKv4 sibling's v1.2.0
         //    (2026-08-18) — two video servers, a codec choice, the Pre-Flight rearrangement
         //    and the Field Guide cut.
-        versionCode 3
+        // 4: 1.0.0-dev1, the first signed release of this tree (2026-08-18).
+        versionCode 4
         // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
         // does not move: the channel work is ported from the Autel tree and proved on Autel
         // hardware, which says nothing about this airframe.
-        versionName "1.0.0-dev"
+        //
+        // The -devN suffix counts the DEVELOPMENT releases, which is the only part free to
+        // move before a flight. It goes to 1.0.0 when the aircraft has been in the air, and
+        // not before — the same rule the MSDKv4 sibling followed from 1.1.0-dev to 1.1.0.
+        versionName "1.0.0-dev1"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

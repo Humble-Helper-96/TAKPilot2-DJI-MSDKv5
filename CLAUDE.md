@@ -87,7 +87,9 @@ crib sheet only.
 ## Verification
 
 - The build: `./gradlew :app:assembleRelease`. Gradle 8.12, AGP 8.7.0. `versionName` is
-  `1.0.0-dev`, versionCode 3.
+  `1.0.0-dev1`, versionCode 4 — RELEASED 2026-08-18 as the first signed build of this
+  tree (tag `v1.0.0-dev1`). Signing comes from `app/keystore.properties`, the same AnchorTAK
+  key the MSDKv4 sibling uses; it is gitignored and must stay that way.
 - Nothing in this tree is verified on hardware yet. **`versionName` stays `-dev` until
   something flies.** Move versionCode on every build that goes on a device; move the name
   when the aircraft has been in the air.
