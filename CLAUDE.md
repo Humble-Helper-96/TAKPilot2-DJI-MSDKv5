@@ -87,5 +87,28 @@ crib sheet only.
 ## Verification
 
 - The build: `./gradlew :app:assembleRelease`. Gradle 8.12, AGP 8.7.0. `versionName` is
-  `1.0.0-dev`, versionCode 1.
-- Nothing in this tree is verified on hardware yet.
+  `1.0.0-dev`, versionCode 3.
+- Nothing in this tree is verified on hardware yet. **`versionName` stays `-dev` until
+  something flies.** Move versionCode on every build that goes on a device; move the name
+  when the aircraft has been in the air.
+- The printable Field Guide regenerates with `python3 tools/generate_field_guide_md.py`
+  after any `FieldGuideActivity` change. Output lands outside the repo, in `DJI/v5/`.
+
+## Current work
+
+**2026-08-18: this tree took the Autel v1.6.2 Pre-Flight pass**, ported through the MSDKv4
+sibling's v1.2.0 — two video servers, a pilot-selectable codec (H.264/H.265), the Pre-Flight
+rearrangement with each lock beside what it locks, and a Field Guide cut by a quarter with
+"Unknown marker" renamed to "Static marker". The channels work (server-held, in Pre-Flight
+and from the TAK badge in flight) was already here from 2026-08-16.
+
+⚠ **When you copy text from the MSDKv4 sibling, take the facts and drop the airframe.** That
+tree names the Mini 2 throughout because that is what it flies, and **this SDK does not
+support the Mini 2 at all** — every one of those sentences is false here, and two of them
+were dangerous rather than merely stale (conformance V15). The same trap applies to "phone":
+this build runs on a smart controller. Both the layout and the Field Guide are airframe- and
+device-neutral now, and `FieldGuideActivity`'s class doc states the rule.
+
+The open defect is unchanged and is **V11**: this tree is still in the phone's default dp
+bucket and runs on an RC Plus. It is four numbers in a `values-w820dp` bucket that does not
+exist yet, and it is blocked on nobody having measured the device. Do not guess them.
