@@ -19,25 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This project is built on DJI's Mobile SDK for Android V5 (Sample Code) and
-depends on the proprietary DJI Mobile SDK V5 (com.dji:dji-sdk-v5-aircraft and
-its companion artifacts), which is NOT covered by this license and is subject
-to DJI's own SDK license terms (https://developer.dji.com). This repository
-does not bundle DJI's SDK binary; it is resolved as a build-time Maven
-dependency.
-
-DJI releases the Sample Code itself under MIT License (Copyright (c) 2019 DJI);
-that original notice is preserved, per its terms, in LICENSE-DJI-SAMPLE.
-
-This project also vendors the RTSP client from
-rtmp-rtsp-stream-client-java (Copyright (c) pedroSG94), which is licensed under
-the Apache License 2.0. Its notice is preserved, per that license's terms, in
-app/src/main/java/com/pedro/rtsp/NOTICE.txt.
-
-⚠ THIS SOFTWARE COMMANDS AN AIRCRAFT. It is provided "as is" and without
-warranty, as stated above, and no release of it has been validated in flight at
-the time of writing. The operator of the aircraft is responsible for the safety
-of the flight and for compliance with the applicable aviation regulations.
