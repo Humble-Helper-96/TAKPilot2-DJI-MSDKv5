@@ -41,7 +41,21 @@ android {
         //    (2026-08-18) — two video servers, a codec choice, the Pre-Flight rearrangement
         //    and the Field Guide cut.
         // 4: 1.0.0-dev1, the first signed release of this tree (2026-08-18).
-        versionCode 5
+        // 5: the registration fix — the permission gate held VIBRATE, which the manifest does
+        //    not declare, so the SDK never registered (2026-08-19). First build to register
+        //    on an RC Plus 2 and to see a Matrice 4T.
+        // 6: two bench crashes on the same day — the flight screen died on a null
+        //    description() from a refused metering write, and the Debug screen died because
+        //    nothing ever called AppLog.init().
+        // 7: the action bar fits the RC Plus 2. Its children totalled about 810dp against
+        //    760dp of usable width, so the record toggle was cut off at the screen edge.
+        // 8: signal and GPS put their number under the icon, which returned enough width to
+        //    keep every action control at full size.
+        // 9: the HUD column and map sit against the right edge (paddingEnd 14dp -> 4dp) and
+        //    the column is 148dp, so latitude and longitude print on ONE line.
+        // 10: the FPV image is pushed to the bottom edge, so the 16:9 letterbox hides behind
+        //     the action bar instead of showing as a black band. Translation only, no crop.
+        versionCode 10
         // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
         // does not move: the channel work is ported from the Autel tree and proved on Autel
         // hardware, which says nothing about this airframe.

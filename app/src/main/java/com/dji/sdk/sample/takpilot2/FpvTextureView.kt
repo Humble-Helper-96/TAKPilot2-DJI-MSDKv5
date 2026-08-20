@@ -1,6 +1,7 @@
 package com.dji.sdk.sample.takpilot2
 
 import android.content.Context
+import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.util.AttributeSet
@@ -133,8 +134,25 @@ class FpvTextureView @JvmOverloads constructor(
 
     /**
      * The rectangle the video occupies inside this view after CENTER_INSIDE scaling.
-     * Same aspect-fit math the v4 view used for its transform matrix; here it only feeds
-     * the overlay alignment, since DJI does the scaling itself.
+     * Same aspect-fit math the v4 view used for its transform matrix; here it feeds the
+     * overlay alignment AND the downward shift below, since DJI does the scaling itself.
+     *
+     * ⚠ THE IMAGE IS PUSHED DOWN TO THE BOTTOM OF THE SCREEN (operator, 2026-08-19).
+     * A 16:9 stream in the RC Plus 2's 16:10 screen letterboxes by 60px at each end.
+     * CENTER_INSIDE puts half of that at the top, where the 56dp action bar already covers
+     * it, and half at the bottom, where it is a black band of wasted screen. Moving the
+     * whole image down by the top letterbox hides ALL of the dead space behind the action
+     * bar and gives the pilot the full remaining height of live picture.
+     *
+     * This is a TRANSLATION, never a scale or a crop. The image keeps its aspect ratio and
+     * its field of view, which the AR projection depends on — filling the screen by cropping
+     * the sides would silently change the FOV and put every projected marker in the wrong
+     * place.
+     *
+     * The same offset goes to the texture and to the rectangle the overlays receive. They
+     * MUST move together: the crosshair is the aiming reference for a marker drop, so if the
+     * picture moves and the rectangle does not, a marker dropped at the crosshair no longer
+     * lands under it.
      */
     private fun recomputeVideoRect() {
         val vw = width.toFloat()
@@ -151,7 +169,21 @@ class FpvTextureView @JvmOverloads constructor(
             val w = vh * videoAspect
             RectF((vw - w) / 2f, 0f, (vw + w) / 2f, vh)
         }
-        AppLog.d(TAG, "video rect: $rect (stream ${streamW}x$streamH in view ${width}x$height)")
+
+        // Drop the image onto the bottom edge. Zero when the stream is pillarboxed instead,
+        // and zero when it already fills the height, thus this is a no-op on any screen that
+        // matches the stream's aspect ratio.
+        val dy = vh - rect.bottom
+        if (dy > 0.5f) rect.offset(0f, dy)
+
+        // setTransform touches the view, thus it goes to the UI thread — this method also
+        // runs from the stream listener, which does not.
+        post {
+            setTransform(Matrix().apply { if (dy > 0.5f) setTranslate(0f, dy) })
+        }
+
+        AppLog.d(TAG, "video rect: $rect (stream ${streamW}x$streamH in view ${width}x$height," +
+            " shifted down ${dy}px)")
         runCatching { onVideoRectChanged?.invoke(rect) }
     }
 }
