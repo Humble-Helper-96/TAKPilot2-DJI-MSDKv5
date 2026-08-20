@@ -81,8 +81,10 @@ object TakMapMarkers {
      *
      * A marker anyone still cares about is being re-broadcast, so it never ages out; only genuinely
      * abandoned ones drop. The bound exists because unbounded contact retention is what OOM-killed
-     * the Autel sibling in the air on 2026-08-03, and this store has NO cap, NO age field and NO
-     * eviction — it only ever grows. Same store, same defect, same aircraft-in-the-air outcome.
+     * the Autel sibling in the air on 2026-08-03. (This paragraph used to claim the store had NO
+     * cap and NO eviction — that described the store BEFORE the bounds below were added, and the
+     * sentence outlived the code it warned about. The eviction is real: this age limit plus
+     * [MAX_SAVED_MARKERS], enforced in [evictOldMarkers].)
      */
     private const val MARKER_RETENTION_MS = 72L * 60 * 60 * 1000
 
@@ -289,7 +291,29 @@ object TakMapMarkers {
     /** Add/update a contact in the model. Returns true if the map needs redrawing. */
     private fun stage(user: TakUser): Boolean {
         if (user.lat == 0.0 && user.lon == 0.0) return false
-        if (hidden.contains(user.uid)) return false
+        // A LOCAL DELETE LASTS UNTIL THE SENDER SHARES THE MARKER AGAIN (V25, audit
+        // 2026-08-20; the Autel sibling's fix of 2026-08-16).
+        //
+        // Reaching this line with a hidden uid means a NEW inbound message arrived for it:
+        // restore() filters hidden uids before calling here, and hideInbound drops the live
+        // contact, thus nothing re-drives an old copy through this path. A teammate sharing
+        // it again is a deliberate act, and it must get through — the pilot deleted one
+        // marker from their own map; they did not ask never to be told about it again.
+        //
+        // ⚠ Before this, the delete was permanent and a re-share was dropped in silence: a
+        // teammate could re-send a hazard marker to a pilot who had cleared it an hour
+        // before, and that pilot never saw it and got no indication. It also makes the two
+        // delete paths agree — clearAllShared already refused to blacklist uids for exactly
+        // this reason, while a single delete did the opposite.
+        //
+        // The cost, accepted on the sibling: a client that re-broadcast on a timer would
+        // bring a deleted marker back. CloudTAK and TAK Aware send on placement and on edit,
+        // not on a cycle (measured 2026-08-04 and again 2026-08-16).
+        if (hidden.contains(user.uid)) {
+            AppLog.i(TAG, "shared again — showing a marker deleted here: ${user.uid}")
+            hidden.remove(user.uid)
+            saveSavedMarkers()
+        }
         // A marker we currently own is already drawn by TakDropMarkers; the server echoing it
         // back must not draw a second copy. Note "currently" — once the pilot deletes the pin
         // we no longer own the uid, and a later echo is then allowed to land here as an

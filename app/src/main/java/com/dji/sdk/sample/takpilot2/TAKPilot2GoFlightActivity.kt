@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import com.dji.sdk.sample.R
 import com.dji.sdk.sample.tak.ArSettings
 import com.dji.sdk.sample.tak.CameraSlantPoint
+import com.dji.sdk.sample.tak.FlightLimitsController
 import com.dji.sdk.sample.tak.ZoomLadder
 import com.dji.sdk.sample.tak.DjiObstacleState
 import com.dji.sdk.sample.tak.DjiSdkBridge
@@ -247,6 +248,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         val toolbarView = findViewById<View>(R.id.flightToolbar)
         val hudColumn = findViewById<View>(R.id.flightHudColumn)
         toolbarView.viewTreeObserver.addOnGlobalLayoutListener {
+            // The obstacle radar takes the same top inset the AR overlay does (V24) — its
+            // forward chevrons and distance label must never sit under the toolbar.
+            obstacles.setTopInset(toolbarView.height.toFloat())
             arOverlay.setChromeInsets(
                 top = toolbarView.height.toFloat(),
                 right = hudColumn.width.toFloat(),
@@ -1917,6 +1921,25 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * Polled from the HUD tick as well as pushed from the diagnostics callback: the hold and
      * the queue advance with time, not only with events, so the banner has to be re-asked.
      */
+    /**
+     * Colours the toolbar gauge from the SAME two settings Pre-Flight sends to the aircraft:
+     * amber from Battery Warning, red from Battery Critical. Hard-coded edges here would drift
+     * from the thresholds every time they were retuned, which is how the gauge previously
+     * ended up showing amber while the aircraft was seconds from acting (V23; the Autel
+     * sibling's fix of 2026-08-04).
+     */
+    private fun refreshBatteryBands() {
+        // AIRCRAFT FIRST, pref only as a stand-in. The pilot's saved value is what they
+        // INTEND; it differs from the aircraft's whenever a level was edited but not applied,
+        // or an apply failed. A gauge is read to judge how much flying is left, so it has to
+        // be coloured from the levels the aircraft will actually act on.
+        val warn = FlightLimitsController.aircraftWarningPct?.toFloat()
+            ?: FlightLimitsController.savedLowBatteryPct(this).trim().toFloatOrNull() ?: 30f
+        val crit = FlightLimitsController.aircraftCriticalPct?.toFloat()
+            ?: FlightLimitsController.savedCriticalBatteryPct(this).trim().toFloatOrNull() ?: 15f
+        toolbarBattery.setBands(crit, warn)
+    }
+
     private fun renderWarning() {
         val d = FlightWarnings.display()
         if (d == null) {
@@ -2116,6 +2139,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
 
         toolbarBattery.setPercent(hud?.batteryPct)
+        // Re-asked every tick, not just at entry: the bands pick up the aircraft's read-back
+        // the moment it lands (a connect can finish after this screen opens), and setBands
+        // no-ops when nothing moved. See refreshBatteryBands for why the values are the
+        // AIRCRAFT's. (V23, audit 2026-08-20.)
+        refreshBatteryBands()
 
         // Show the real satellite count whenever telemetry exists, even below lock threshold —
         // "—" used to mean "no fix," but visually that's indistinguishable from "no telemetry

@@ -65,13 +65,13 @@ class BatteryGaugeView @JvmOverloads constructor(
 
         val pct = percent
         if (pct != null) {
-            // Banded gauge, not a single color for the whole filled arc: the 0–15% (Critical),
-            // 16–30% (Warning), 31–100% (Good) zones each keep their own color as the ring
+            // Banded gauge, not a single color for the whole filled arc: the Critical,
+            // Warning and Good zones each keep their own color as the ring
             // fills, like a fuel gauge's redline band — so at e.g. 80% you see a thin red
             // wedge, a thin amber wedge, then a large green wedge, not one solid green ring.
             val sweepTotal = 360f * (pct.coerceIn(0, 100) / 100f)
-            val criticalEnd = 360f * (CRITICAL_PCT / 100f)
-            val warningEnd = 360f * (WARNING_PCT / 100f)
+            val criticalEnd = 360f * (criticalPct / 100f)
+            val warningEnd = 360f * (warningPct / 100f)
 
             val critSweep = sweepTotal.coerceAtMost(criticalEnd)
             if (critSweep > 0f) {
@@ -95,10 +95,48 @@ class BatteryGaugeView @JvmOverloads constructor(
         canvas.drawText(label, width / 2f, textY, textPaint)
     }
 
+    /** Red band edge — the aircraft's Battery Critical setting. */
+    private var criticalPct = DEFAULT_CRITICAL_PCT
+    /** Amber band edge — the aircraft's Battery Warning setting. */
+    private var warningPct = DEFAULT_WARNING_PCT
+
+    /**
+     * Points the gauge at the two levels the aircraft is actually configured with, so the
+     * colours mean the same thing as the Pre-Flight fields that set them: **amber from Battery
+     * Warning, red from Battery Critical** (operator, 2026-08-04).
+     *
+     * This used to put RED at the Warning level and invent amber ten points above it, on the
+     * reasoning that red should start where the pilot still has a decision. That made the gauge
+     * tell a different story from the screen that configures it — and it was built on a belief
+     * that Warning is a hard turn-around, which it is not: the return can be deferred with the
+     * controller's RTH button. Two levels are set, so two levels are shown.
+     */
+    fun setBands(criticalPct: Float, warningPct: Float) {
+        val c = criticalPct.coerceIn(1f, 99f)
+        val w = warningPct.coerceIn(c + 1f, 100f)
+        // No-op when nothing moved. The caller polls this from the HUD loop so the bands pick up
+        // the aircraft's read-back as soon as it lands; without this guard that would be an
+        // invalidate() twice a second, forever, for a value that changes once per connect.
+        if (c == this.criticalPct && w == this.warningPct) return
+        this.criticalPct = c
+        this.warningPct = w
+        invalidate()
+    }
+
     companion object {
         private const val STROKE_FRACTION = 0.12f
         private const val TEXT_FRACTION = 0.34f
-        private const val CRITICAL_PCT = 15f
-        private const val WARNING_PCT = 30f
+        /**
+         * Band edges, in percent. These are DEFAULTS ONLY — [setBands] overrides them with the
+         * thresholds the aircraft is actually configured with, so the gauge cannot say "you are
+         * fine" at a charge where the aircraft is about to fly itself home.
+         *
+         * They were 15/30 and fixed, chosen before anyone knew what the aircraft did, so a gauge
+         * with its own unrelated numbers was showing amber while the aircraft was seconds from
+         * acting. These now match FlightLimitsController's own defaults for the same two
+         * settings — keep them in step if those change.
+         */
+        private const val DEFAULT_CRITICAL_PCT = 10f
+        private const val DEFAULT_WARNING_PCT = 15f
     }
 }

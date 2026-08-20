@@ -148,6 +148,24 @@ class ObstacleEdgeView @JvmOverloads constructor(
      * without it: behind the aircraft is the one direction the camera cannot show, which is
      * exactly where a readout earns the most.
      */
+    /**
+     * How far the top of this view's drawing may reach — the toolbar's height, set from the
+     * activity's layout listener (V24, audit 2026-08-20; the Autel sibling's rule: "a
+     * proximity warning the pilot cannot see is worse than none").
+     *
+     * ⚠ On today's geometry this CHANGES NOTHING: FORE_DROP (96dp) already puts the forward
+     * chevrons about 57dp clear of the 56dp toolbar. That clearance was accidental — a magic
+     * constant with no stated relationship to the toolbar — and this makes it a guarantee, so
+     * a taller toolbar or a smaller FORE_DROP cannot silently hide a proximity warning.
+     */
+    private var topInset = 0f
+
+    fun setTopInset(px: Float) {
+        if (topInset == px) return
+        topInset = px
+        invalidate()
+    }
+
     private fun drawChevron(canvas: Canvas, meters: Float, forward: Boolean) {
         if (meters > WARN_M) return
 
@@ -158,7 +176,9 @@ class ObstacleEdgeView @JvmOverloads constructor(
         arcPaint.strokeWidth = dp(4f) + dp(5f) * t
 
         val cx = videoRect.centerX()
-        val cy = if (forward) videoRect.top + dp(FORE_DROP)
+        // The forward stack extends about 31dp above cy and the label rides at cy, so cy must
+        // stay at least the stack's height below the inset for every part to be visible.
+        val cy = if (forward) maxOf(videoRect.top + dp(FORE_DROP), topInset + dp(36f))
                  else videoRect.bottom - dp(REAR_LIFT)
 
         // Two stacked chevrons. Forward points UP (away from the pilot, into the scene); rear
