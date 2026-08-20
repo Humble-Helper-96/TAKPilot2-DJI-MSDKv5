@@ -342,9 +342,9 @@ class FieldGuideActivity : AppCompatActivity() {
             "Put a marker",
             "Touch: puts a marker at the centre of the image. Point the camera at the target " +
                 "first, then select the type and type a name.\n\n" +
-                "Touch and hold: the \"Markers\" list. Change your own marker, send it again " +
-                "or remove it. Touch a marker of your team to send it again or to remove it " +
-                "from your map only.\n\n" +
+                "Touch and hold: the \"Markers\" list. Touch rows to select them, then " +
+                "Re-send or Delete all of them at one time. Touch and hold one row to change " +
+                "your own marker, or to send a marker of your team again.\n\n" +
                 "DELETE REMOVES A MARKER FROM THIS AIRCRAFT ONLY. It stays on the screens of " +
                 "your team for about 3 days.\n\n" +
                 "The app does not put a marker if the crosshair ring is red, if the aircraft " +
