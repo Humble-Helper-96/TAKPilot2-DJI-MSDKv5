@@ -55,10 +55,12 @@ android {
         //    the column is 148dp, so latitude and longitude print on ONE line.
         // 10: the FPV image is pushed to the bottom edge, so the 16:9 letterbox hides behind
         //     the action bar instead of showing as a black band. Translation only, no crop.
+        // 17: the banner no longer raises the fault codes DJI Pilot 2 itself withholds from a
+        //     pilot. Measured, not guessed, and every fault is still logged in full.
         // 11: the warning banner shows the aircraft's faults again. FlightWarnings.reset() ran
         //     after the flight screen seeded them and discarded them, and the change-only
         //     event never fired again.
-        versionCode 16
+        versionCode 17
         // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
         // does not move: the channel work is ported from the Autel tree and proved on Autel
         // hardware, which says nothing about this airframe.

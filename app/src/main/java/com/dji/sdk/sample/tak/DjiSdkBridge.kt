@@ -248,6 +248,9 @@ object DjiSdkBridge {
         val readable = items.sortedByDescending { severityRank(it.warningLevel()?.toString()) }
             .mapNotNull { d ->
             val code = d.informationCode()?.toString()
+            // Not in front of the pilot if the OEM does not put it there either. The full list
+            // is already in the log line above, thus nothing is lost to a post-flight read.
+            if (isOemHidden(code)) return@mapNotNull null
             // A verified English line for this exact code wins outright. For these faults the
             // aircraft sends Chinese in BOTH its fields, thus there is no readable text to
             // keep and the "never re-word" rule protects nothing — it only leaves the pilot
@@ -319,6 +322,52 @@ object DjiSdkBridge {
 
     /** True when the text holds Chinese characters, thus it was never localised. */
     private fun hasCjk(s: String): Boolean = s.any { it.code in 0x4E00..0x9FFF }
+
+    /**
+     * Fault codes that DJI Pilot 2 does NOT put in front of a pilot, and neither do we
+     * (operator, 2026-08-19).
+     *
+     * ⚠ THIS IS A DELIBERATE EXCEPTION TO FlightWarnings' "nothing is filtered out on the
+     * pilot's behalf" RULE. That rule was written after a sibling application hid "Cannot
+     * takeoff in a no-fly zone" through two flights, so weakening it is not free. Read that
+     * rule before you add a code here, and do not add one to reduce clutter.
+     *
+     * The list is MEASURED, not guessed. On 2026-08-13 the controller's HMS log recorded 134
+     * alarms across 33 distinct codes; Pilot 2's Error Records screen displayed 9 of those
+     * codes and its flight screen displayed none at all. These are the 24 it withheld. The
+     * comparison and the screenshots are in
+     * `DJI/v5/pilot2-reference/hms-error-records-2026-08-13/`.
+     *
+     * Most are a module-enumeration burst that fires on every power-on — the 1649xx, 164Cxx,
+     * 1641xx, 1643xx families — which is what made the banner noisy on a screen where it
+     * covers live video.
+     *
+     * ⚠ Suppressed is not unrecorded. Every fault the aircraft reports is still written to the
+     * log in full, above, BEFORE this filter runs, thus a post-flight reader loses nothing and
+     * this list can be re-judged from real data.
+     *
+     * ⚠ Three of these were on the bench banner when the list was made, including
+     * `1AFC0140`, the stored-crash-log caution that sent the operator to DJI support that same
+     * day. Suppressing it is the operator's decision and it is reversible: delete the line.
+     */
+    private val OEM_HIDDEN_CODES: Set<String> = setOf(
+        // Module enumeration burst, every power-on.
+        "16200601", "16411004", "16411205", "16411302",
+        "16430014", "16430016", "16430018", "1643001a",
+        "16493400", "16493500", "16493600", "16493700", "16493800", "16493900",
+        "164c04be", "164c04fe", "164c0680", "164c06c0", "164c0700",
+        "1a0100f0",
+        // Informational, not a reason the aircraft will not fly.
+        "19000703",  // memory card not recommended
+        "1b080003",  // "Remote ID functionality normal" — reports that something is FINE
+        // Cautions DJI files in its records screen and never raises in flight.
+        "1900d004",  // consistency check failed
+        "1afc0140",  // stored crash logs — delete this line to put it back on the banner
+    )
+
+    /** Normalised for lookup: the aircraft reports "0x1AFC0140", the set holds "1afc0140". */
+    private fun isOemHidden(code: String?): Boolean =
+        code != null && OEM_HIDDEN_CODES.contains(code.removePrefix("0x").removePrefix("0X").lowercase())
 
     /**
      * Severity as a number, so the fault list can be ordered worst-first.
