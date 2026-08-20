@@ -60,10 +60,12 @@ android {
         // 18: STOP / QUIT fits the home screen without scrolling. It started one pixel above
         //     the fold, so it was unreachable without a scroll.
         // 19: the TAK logo is off the ENTER FLIGHT card, which frees 84dp for information.
+        // 20: the Field Guide is 2578 words, cut from 3092. One section removed; its two facts
+        //     that change a flight decision moved rather than went.
         // 11: the warning banner shows the aircraft's faults again. FlightWarnings.reset() ran
         //     after the flight screen seeded them and discarded them, and the change-only
         //     event never fired again.
-        versionCode 19
+        versionCode 20
         // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
         // does not move: the channel work is ported from the Autel tree and proved on Autel
         // hardware, which says nothing about this airframe.
