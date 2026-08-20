@@ -240,10 +240,41 @@ object DjiSdkBridge {
         AppLog.i(DIAG_TAG, "aircraft diagnostics: $rendered")
         // Distinct: the same condition can be reported once per affected component, and a
         // pilot does not need to read it twice.
-        val readable = items.mapNotNull { d ->
+        // ⚠ WORST FIRST. The banner shows the worst fault and counts the rest as "+N"
+        // (specification §4.8), thus the order of this list decides what the pilot reads. The
+        // aircraft does NOT send them worst-first: on the bench it led with a NOTICE about the
+        // memory card while two CAUTIONs sat behind it (2026-08-19). sortedByDescending is
+        // stable, so faults of equal severity keep the aircraft's own order.
+        val readable = items.sortedByDescending { severityRank(it.warningLevel()?.toString()) }
+            .mapNotNull { d ->
+            val code = d.informationCode()?.toString()
+            // A verified English line for this exact code wins outright. For these faults the
+            // aircraft sends Chinese in BOTH its fields, thus there is no readable text to
+            // keep and the "never re-word" rule protects nothing — it only leaves the pilot
+            // with a warning they cannot read. The code stays on the line, so the aircraft's
+            // own wording is always one lookup away.
+            FAULT_ENGLISH[code]?.let { return@mapNotNull "$it ($code)" }
             humanReason(d.title())?.let { r ->
                 val fix = humanReason(d.description())
-                if (fix.isNullOrEmpty()) r else "$r — $fix"
+                val text = when {
+                    fix.isNullOrEmpty() -> r
+                    // ⚠ The Matrice 4T puts the SAME SENTENCE in title and description, so
+                    // "$r — $fix" printed everything twice and doubled the length of a banner
+                    // that already covers the video (bench, 2026-08-19). Sometimes the two are
+                    // equal apart from case and punctuation; sometimes the description is the
+                    // title PLUS the fault code in brackets.
+                    //
+                    // Keep the longer of the two when one contains the other, thus the code is
+                    // never lost and the repeat is never printed. This removes repetition only
+                    // — it is not the filtering that §4.8 forbids. When the two really do say
+                    // different things, both still print.
+                    repeats(r, fix) -> if (fix.length >= r.length) fix else r
+                    else -> "$r — $fix"
+                }
+                // Not translated, and not English. Keep the aircraft's own words — that rule
+                // still holds for anything not in the table — but append the code, so an
+                // unreadable warning is at least a warning the pilot can look up.
+                if (code != null && hasCjk(text) && !text.contains(code)) "$text ($code)" else text
             }
         }.distinct()
         diagnostics = readable
@@ -256,6 +287,68 @@ object DjiSdkBridge {
      * tokens get turned back into words. Anything already containing lowercase is a real
      * message and passes through untouched.
      */
+    /**
+     * English for aircraft faults that the Matrice 4T reports ONLY in Chinese.
+     *
+     * The aircraft localises most of its health messages, but not all of them: a few arrive
+     * with Chinese in both `title()` and `description()` whatever the controller's language
+     * is. A warning a pilot cannot read is worse than useless on a banner that covers the
+     * live video, so those get an English line here.
+     *
+     * RULES FOR THIS TABLE:
+     * - A code goes in ONLY after it has been seen on the bench and the Chinese has been read
+     *   in full. Do not add a code from documentation, and do not guess a translation.
+     * - Keep the English short. It shares a banner with everything else the aircraft is
+     *   saying.
+     * - Anything not listed stays in the aircraft's own words, with its code appended. That
+     *   is the default and it must stay the default — this table is the exception.
+     * - The code prints beside the English, thus the original is always one lookup away and a
+     *   post-flight reader can check the wording against the flight record.
+     *
+     * Seen on the bench 2026-08-19, Matrice 4T on firmware as delivered:
+     * - 0x1900D004 一致性检查：一致性检查不通过 — literally "consistency check: consistency
+     *   check did not pass".
+     * - 0x1AFC0140 存在炸机日志，拉取并清理炸机日志后在进行飞测 — literally "crash logs are
+     *   present; pull and clear the crash logs before flight testing". 炸机 is the standard
+     *   term for a crashed aircraft, and 飞测 is flight test.
+     */
+    private val FAULT_ENGLISH: Map<String, String> = mapOf(
+        "0x1900D004" to "Consistency check failed",
+        "0x1AFC0140" to "Crash logs stored on the aircraft. Download and clear them before flight test",
+    )
+
+    /** True when the text holds Chinese characters, thus it was never localised. */
+    private fun hasCjk(s: String): Boolean = s.any { it.code in 0x4E00..0x9FFF }
+
+    /**
+     * Severity as a number, so the fault list can be ordered worst-first.
+     *
+     * Matched on the NAME and not on the enum, because an unknown level must not crash and
+     * must not silently sort to the top. An unrecognised name ranks 0 and lands last — it is
+     * still on the banner behind the "+N", never dropped.
+     */
+    private fun severityRank(level: String?): Int = when (level?.uppercase()) {
+        "SERIOUS", "FATAL" -> 4
+        "WARNING" -> 3
+        "CAUTION" -> 2
+        "NOTICE" -> 1
+        else -> 0
+    }
+
+    /**
+     * True when one of the two strings only repeats the other, so the banner must print one.
+     *
+     * Compared on letters and digits alone: the aircraft varies case and punctuation between
+     * the title and the description of the same fault, and adds the fault code in brackets to
+     * one of them. Both of those are repetition, not a second fact.
+     */
+    private fun repeats(a: String, b: String): Boolean {
+        val na = a.filter { it.isLetterOrDigit() }.lowercase()
+        val nb = b.filter { it.isLetterOrDigit() }.lowercase()
+        if (na.isEmpty() || nb.isEmpty()) return true
+        return na.contains(nb) || nb.contains(na)
+    }
+
     private fun humanReason(reason: String?): String? {
         val raw = reason?.trim().orEmpty()
         if (raw.isEmpty()) return null
