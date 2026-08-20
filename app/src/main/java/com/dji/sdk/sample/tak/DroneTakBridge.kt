@@ -52,7 +52,8 @@ class DroneTakBridge(
     // resolves.
     @Volatile private var droneUid: String = fallbackUid
 
-    /** Optional RTSP/stream url to advertise (rides the OPERATOR marker — see pushPilotPli). */
+    /** Optional RTSP/stream url to advertise. It rides BOTH markers — the drone PLI and the
+     *  operator PLI — deliberately. See the note in [pushOnce]. */
     @Volatile
     var videoUrl: String? = null
 
@@ -455,11 +456,20 @@ class DroneTakBridge(
             "spd=${"%.1f".format(speed)} batt=$battery% flying=$isFlying tak.connected=${tak.isConnected}")
 
         // north reference = 0: the <sensor azimuth> is an ABSOLUTE true-north bearing.
-        // videoUrl rides the OPERATOR marker instead of here — the stream is a screen capture
-        // of the controller and keeps running when the aircraft is down, but this drone PLI
-        // stops the moment there is no GPS fix (see pushPilotPli).
+        //
+        // ⚠ THE DRONE MARKER ADVERTISES THE VIDEO, and it passed null here until 2026-08-20.
+        // A pilot looking at the aircraft on the TAK map found no stream on it; the url was
+        // only on the OPERATOR marker. The Autel sibling fixed this on 2026-08-05 and this
+        // tree kept the older behaviour, which is the shape of defect to expect wherever this
+        // application still follows the MSDKv4 lineage instead of Autel.
+        //
+        // BOTH markers carry the same url, deliberately. The drone marker is where a pilot
+        // looks for the aircraft's video; the operator marker keeps the stream findable when
+        // the aircraft has no GPS fix and this message is not being sent at all — the stream
+        // is a screen capture of the controller and keeps running when the aircraft is down.
+        // Two markers advertising one stream is the point, not a duplication bug.
         tak.sendDronePLI(droneUid, droneCallsign, lat, lon, hae, heading, speed, battery,
-            null, spiUid,
+            videoUrl, spiUid,
             sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, 0.0,
             0.0, gimbalPitch, gimbalYaw,
             isFlying, flightTimeSec,
