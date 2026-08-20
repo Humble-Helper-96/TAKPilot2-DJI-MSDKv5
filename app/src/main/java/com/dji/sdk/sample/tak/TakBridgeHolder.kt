@@ -21,6 +21,26 @@ object TakBridgeHolder {
     private var bridge: DroneTakBridge? = null
     // Remembered so it survives bridge restarts (reconnect) and a start-before-connect order.
     private var videoUrl: String? = null
+
+    // ---- Aim calibration (V32, audit 2026-08-20; the Autel sibling's design) ----------------
+    const val DEFAULT_PITCH_OFFSET = 0.0
+    const val DEFAULT_BEARING_OFFSET = 0.0
+    /** These correct MOUNT TOLERANCE, not gross error. A pitch offset beyond this would mean
+     *  something mechanically wrong that calibration must not paper over. */
+    const val MAX_PITCH_OFFSET = 15.0
+
+    @Volatile private var pitchOffset: Double = DEFAULT_PITCH_OFFSET
+    @Volatile private var bearingOffset: Double = DEFAULT_BEARING_OFFSET
+
+    /** Sets the aim calibration. Clamped — a mistyped value is refused rather than quietly
+     *  aimed at the horizon. */
+    fun setAimOffsets(pitchDeg: Double, bearingDeg: Double) {
+        pitchOffset = pitchDeg.coerceIn(-MAX_PITCH_OFFSET, MAX_PITCH_OFFSET)
+        bearingOffset = ((bearingDeg % 360.0) + 540.0) % 360.0 - 180.0   // normalise to ±180
+    }
+
+    val currentPitchOffset: Double get() = pitchOffset
+    val currentBearingOffset: Double get() = bearingOffset
     private var cameraPointEnabled = false
     private var zoomFactor: Double = 1.0
 
@@ -32,7 +52,9 @@ object TakBridgeHolder {
     private var vFovBase: Double = DEFAULT_VFOV
 
     fun start(droneUid: String, droneCallsign: String) {
-        bridge?.stop()
+        // finalizeFlight=false: this is a RESTART, and the flight is the same flight. The
+        // replacement bridge continues the open GPX session instead of splitting it (V33).
+        bridge?.stop(finalizeFlight = false)
         bridge = DroneTakBridge(appContext, droneUid, droneCallsign).also {
             it.videoUrl = videoUrl
             it.cameraPointEnabled = cameraPointEnabled

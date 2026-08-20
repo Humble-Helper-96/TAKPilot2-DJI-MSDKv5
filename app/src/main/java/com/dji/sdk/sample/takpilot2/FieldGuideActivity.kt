@@ -110,12 +110,16 @@ import com.taklite.util.AppLog
  * "not an approval" warning, the obstacle "no mark is not clear" warning, and the
  * "nothing in this build has flown" warning.
  *
- * ## Two sections the Autel sibling has and this build does not
+ * ## One section the Autel sibling has and this build does not
  *
- * Both are absent because the FUNCTION is absent, not because the guide is behind:
- *  - **The controller buttons.** Nothing on the RC Plus is wired in this app — there is no
- *    hardware-button listener on the flight screen. Write that section when there is.
- *  - **The aim calibration.** There are no Aim Offsets in this build.
+ * Absent because the FUNCTION is absent, not because the guide is behind:
+ *  - **The controller buttons.** Nothing on the RC Plus is wired in this app — deferred by
+ *    the operator 2026-08-20 (C1/C2 preferred, a future decision). Write that section when
+ *    there is a listener.
+ *
+ * The aim calibration EXISTS since 2026-08-20 (V32) and is covered on the AR entry. Autel
+ * gives it a whole guide section; this guide keeps it to the entry, because the 2026-08-20
+ * cut fought for every word — expand it only if a pilot actually gets lost.
  *
  * The in-flight channel picker (touch and hold on the TAK badge) is documented in BOTH places
  * it can be reached from — section 2 with the rest of the channel rules, and on the TAK
@@ -354,8 +358,12 @@ class FieldGuideActivity : AppCompatActivity() {
             "Draws the markers on the live image near their positions. It is green when on, " +
                 "and on when you open the flight screen. A marker outside the image shows as " +
                 "an arrow at the edge: turn the camera that way.\n\n" +
-                "Touch and hold: select what the app draws, and set the air-traffic range. " +
-                "Air traffic positions can be about ten seconds old.",
+                "Touch and hold: select what the app draws, set the air-traffic range, and " +
+                "open Aim Offsets. Air traffic positions can be about ten seconds old.\n\n" +
+                "Aim Offsets moves every marker and the camera point together. If all the " +
+                "markers are wrong in the same direction, calibrate there: aim at a known " +
+                "object with the camera 25 degrees down, then adjust until the point sits on " +
+                "the object.",
             listOf(
                 "THE AR VIEW IS NOT ACCURATE FOR A POINT. It shows the general area of a " +
                     "marker. Do not use it to choose between objects that are close together, " +

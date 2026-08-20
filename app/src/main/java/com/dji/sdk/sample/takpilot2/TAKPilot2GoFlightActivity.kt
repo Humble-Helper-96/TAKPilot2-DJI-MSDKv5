@@ -485,6 +485,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
         // Load the calibrated FOV before the overlay draws anything with it.
         com.dji.sdk.sample.tak.ArSettings.loadFov(this)
+        com.dji.sdk.sample.tak.ArSettings.loadAimOffsets(this)
 
         arButton = findViewById(R.id.flightArButton)
         arButton.setOnClickListener { onArToggleTapped() }
@@ -1237,6 +1238,94 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             .setView(view)
             .setPositiveButton("Done", null)
             .setNeutralButton("Calibrate FOV…") { _, _ -> onArCalibrateTapped() }
+            .setNegativeButton("Aim Offsets…") { _, _ -> onAimOffsetsTapped() }
+            .show()
+    }
+
+    /**
+     * The in-flight aim calibration (V32, audit 2026-08-20; the Autel sibling's stepper,
+     * verbatim): a live pitch/bearing bias the pilot walks onto a known target. Without it
+     * the bearing correction was a compile-time constant, so a gimbal strike, a repair or an
+     * airframe swap had no field recovery for marker accuracy.
+     */
+    private fun onAimOffsetsTapped() {
+        AppLog.v(TAG, "aim calibration opened")
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        var pitch = TakBridgeHolder.currentPitchOffset
+        var bearing = TakBridgeHolder.currentBearingOffset
+
+        val hint = TextView(this).apply {
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            // Both directions spelled out for BOTH rows (the sibling's operator asked after
+            // flying it): a pilot mid-calibration should not have to infer that "−" is the
+            // opposite of the one direction the hint happened to name.
+            text = "Pitch +  sends the marker FARTHER from the aircraft, −  brings it " +
+                "closer.\nBearing +  swings it clockwise, −  swings it counter-clockwise.\n\n" +
+                "Aim at a known object with the gimbal 25° DOWN — a bias is nearly " +
+                "invisible looking straight down.\n\nFastest with a second TAK device: watch " +
+                "the camera point (name ends \"-SPI\") slide onto the target as you adjust." +
+                "\n\nDefault is 0.00° / 0.00° (uncalibrated)."
+        }
+
+        // Built in code rather than XML: two near-identical stepper rows, and a layout file
+        // would need its own ids for each without buying any clarity.
+        fun stepperRow(label: String, get: () -> Double, set: (Double) -> Unit): android.view.View {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, pad / 2, 0, pad / 2)
+            }
+            val name = TextView(this).apply {
+                text = label; textSize = 16f
+                setTextColor(android.graphics.Color.WHITE)
+                layoutParams = android.widget.LinearLayout.LayoutParams(0,
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val value = TextView(this).apply {
+                textSize = 18f; minWidth = (90 * resources.displayMetrics.density).toInt()
+                gravity = android.view.Gravity.CENTER
+                setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_accent))
+            }
+            fun show() { value.text = "%+.2f°".format(get()) }
+            show()
+            fun button(text: String, delta: Double) = android.widget.Button(this).apply {
+                this.text = text
+                setOnClickListener {
+                    set(get() + delta)
+                    com.dji.sdk.sample.tak.ArSettings.saveAimOffsets(
+                        this@TAKPilot2GoFlightActivity, pitch, bearing)
+                    // Read back: the holder clamps, so the display must show what was
+                    // ACCEPTED, not what was asked for — otherwise the pilot keeps tapping
+                    // past the limit.
+                    pitch = TakBridgeHolder.currentPitchOffset
+                    bearing = TakBridgeHolder.currentBearingOffset
+                    show()
+                }
+            }
+            row.addView(name)
+            row.addView(button("−", -0.25))
+            row.addView(value)
+            row.addView(button("+", 0.25))
+            return row
+        }
+
+        root.addView(stepperRow("Pitch offset", { pitch }, { pitch = it }))
+        root.addView(stepperRow("Bearing offset", { bearing }, { bearing = it }))
+        root.addView(hint)
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("Aim Calibration")
+            .setView(root)
+            .setPositiveButton("Done", null)
+            .setNeutralButton("Reset to 0") { _, _ ->
+                com.dji.sdk.sample.tak.ArSettings.resetAimOffsets(this)
+                Toast.makeText(this, "Aim calibration reset", Toast.LENGTH_SHORT).show()
+            }
             .show()
     }
 

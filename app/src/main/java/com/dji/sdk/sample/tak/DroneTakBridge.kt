@@ -327,13 +327,19 @@ class DroneTakBridge(
         )
     }
 
-    fun stop() {
+    /**
+     * @param finalizeFlight false when the caller is about to START A REPLACEMENT BRIDGE —
+     * an identity change mid-flight (enroll, logout-then-reconnect) is the same physical
+     * flight, and ending the logger session here split one flight into two GPX files
+     * (V33, audit 2026-08-20; the Autel sibling's fix).
+     */
+    fun stop(finalizeFlight: Boolean = true) {
         running = false
         handler.removeCallbacks(tick)
         OperatorLocation.stop()
         // Close the track now rather than leaving it to the orphan sweep. The sweep is the
         // crash path; a clean stop should produce a complete GPX immediately.
-        FlightPathLogger.endSession("bridge stopped")
+        if (finalizeFlight) FlightPathLogger.endSession("bridge stopped")
         // Session listens go; the AirLink signal listens on signalHolder deliberately stay
         // (see signalHolder's doc).
         runCatching { KeyManager.getInstance().cancelListen(sessionHolder) }
@@ -526,7 +532,7 @@ class DroneTakBridge(
         return if (relYaw != null && relYaw.isFinite())
             CameraSlantPoint.norm360(aircraftHeading + relYaw)
         else
-            CameraSlantPoint.norm360(rawYaw + BEARING_OFFSET_DEG)
+            CameraSlantPoint.norm360(rawYaw + TakBridgeHolder.currentBearingOffset)
     }
 
     private fun pushCameraPoint(lat: Double, lon: Double, aglMeters: Double, aircraftHeading: Double) {
@@ -539,8 +545,10 @@ class DroneTakBridge(
         val yaw = gimbal.yaw
         val bearing = cameraBearing(yaw, aircraftHeading)
 
-        // Slant-range calibration bias — see PITCH_OFFSET_DEG note below.
-        val pitchAdj = pitch + PITCH_OFFSET_DEG
+        // Slant-range calibration bias — the pilot-adjustable aim offset (V32). Ground error
+        // from an aim bias scales as 1/sin²(pitch): at 200ft AGL one degree is ~5ft at 54°
+        // down but ~320ft at 6°, so it hides at steep angles and must be measured shallow.
+        val pitchAdj = pitch + TakBridgeHolder.currentPitchOffset
 
         // ABOVE THE HORIZON THERE IS NO LOOK-POINT, SO PUBLISH NOTHING. An absent SPI is
         // honest; a fabricated one is worse than none, because the team will act on it.
@@ -562,7 +570,11 @@ class DroneTakBridge(
         sensorFov = hFovDeg(zoomFactor)
         sensorVfov = vFovDeg(zoomFactor)
         sensorAzimuth = bearing
-        sensorElevation = pitch
+        // pitchAdj, NOT raw pitch. This published the raw value while the suppressed branch
+        // above published the adjusted one — harmless while the offset was a 0.0 constant,
+        // and wrong the moment V32 made it calibratable: the cone's elevation would disagree
+        // with the look-point the same calibration moves. (Bridge audit finding, 2026-08-20.)
+        sensorElevation = pitchAdj
         sensorRange = gp.rangeMeters
         AppLog.d(TAG, "SPI: pitch=$pitch yaw=$yaw heading=${"%.0f".format(aircraftHeading)} " +
             "az=${"%.0f".format(bearing)} alt=$aglMeters range=${Math.round(gp.rangeMeters)}m")
@@ -652,7 +664,7 @@ class DroneTakBridge(
         val gimbal = lastGimbalAttitude ?: return null
         if (lastLocation == null) return null
         val heading = (((lastHeading ?: 0.0) % 360.0) + 360.0) % 360.0
-        return CameraPose(cameraBearing(gimbal.yaw, heading), gimbal.pitch + PITCH_OFFSET_DEG)
+        return CameraPose(cameraBearing(gimbal.yaw, heading), gimbal.pitch + TakBridgeHolder.currentPitchOffset)
     }
 
     /**
@@ -668,7 +680,7 @@ class DroneTakBridge(
         val heading = (((lastHeading ?: 0.0) % 360.0) + 360.0) % 360.0
         val bearing = cameraBearing(gimbal.yaw, heading)
         val gp = CameraSlantPoint.compute(
-            loc.latitude, loc.longitude, hae, bearing, gimbal.pitch + PITCH_OFFSET_DEG,
+            loc.latitude, loc.longitude, hae, bearing, gimbal.pitch + TakBridgeHolder.currentPitchOffset,
             ::elevationLookup, aircraftMsl(hae),
         )
         return Triple(gp.lat, gp.lon, gp.elevationMeters)
@@ -714,17 +726,11 @@ class DroneTakBridge(
         /** Flight-readiness snapshots — survives the "TAK logging off" filter. */
         private const val READY_TAG = "TP2Ready"
 
-        // NOT YET FIELD-CALIBRATED for the Matrice 4T. Only matters when
-        // KeyYawRelativeToAircraftHeading is unavailable (cameraBearing() prefers that
-        // heading-stable value first). To recalibrate: point the camera at a known compass
-        // direction, compare the cone in ATAK/WinTAK against reality, adjust this constant.
-        private const val BEARING_OFFSET_DEG = 0.0
-
-        // Slant-range (look-point distance) calibration bias added to gimbal pitch.
-        private const val PITCH_OFFSET_DEG = 0.0
-
-        /** Shared so the AR overlay uses the same bearing correction as the cone. */
-        fun bearingOffsetDeg() = BEARING_OFFSET_DEG
+        // The aim offsets are LIVE VALUES on TakBridgeHolder now (V32), set from the flight
+        // screen's Aim Calibration dialog and persisted by ArSettings — they are airframe
+        // property, re-checked after a gimbal strike, a repair or an airframe swap. The
+        // compile-time constants that lived here are gone; a constant nobody can adjust in
+        // the field was the finding.
 
         /**
          * Camera field of view, corrected for digital zoom, shared with the AR overlay.
