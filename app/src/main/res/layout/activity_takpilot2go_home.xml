@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="horizontal"
     android:background="@color/tp_bg_home"
-    android:padding="20dp"
+    android:padding="14dp"
     android:baselineAligned="false">
 
     <!-- LEFT: logo + status + Quick Controls. Scrolls instead of silently squashing the last
@@ -14,32 +14,42 @@
          the bottom, since its wrap_content child got an AT_MOST spec capped to whatever sliver
          of space was left).
 
-         ⚠ HEIGHT BUDGET — specification §3.4. THE SCROLLVIEW IS LOAD-BEARING ON THE PHONE.
+         ⚠ HEIGHT BUDGET — specification §3.4. THE SCROLLVIEW IS LOAD-BEARING.
          DO NOT REMOVE IT to make this column look like the ENTER FLIGHT card beside it.
 
-         S20 Ultra landscape is 411dp tall, less 40dp of root padding = 371dp available.
-         This column needs about 431dp:
+         ✔ MEASURED ON THE RC PLUS 2, 2026-08-20. The earlier budget here was arithmetic
+         against a phone, written with no device attached, and two of its numbers were wrong:
+         the buttons render 36dp tall, not the 48dp platform default it assumed, and the gaps
+         between them render about 20dp where the layout asks for 8dp — the Button background
+         carries its own inset.
 
-             logo row 64 + 6
-           + card marginTop 12 + padding 14 x 2
-           + title 16
-           + 4 navigation buttons at 48dp + margins (10 + 8 + 8 + 8)
-           + divider 18 + 1
-           + STOP/QUIT 12 + 48
+         What the screen actually gives this column: the window is 1160px tall and the root
+         padding takes 14dp from each end, so the content area ends at y=1110px.
 
-         So it overflows by roughly 60dp and DOES scroll today, on the device this application
-         ships to. The 48dp is the platform default button height, so the total is an estimate —
-         but the overflow is not theoretical: the 4th-button incident above is the same column
-         running out of the same screen.
+         Before this change STOP/QUIT started at y=1109px — one pixel above the fold, thus
+         entirely off screen, and the operator had to scroll to reach it. It was NOT reachable
+         without scrolling on the device this application ships to.
 
-         The specification's "fixed-height columns with weighted spacers" is about the ENTER
-         FLIGHT card, which is `match_parent` with a weighted spacer further down this file.
+         About 48dp was taken back, all of it from padding and gaps:
+
+             root padding      20 -> 14   (12dp, both ends)
+             card padding      14 -> 10   ( 8dp, both ends)
+             card marginTop    12 ->  8   ( 4dp)
+             button margins  10/8/8/8 -> 6/4/4/4  (16dp)
+             divider marginTop 18 -> 12   ( 6dp)
+             STOP/QUIT margin  12 -> 10   ( 2dp)
+
+         ⚠ NO BUTTON GOT SHORTER. They are already 36dp, below the 48dp touch guideline, and
+         this screen is used in gloves. Take space from gaps, never from a target.
+
+         ⚠ The divider and gap above STOP/QUIT are TIGHTENED, NOT REMOVED. They exist because
+         it is the only irreversible control on the card — see its own note below.
+
+         Adding a row here: measure it on the device, do not re-derive it. If the column
+         overflows again the ScrollView still catches it, and that is the point of keeping it.
          The Autel sibling, which is the base, wraps ITS left column in a ScrollView too.
-
-         Adding a row here: add the dp to the sum above. If the total passes 371dp by more than
-         it does now, the phone scrolls further, which is acceptable. What is NOT acceptable is
-         removing the ScrollView — that is when overflow goes back to being silent.
-         **This budget is arithmetic, not a measurement.** No device was attached. -->
+         The specification's "fixed-height columns with weighted spacers" is about the ENTER
+         FLIGHT card, which is `match_parent` with a weighted spacer further down this file. -->
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -100,28 +110,28 @@
                 style="@style/TakButton.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="6dp"
                 android:text="Pre-Flight Setup" />
             <Button
                 android:id="@+id/homeFieldGuide"
                 style="@style/TakButton.Info"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:text="Field Guide" />
             <Button
                 android:id="@+id/homeDataSync"
                 style="@style/TakButton.Neutral"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:text="Data Sync" />
             <Button
                 android:id="@+id/homeDebugLog"
                 style="@style/TakButton.Neutral"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:text="Debug Log" />
 
             <!-- STOP / QUIT LAST, BEHIND A DIVIDER AND A GAP.
@@ -134,14 +144,14 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="12dp"
                 android:background="@color/tp_border" />
             <Button
                 android:id="@+id/homeQuit"
                 style="@style/TakButton.Danger"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="10dp"
                 android:text="STOP / QUIT" />
         </LinearLayout>
 
@@ -163,12 +173,13 @@
 
         <View android:layout_width="0dp" android:layout_height="0dp" />
 
-        <ImageView
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:src="@drawable/takpilot2_logo"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp" />
+        <!-- The TAK logo was here: 72dp plus 4dp/8dp of margin, 84dp of this card's height.
+             Removed 2026-08-20 to give that height back to information (operator). The mark is
+             already on the header at the top left of this same screen, so nothing is lost by
+             taking it off the card — it was decoration in the one place the card has to carry
+             the aircraft, the link and the TAK state.
+
+             ⚠ 84dp is now free here. Spend it on a readout, not on putting the logo back. -->
 
         <TextView
             android:layout_width="wrap_content"

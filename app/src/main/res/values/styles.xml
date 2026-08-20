@@ -255,8 +255,11 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@color/tp_surface_card</item>
-        <item name="android:padding">14dp</item>
-        <item name="android:layout_marginTop">12dp</item>
+        <!-- 10dp/8dp since 2026-08-20, cut from 14dp/12dp to fit the RC Plus 2's home
+             screen without scrolling. See the height budget on the ScrollView in
+             activity_takpilot2go_home.xml. -->
+        <item name="android:padding">10dp</item>
+        <item name="android:layout_marginTop">8dp</item>
     </style>
     <style name="homeCardTitle">
         <item name="android:layout_width">wrap_content</item>
