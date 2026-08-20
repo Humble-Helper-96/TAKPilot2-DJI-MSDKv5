@@ -423,9 +423,18 @@ class TakConnectActivity : AppCompatActivity() {
      * Unlocking asks for a password; locking does not. The asymmetry is deliberate — locking is
      * the safe direction, and gating it would only train people to dismiss dialogs.
      */
-    /** The battery levels, the stick mode and the signal-loss behaviour — what a stray tap must
-     *  not change. The numeric limit fields stay editable, matching the siblings: editing one
-     *  only saves it locally, and nothing reaches the aircraft without Apply or a connect.
+    /** THE TWO BATTERY PERCENTAGES ONLY. The numeric limit fields stay editable, matching the
+     *  siblings: editing one only saves it locally, and nothing reaches the aircraft without
+     *  Apply or a connect.
+     *
+     *  ⚠ THE STICK MODE AND THE SIGNAL-LOSS BEHAVIOUR ARE NOT ON THIS LIST, and they were until
+     *  2026-08-20. The checkbox says "Lock battery levels" and it was locking three unrelated
+     *  groups, which is how the operator found it — a control that does more than its label
+     *  says is a control a pilot cannot reason about.
+     *
+     *  Specification §5.5 names this lock's scope as "aircraft (battery levels)", and the Autel
+     *  sibling has always implemented exactly the two percentages. This tree and the MSDKv4
+     *  sibling both drifted; this is the correction, not a new decision.
      *
      *  ⚠ APPLY IS NOT ON THIS LIST, and it was until 2026-08-18. Specification §5.5: the lock
      *  guards what the configuration IS, not what you do with it. A locked, known-good
@@ -435,16 +444,14 @@ class TakConnectActivity : AppCompatActivity() {
      *  same pilot. */
     private val aircraftLockedFields = listOf(
         R.id.limitLowBattery, R.id.limitCriticalBattery,
-        R.id.stickMode1, R.id.stickMode2, R.id.stickMode3,
-        R.id.failsafeGoHome, R.id.failsafeHover, R.id.failsafeLand,
     )
 
     private fun setupConfigLocks() {
         setupOneLock(
             R.id.limitBatteryLock, KEY_AIRCRAFT_LOCKED, aircraftLockedFields,
             "Unlock battery levels?",
-            "These decide when the aircraft returns and lands on its own, and what the control " +
-                "sticks do. A wrong value can force a landing away from the pilot.",
+            "These decide when the aircraft warns you and when it lands on its own. A wrong " +
+                "value can force a landing away from the pilot.",
         )
         setupOneLock(
             R.id.takLockConfig, KEY_TAK_LOCKED, takLockedFields,
