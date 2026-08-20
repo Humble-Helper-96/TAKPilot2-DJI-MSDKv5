@@ -31,10 +31,23 @@
          against 411dp of screen, so 9dp of slack. The conformance note on the D1 fix
          names exactly this remedy: take the height from flight_map_size, never by re-joining
          the readout lines. **This is arithmetic, not a measurement.** -->
-    <dimen name="flight_map_size">110dp</dimen>
-    <!-- Keeps the resource row clear of the HUD column: map width plus the column's end
-         padding. Tracks flight_map_size by hand, so change both together. -->
-    <dimen name="flight_resource_row_margin_end">124dp</dimen>
+    <!-- ⚠ 148dp, NOT 110dp, since 2026-08-19. This is the COLUMN width, thus it is also the
+         width the aircraft's latitude and longitude have to print in. At 110dp the pair wrapped
+         onto two lines on the RC Plus 2 (operator). The coordinate line is about 18 characters
+         at roughly 6dp each, about 108dp, and the panel adds 8dp of padding on each side — so
+         the column needs about 124dp before the pair fits on one line, and 148dp leaves room
+         for a third digit of longitude.
+
+         Raising this widens the MAP too, because the map takes the column's width. That is
+         accepted here: the RC Plus 2 is 768dp wide and the column costs 152dp of it.
+         flight_map_height is deliberately NOT raised with it — the vertical budget above has
+         only about 14dp of slack on this device, while width is abundant. -->
+    <dimen name="flight_map_size">148dp</dimen>
+    <!-- ⚠ DERIVED, NOT A FREE NUMBER: flight_map_size + the HUD column's paddingEnd, which is
+         4dp since 2026-08-19 (it was 14dp, which left a visible gap against the right edge of
+         the screen). 148 + 4 = 152. Change this in EVERY bucket whenever either input moves;
+         the specification makes it a MUST because it has silently broken twice. -->
+    <dimen name="flight_resource_row_margin_end">152dp</dimen>
     <!-- Separate from flight_map_size so a taller screen can carry a taller map
          without a wider HUD column. Equal to the width today, so the map is square
          and nothing moved when this was introduced (conformance D8). -->

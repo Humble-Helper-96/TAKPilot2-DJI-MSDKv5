@@ -134,7 +134,13 @@
          weighted spacer, the layout engine guarantees they cannot overlap at any screen size and
          the spacer absorbs whatever height is left over.
 
-         Sits over the pillarbox to the right of the 16:9 video, not over the image itself. -->
+         Sits over the pillarbox to the right of the 16:9 video, not over the image itself.
+
+         ⚠ paddingEnd is 4dp, not 14dp, since 2026-08-19: 14dp left a visible band of wasted
+         screen between this whole stack and the right edge (operator). 4dp matches the
+         toolbar's own paddingHorizontal, so the HUD, the map and the action bar now share one
+         right margin. That padding is an INPUT to @dimen/flight_resource_row_margin_end
+         (map width + this padding) — move one and you move the other, in every bucket. -->
     <LinearLayout
         android:id="@+id/flightHudColumn"
         android:layout_width="wrap_content"
@@ -144,7 +150,7 @@
         android:orientation="vertical"
         android:paddingTop="60dp"
         android:paddingBottom="12dp"
-        android:paddingEnd="14dp">
+        android:paddingEnd="4dp">
 
         <!-- TOP HUD PANEL: exposure controls, clock, telemetry and gimbal, on one
              translucent backing. Ported from the Autel sibling 2026-08-14 (conformance D4,
@@ -318,7 +324,30 @@
 
     <!-- Instrument toolbar: TAKPilot2's blue chrome, houses status readouts + flight actions.
          Solid bar overlaid on the video (not letterboxed space) — same overlay-on-FPV pattern
-         already used by the HUD/status bars below. -->
+         already used by the HUD/status bars below.
+
+         ⚠ THIS BAR HAS A WIDTH BUDGET. The RC Plus 2 is 768dp wide, less 4dp of padding on
+         each side, thus 760dp for the children. The bar is one horizontal LinearLayout with
+         fixed widths and ONE weighted spacer between the left status cluster and the right
+         action cluster. When the children total more than 760dp, the spacer collapses to zero
+         and the LAST children simply run off the right edge — LinearLayout does not shrink a
+         fixed-width child, and nothing reports the overflow.
+
+         That happened: the children totalled about 810dp, so the record toggle was cut in
+         half at the screen edge (operator, 2026-08-19).
+
+         The fix that stuck was NOT making the action controls smaller. It was stacking the
+         signal and GPS numbers under their icons instead of beside them, which returned
+         about 64dp on its own — enough to keep every control on the right at full size. The
+         bar now totals about 726dp, thus roughly 34dp sits in the spacer. Prefer that kind
+         of change: shrinking a control a pilot has to hit while flying is the last resort,
+         not the first.
+
+         BEFORE YOU ADD A CONTROL HERE, or make one wider, add up the children first. A new
+         46dp control needs 46dp taken from somewhere else. Check it on the device: the
+         failure is silent and the clipped control is still touchable where it is drawn.
+
+         The drop-pin stays the widest action control — see its own note below. -->
     <LinearLayout
         android:id="@+id/flightToolbar"
         android:layout_width="match_parent"
@@ -348,7 +377,7 @@
             android:id="@+id/toolbarTakButton"
             android:layout_width="34dp"
             android:layout_height="34dp"
-            android:layout_marginEnd="14dp"
+            android:layout_marginEnd="10dp"
             android:clickable="true"
             android:focusable="true"
             android:background="?android:attr/selectableItemBackgroundBorderless"
@@ -377,50 +406,72 @@
             android:id="@+id/toolbarBattery"
             android:layout_width="34dp"
             android:layout_height="34dp"
-            android:layout_marginEnd="14dp"
+            android:layout_marginEnd="10dp"
             android:contentDescription="Battery" />
 
-        <com.dji.sdk.sample.takpilot2.SignalBarsView
-            android:id="@+id/toolbarSignal"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
-            android:contentDescription="RC signal strength" />
+        <!-- Signal and GPS put the number UNDER the icon, not beside it (operator,
+             2026-08-19). Side by side, the two cost 144dp of the bar's width budget; stacked
+             they cost 80dp. That is what buys the right-hand action cluster its full size on
+             a 768dp screen. It is also the shape the battery gauge beside them already has —
+             a number inside/under its own icon — so the status cluster now reads as one row
+             of gauges instead of three icon+label pairs.
 
-        <TextView
-            android:id="@+id/toolbarSignalText"
+             The ids do not change, thus the Kotlin that fills them is untouched. -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="14dp"
-            android:alpha="0.4"
-            android:text="—%"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:layout_marginEnd="10dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
 
-        <ImageView
-            android:id="@+id/toolbarGpsIcon"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
-            android:contentDescription="GPS satellites"
-            android:src="@drawable/ic_gps" />
+            <com.dji.sdk.sample.takpilot2.SignalBarsView
+                android:id="@+id/toolbarSignal"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:contentDescription="RC signal strength" />
 
-        <TextView
-            android:id="@+id/toolbarGps"
+            <TextView
+                android:id="@+id/toolbarSignalText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:alpha="0.4"
+                android:text="—%"
+                android:textColor="@color/tp_text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="14dp"
-            android:text="—"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:layout_marginEnd="10dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <ImageView
+                android:id="@+id/toolbarGpsIcon"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:contentDescription="GPS satellites"
+                android:src="@drawable/ic_gps" />
+
+            <TextView
+                android:id="@+id/toolbarGps"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textColor="@color/tp_text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/flightRthButton"
             android:layout_width="40dp"
             android:layout_height="34dp"
-            android:layout_marginEnd="12dp"
+            android:layout_marginEnd="8dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Return to home"
             android:padding="1dp"
