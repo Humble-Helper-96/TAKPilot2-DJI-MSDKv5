@@ -148,8 +148,14 @@ object ExposureController {
             CameraMeteringMode.CENTER,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() = afterMetering(context, "OK", onDone)
+                // ⚠ description() is a Java method, thus Kotlin sees a platform type and lets
+                // it go to a non-null String parameter with no warning. The M4T returns NULL
+                // here when it refuses the metering write, and the compiler's null check then
+                // crashed the flight screen on open (bench, 2026-08-19). Keep the fallback.
+                // The other description() call sites in this tree are string templates or `+`
+                // concatenation, which take null safely; an argument position does not.
                 override fun onFailure(error: IDJIError) =
-                    afterMetering(context, error.description(), onDone)
+                    afterMetering(context, error.description() ?: "refused (no description)", onDone)
             },
         )
     }
