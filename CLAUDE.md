@@ -40,10 +40,20 @@ behaviour and the recording storage guards match the Autel application's impleme
 Do not reinvent them, and do not copy the third-party V1 tree's GUI — that tree is an API
 crib sheet only.
 
-**When you look for reference code, use the MSDKv4 checkout at
-`../../v4/Mobile-SDK-Android-4.18/Sample Code/`, on `main`.** That tree had a second
-checkout (`SampleCode-device-compat`) and a second branch until 2026-08-18; both are gone,
-and the two confused three sessions between them. There is now one directory and one branch.
+**When you look for reference code, the AUTEL TREE COMES FIRST:
+`../../../Autel/AutelTAKPilot2/takpilot-autel_v1-2/`, v1.6.2.** It is the most advanced of
+the three applications, it targets a smart controller like this one, and it carries months of
+operator-driven fixes. The MSDKv4 checkout at `../../v4/Mobile-SDK-Android-4.18/Sample Code/`
+(on `main`; its second checkout and branch are gone since 2026-08-18) is the reference for
+DJI API MECHANICS only — how to call the SDK, not what the application should do.
+
+⚠ This order matters and the old order caused a real defect. This file used to name the
+MSDKv4 tree as THE reference, and this tree was forked from it — so it inherited v4-era
+behaviour that Autel had already fixed. Found on the bench 2026-08-20: the drone marker's
+video advertisement passed `null`, a bug Autel fixed on 2026-08-05, and the code carried a
+confident comment explaining why the old behaviour was right. Where the two references
+disagree about BEHAVIOUR, Autel wins; where the question is how to talk to the DJI SDK, the
+v4 tree and the V1 crib sheet are the places to look.
 
 ## Safety rules — these come from real incidents on the siblings
 
