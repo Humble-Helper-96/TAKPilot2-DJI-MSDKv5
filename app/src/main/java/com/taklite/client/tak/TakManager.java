@@ -206,32 +206,35 @@ public class TakManager implements TakClient.TakClientListener {
         initialPliSent = false;
     }
 
-
     /**
      * CHANNEL SELECTION IS REMOVED (operator, 2026-08-15), and this note is why.
      *
      * This class used to hold the channels a pilot picked on TAK Setup and inject
      * {@code <marti><dest group="…" send="true"/></marti>} into every CoT that went through
-     * {@link #sendCot}. IT SILENTLY DESTROYED MARKERS. The server would not route them and
-     * simply dropped them; with no channel selected they arrived at once. Proved on the Autel
-     * sibling's controller 2026-08-15 by sending one marker each way and reading the bytes.
+     * {@link #sendCot}. IT SILENTLY DESTROYED MARKERS. With channels selected, the server would
+     * not route them and simply dropped them; with none selected they arrived at once. Proved on
+     * the fleet controller 2026-08-15 by watching one marker with the block and one without.
      *
      * It would have done the same to an alert — {@link #sendAlert} takes the same path — but
-     * nothing in this application calls sendAlert, so no alert was lost. That method and its
-     * listener are unreachable code carried by this shared core.
+     * NOTHING IN THIS APPLICATION CALLS sendAlert, so no alert was ever lost. That method and
+     * its listener are unreachable code carried by this shared core. The first write-up of this
+     * bug claimed alerts were being dropped; that was wrong, and it reached the v1.6.1 release
+     * notes before it was caught. If an alert control is ever added, this path is what it uses.
      *
-     * It was also never applied evenly: the drone PLI and the camera point call
-     * {@link TakClient#sendMessage} directly and ignored the selection entirely, so a pilot who
-     * picked channels to LIMIT who saw this aircraft still broadcast its position to everyone.
-     * The feature failed in both directions, and had done since it was written.
+     * It was also never applied evenly. The drone PLI and the camera point call
+     * {@link TakClient#sendMessage} directly, so they ignored the selection entirely — a pilot
+     * who picked channels to LIMIT who saw this aircraft still broadcast its position to
+     * everyone. The feature failed in both directions at once, and had done so since the v1.2
+     * baseline.
      *
-     * Routing is now the certificate's group membership, which is what the server does with no
-     * marti block and what every working message here already relied on.
+     * Routing is now left to the certificate's group membership, which is what the server does
+     * with no marti block, and what every working message in this application already relied on.
      *
-     * DO NOT RE-ADD {@code <dest group>} WITHOUT TESTING A MARKER END TO END on a real server.
-     * What a TAK Server accepts for client-chosen channel routing is an open question — that is
-     * the work this removal defers, not a detail to guess at.
+     * DO NOT RE-ADD {@code <dest group>} WITHOUT TESTING A MARKER AND AN ALERT END TO END on a
+     * real server. The mechanism a TAK Server actually accepts for client-chosen channel routing
+     * is an open question — that is the work this removal defers, not a detail to guess at.
      */
+
     /**
      * Sends one CoT to the server.
      *
@@ -271,7 +274,6 @@ public class TakManager implements TakClient.TakClientListener {
         if (s == null) return null;
         return s.replaceAll("://[^:/@\\s\"]+:[^@\\s\"]+@", "://<user>:<pass>@");
     }
-
 
     /**
      * The {@code <takv device="...">} value: hardware model plus the CURRENT callsign, so a

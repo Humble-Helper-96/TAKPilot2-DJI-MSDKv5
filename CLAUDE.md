@@ -72,7 +72,12 @@ v4 tree and the V1 crib sheet are the places to look.
 5. **Correct a sign ONE time, at ingest, never in consumers.** When one value has the wrong
    sign, examine the others immediately.
 6. **`com.taklite.client.tak` must not import an SDK.** It is vendor-neutral by contract and
-   it is the same code in all three trees. A change here belongs in all of them.
+   it is the same code in all three trees. A change here belongs in all of them — and since
+   2026-08-20 the contract is EXECUTABLE: the master copy lives in
+   `../../../taklite-core/`, and `../../../taklite-core/check-taklite.sh` diffs every tree
+   against it (this tree carries three pinned waivers; see the master's README). Run it after
+   any change under `com/taklite`. The contract drifted silently for months before this
+   existed, and that drift is how four wire-level defects hid (conformance V40).
 7. **Test the hardware before you design around its limits.** Three wrong "the SDK cannot do
    this" calls on the Autel sibling came from auditing one subsystem instead of the whole
    surface.
