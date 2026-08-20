@@ -529,7 +529,7 @@
             android:layout_height="34dp"
             android:layout_marginStart="8dp"
             android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Toggle camera zoom (1x/2x)"
+            android:contentDescription="Camera zoom: 1X, 3X, 7X, 14X, 28X"
             android:gravity="center"
             android:text="1X"
             android:textColor="@color/tp_text_primary"

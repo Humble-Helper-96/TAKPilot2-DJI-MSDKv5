@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import com.dji.sdk.sample.R
 import com.dji.sdk.sample.tak.ArSettings
 import com.dji.sdk.sample.tak.CameraSlantPoint
+import com.dji.sdk.sample.tak.ZoomLadder
 import com.dji.sdk.sample.tak.DjiObstacleState
 import com.dji.sdk.sample.tak.DjiSdkBridge
 import android.content.Intent
@@ -55,7 +56,11 @@ import dji.sdk.keyvalue.key.CameraKey
 import dji.sdk.keyvalue.key.DJIActionKeyInfo
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.KeyTools
+import dji.sdk.keyvalue.value.common.CameraLensType
 import dji.sdk.keyvalue.value.camera.CameraMode
+import dji.sdk.keyvalue.value.camera.CameraVideoStreamSourceType
+import dji.sdk.keyvalue.value.camera.ZoomRatiosRange
+import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.sdk.keyvalue.value.common.EmptyMsg
 import dji.sdk.keyvalue.value.common.LocationCoordinate2D
 import dji.v5.common.callback.CommonCallbacks
@@ -113,7 +118,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private var cachedFaaCeilingFt: Int? = null
     private var cachedFaaWithinDownloadedArea = false
     private var currentCallsign: String = ""
-    private var zoomedIn = false
+    /** The zoom rung the camera is on, as [ZoomLadder] units. 1.0 is the wide camera. */
+    private var zoomRatio = ZoomLadder.MIN
 
     private var map: MapboxMap? = null
     private var aircraftSource: GeoJsonSource? = null
@@ -133,6 +139,22 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * the banner hides, thus a new set of faults always arrives collapsed.
      */
     private var warningExpanded = false
+
+    private var flightShootPhotoButton: ImageButton? = null
+
+    /**
+     * True from the shutter tap until the camera is back in VIDEO mode.
+     *
+     * ⚠ WITHOUT THIS, RAPID TAPS OVERLAP AND FAIL. On the bench (2026-08-20) three taps in
+     * 1.5s started three mode-switch/expose/shoot/restore sequences at once. One photo was
+     * taken and the other two returned a NULL error, so the pilot read "Photo failed: null"
+     * while a photo had in fact been saved. Three restore loops then ran concurrently.
+     *
+     * The pilot was not misusing it. The mode switch takes about 1.5s and the button gave no
+     * sign of working, so a second press is the natural thing to do — which is why this flag
+     * comes with [setShutterBusy] and not on its own.
+     */
+    private var photoSequenceActive = false
     private lateinit var obstacles: ObstacleEdgeView
     // Edge-triggers the "Home Point Set" notice only on the false->true transition (not every
     // tick while it's already set), and only once per bridge session.
@@ -478,7 +500,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<ImageButton>(R.id.flightShootPhotoButton).setOnClickListener { onShootPhotoTapped() }
+        flightShootPhotoButton = findViewById<ImageButton>(R.id.flightShootPhotoButton).also {
+            it.setOnClickListener { onShootPhotoTapped() }
+        }
 
         liveToggle = findViewById(R.id.flightStreamButton)
         liveToggle.setOnClickListener { onLiveToggleTapped() }
@@ -916,26 +940,89 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     private fun onZoomTapped() {
-        AppLog.v(TAG, "tap: zoom (currently ${if (zoomedIn) "2x" else "1x"})")
+        AppLog.v(TAG, "tap: zoom (currently ${ZoomLadder.label(zoomRatio)})")
         if (!DjiSdkBridge.isProductConnected) {
             AppLog.w(TAG, "zoom ignored — aircraft not connected")
             Toast.makeText(this, "Aircraft not connected", Toast.LENGTH_SHORT).show()
             return
         }
-        val targetZoomedIn = !zoomedIn
-        val targetFactor = if (targetZoomedIn) 2.0 else 1.0
-        // v5: one zoom knob (KeyCameraZoomRatios) covers digital and, on the M4T, hybrid
-        // zoom. There is no support-check getter; an unsupported camera rejects the set and
-        // the failure toast covers it.
+        // One button, so a tap walks up the ladder and wraps to 1x at the top. Every rung is
+        // a gear the camera published — see [ZoomLadder], and do not put a value here that the
+        // camera did not name.
+        val targetFactor = ZoomLadder.stepUpOrWrap(zoomRatio)
+        val targetZoomedIn = !ZoomLadder.isWide(targetFactor)
+
+        // ⚠ ZOOM LIVES ON THE STREAM SOURCE, NOT ON A LENS ARGUMENT.
+        //
+        // Measured on the bench 2026-08-20, in this order:
+        //  - A bare createKey(KeyCameraZoomRatios) was accepted and the picture never moved.
+        //  - Naming CAMERA_LENS_ZOOM changed nothing: setting the ratio on ONE lens makes
+        //    BOTH lenses read it back, so the camera holds one zoom value and the lens
+        //    argument is ignored.
+        //  - Asking 2.0 returned 3.0. The camera reports isContinuous=false with gears
+        //    [1, 3, 7, 14, 28, 56, 112], thus 2x does not exist and the button was showing a
+        //    magnification the camera was not at.
+        //  - Asking 3.0 returned exactly 3.0, and the picture STILL did not move, because the
+        //    video stream was CAMERA_LENS_WIDE — the wide lens's own view, which does not
+        //    care about the zoom ratio.
+        //
+        // So: the wide lens is 1x, and any magnification means streaming the ZOOM camera.
+        // 1x switches back. That is the operator's design (2026-08-20) and it is the only one
+        // the measurements leave standing.
+        val targetSource =
+            if (targetZoomedIn) CameraVideoStreamSourceType.ZOOM_CAMERA
+            else CameraVideoStreamSourceType.WIDE_CAMERA
+        val sourceKey = KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, MAIN_CAM)
+        val zoomKey = KeyTools.createCameraKey(
+            CameraKey.KeyCameraZoomRatios, MAIN_CAM, CameraLensType.CAMERA_LENS_ZOOM)
+        AppLog.i(TAG, "zoom: switching stream source to $targetSource, then ratio $targetFactor")
+
+        KeyManager.getInstance().setValue(sourceKey, targetSource,
+            object : CommonCallbacks.CompletionCallback {
+                override fun onSuccess() {
+                    val nowSource = runCatching {
+                        KeyManager.getInstance().getValue(
+                            sourceKey, CameraVideoStreamSourceType.UNKNOWN)
+                    }.getOrNull()
+                    AppLog.i(TAG, "zoom: stream source read-back = $nowSource")
+                    applyZoomRatio(zoomKey, targetFactor, targetZoomedIn)
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    AppLog.w(TAG, "zoom: stream source switch refused: ${describeError(error)}")
+                    runOnUiThread {
+                        Toast.makeText(this@TAKPilot2GoFlightActivity,
+                            "Could not switch lens: ${describeError(error)}",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            })
+    }
+
+    /** Sets the zoom ratio and reports what the camera actually holds afterwards. */
+    private fun applyZoomRatio(
+        zoomKey: dji.sdk.keyvalue.key.DJIKey<Double>,
+        targetFactor: Double,
+        targetZoomedIn: Boolean,
+    ) {
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyCameraZoomRatios),
+            zoomKey,
             targetFactor,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "KeyCameraZoomRatios($targetFactor): OK")
+                    // READ IT BACK. The set returning OK is what misled this screen for two
+                    // days; the value the camera holds is the only answer that counts.
+                    val readBack = runCatching {
+                        KeyManager.getInstance().getValue(zoomKey, -1.0)
+                    }.getOrNull()
+                    AppLog.i(TAG, "zoom read-back: camera holds $readBack (asked $targetFactor)")
                     runOnUiThread {
-                        zoomedIn = targetZoomedIn
-                        zoomButton.text = if (zoomedIn) "2X" else "1X"
+                        zoomRatio = readBack?.takeIf { it > 0 } ?: targetFactor
+                        // The LABEL COMES FROM THE READ-BACK, not from what was asked. Asking
+                        // 2.0 and being given 3.0 is exactly how this button spent two days
+                        // lying about the magnification (bench, 2026-08-20).
+                        zoomButton.text = ZoomLadder.label(zoomRatio)
                         // Zoom crops the camera's angular width, so both the FOV cone
                         // published to TAK and the AR projection have to narrow with it.
                         TakBridgeHolder.setZoomFactor(targetFactor)
@@ -943,10 +1030,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(TAG, "KeyCameraZoomRatios($targetFactor): ${error.description()}")
+                    AppLog.i(TAG, "KeyCameraZoomRatios($targetFactor): ${describeError(error)}")
                     runOnUiThread {
                         Toast.makeText(this@TAKPilot2GoFlightActivity,
-                            "Zoom failed: ${error.description()}", Toast.LENGTH_SHORT).show()
+                            "Zoom failed: ${describeError(error)}", Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -1709,6 +1796,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             Toast.makeText(this, "Aircraft not connected", Toast.LENGTH_SHORT).show()
             return
         }
+        // One sequence at a time. See [photoSequenceActive]: overlapping sequences make the
+        // camera refuse all but one shot, and the refusal reaches the pilot as "null".
+        if (photoSequenceActive) {
+            AppLog.i(REC_TAG, "photo ignored — a sequence is already in flight")
+            return
+        }
+        photoSequenceActive = true
+        setShutterBusy(true)
         AppLog.i(REC_TAG, "photo: switching to PHOTO_NORMAL")
         KeyManager.getInstance().setValue(
             KeyTools.createKey(CameraKey.KeyCameraMode),
@@ -1734,10 +1829,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                                 }
 
                                 override fun onFailure(error: IDJIError) {
-                                    AppLog.i(REC_TAG, "shoot photo result: ${error.description()}")
+                                    AppLog.i(REC_TAG, "shoot photo result: ${describeError(error)}")
                                     runOnUiThread {
                                         Toast.makeText(this@TAKPilot2GoFlightActivity,
-                                            "Photo failed: ${error.description()}", Toast.LENGTH_SHORT).show()
+                                            "Photo failed: ${describeError(error)}", Toast.LENGTH_SHORT).show()
                                     }
                                     restoreVideoModeAfterPhoto()
                                 }
@@ -1747,10 +1842,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(REC_TAG, "photo: set PHOTO_NORMAL mode: ${error.description()}")
+                    AppLog.i(REC_TAG, "photo: set PHOTO_NORMAL mode: ${describeError(error)}")
+                    // The sequence ends here — nothing was shot, so no restore runs and the
+                    // button must be released by this branch or it stays dead for the session.
+                    endPhotoSequence()
                     runOnUiThread {
                         Toast.makeText(this@TAKPilot2GoFlightActivity,
-                            "Couldn't switch to photo mode: ${error.description()}", Toast.LENGTH_SHORT).show()
+                            "Could not switch to photo mode: ${describeError(error)}",
+                            Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -1818,6 +1917,43 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         flightDiagnostics.visibility = View.VISIBLE
     }
 
+    /**
+     * Ends the photo sequence and gives the shutter back to the pilot.
+     *
+     * EVERY terminal branch calls this — the mode-switch refusal, the restore success, and the
+     * restore giving up. A branch that forgets leaves the button dead for the rest of the
+     * session, which is worse than the overlap this guard exists to stop.
+     */
+    private fun endPhotoSequence() {
+        photoSequenceActive = false
+        runOnUiThread { setShutterBusy(false) }
+    }
+
+    /**
+     * Dims the shutter and stops it taking touches while a photo is in progress.
+     *
+     * The mode switch alone takes about 1.5s. A button that does nothing visible for that long
+     * invites a second press, and the second press is what produced "Photo failed: null" on the
+     * bench. The guard stops the overlap; this is what stops the pilot needing it.
+     */
+    private fun setShutterBusy(busy: Boolean) {
+        flightShootPhotoButton?.apply {
+            isEnabled = !busy
+            alpha = if (busy) 0.4f else 1f
+        }
+    }
+
+    /**
+     * Error text that is never the word "null".
+     *
+     * description() is a Java method, thus Kotlin sees a platform type and a null goes through
+     * to a pilot-facing Toast as "null". This aircraft returns null for real refusals — it is
+     * what made "Photo failed: null" (bench, 2026-08-20) and what crashed the flight screen on
+     * a metering write two days before.
+     */
+    private fun describeError(error: IDJIError?): String =
+        error?.description()?.takeIf { it.isNotBlank() } ?: "refused (no reason given)"
+
     private fun restoreVideoModeAfterPhoto(attempt: Int = 1) {
         if (TakBridgeHolder.photoInProgress() && attempt < PHOTO_RESTORE_MAX_ATTEMPTS) {
             handler.postDelayed(
@@ -1828,16 +1964,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         ExposureController.applyDefaults(applicationContext) { err ->
             if (err == null) {
                 if (attempt > 1) AppLog.i(REC_TAG, "photo: VIDEO mode restored on attempt $attempt")
+                endPhotoSequence()
                 return@applyDefaults
             }
             if (attempt < PHOTO_RESTORE_MAX_ATTEMPTS) {
-                AppLog.w(REC_TAG, "photo: VIDEO mode restore refused (${err.description()}) — " +
+                AppLog.w(REC_TAG, "photo: VIDEO mode restore refused (${describeError(err)}) — " +
                     "camera still busy, retrying (attempt $attempt)")
                 handler.postDelayed(
                     { restoreVideoModeAfterPhoto(attempt + 1) }, PHOTO_RESTORE_RETRY_MS)
             } else {
                 AppLog.e(REC_TAG, "photo: VIDEO mode restore FAILED after $attempt attempts " +
-                    "(${err.description()}) — camera left in PHOTO mode")
+                    "(${describeError(err)}) — camera left in PHOTO mode")
+                endPhotoSequence()
                 runOnUiThread {
                     Toast.makeText(
                         this,
@@ -2379,6 +2517,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         private const val TAG = "TP2Flight"
         /** Camera capture operations specifically — recording and stills. */
         private const val REC_TAG = "TP2Record"
+
+        /** The gimbal camera. Every camera key on this screen names it explicitly — an
+         *  untargeted key was accepted and discarded by this aircraft (2026-08-20). */
+        private val MAIN_CAM = ComponentIndexType.LEFT_OR_MAIN
         private const val REQUEST_MEDIA_PROJECTION = 3001
         private const val HUD_INTERVAL_MS = 500L
 

@@ -371,8 +371,11 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
             "Zoom",
-            "Changes the camera between the normal view and the 2X view. Your team sees the " +
-                "same view in the video.",
+            "Each touch magnifies one step: 1X, 3X, 7X, 14X, 28X. A touch at 28X goes back to " +
+                "1X. Your team sees the same view in the video.\n\n" +
+                "1X is the wide camera. Each larger step uses the zoom camera, thus the view " +
+                "changes camera when you go from 1X to 3X.\n\n" +
+                "The markers are less accurate when you magnify. Put your markers at 1X.",
         )
 
         entry(
