@@ -32,9 +32,10 @@ behaviour and the recording storage guards match the Autel application's impleme
 Do not reinvent them, and do not copy the third-party V1 tree's GUI — that tree is an API
 crib sheet only.
 
-**When you look for reference code, use the live MSDKv4 worktree at
-`../../v4/Mobile-SDK-Android-4.18/SampleCode-device-compat/`.** The port plan points at
-`Sample Code/`, which is the stale parent checkout of the same repository.
+**When you look for reference code, use the MSDKv4 checkout at
+`../../v4/Mobile-SDK-Android-4.18/Sample Code/`, on `main`.** That tree had a second
+checkout (`SampleCode-device-compat`) and a second branch until 2026-08-18; both are gone,
+and the two confused three sessions between them. There is now one directory and one branch.
 
 ## Safety rules — these come from real incidents on the siblings
 
