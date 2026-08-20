@@ -56,6 +56,51 @@ object ArSettings {
      *  3. Otherwise the existing ground split: a bare `a-{f,h,n,u}-G` is a placed marker,
      *     anything longer is an entity reporting its own position.
      */
+    /**
+     * True for a CoT type whose battle dimension is GROUND (`a-?-G-…`), i.e. something that is
+     * by definition standing on the terrain.
+     *
+     * Used to pick the altitude source in [ArOverlayView]: for these, DTED under the contact
+     * beats the contact's own reported altitude. Same `type` grammar [categoryFor] parses —
+     * position 2 is the dimension, `A` air / `G` ground / `S` surface / `U` subsurface.
+     */
+    /**
+     * ADS-B ceiling: air traffic reported ABOVE this is not drawn, on the map or in AR.
+     *
+     * A UAS operating below 400ft AGL cannot be deconflicted from an airliner at altitude, so
+     * drawing it is clutter that competes for attention with the traffic that does matter —
+     * helicopters, other UAS, and anything on approach.
+     *
+     * ⚠ THIS IS MSL, NOT AGL, because MSL is what ADS-B actually reports. Converting to AGL
+     * would need a terrain lookup at each contact's position, and would silently change
+     * meaning wherever DTED is missing. At ~590ft ground, 3000ft MSL is about 2400ft AGL;
+     * somewhere mountainous the same number sits much lower above the ground — worth knowing
+     * before flying this in different terrain.
+     *
+     * Contacts with no usable altitude are NOT filtered: an unknown altitude is not evidence
+     * of a high one, and silently dropping traffic we cannot measure is the wrong way to fail.
+     */
+    const val AIR_TRAFFIC_CEILING_FT = 3000.0
+    private const val AIR_TRAFFIC_CEILING_M = AIR_TRAFFIC_CEILING_FT * 0.3048
+
+    /**
+     * True if this contact is air traffic above [AIR_TRAFFIC_CEILING_FT] and should be hidden.
+     *
+     * Shared by the AR overlay and the map so the two can never disagree about what is on
+     * screen — a target visible in one and not the other is worse than either rule alone.
+     * (V27, audit 2026-08-20; the Autel sibling's rule, verbatim.)
+     */
+    fun isAboveAirTrafficCeiling(type: String?, altMeters: Double): Boolean {
+        if (!TakMapMarkers.isAirTrack(type)) return false
+        if (!altMeters.isFinite() || altMeters == 0.0) return false   // unknown, so keep it
+        return altMeters > AIR_TRAFFIC_CEILING_M
+    }
+
+    fun isGroundAffiliation(type: String?): Boolean {
+        val parts = type?.split("-").orEmpty()
+        return parts.size >= 3 && parts[0] == "a" && parts[2] == "G"
+    }
+
     fun categoryFor(uid: String?, type: String?): Category {
         if (uid != null && uid.startsWith(METAR_UID_PREFIX)) return Category.WEATHER
         val parts = type?.split("-").orEmpty()

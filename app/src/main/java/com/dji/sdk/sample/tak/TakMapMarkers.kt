@@ -291,6 +291,14 @@ object TakMapMarkers {
     /** Add/update a contact in the model. Returns true if the map needs redrawing. */
     private fun stage(user: TakUser): Boolean {
         if (user.lat == 0.0 && user.lon == 0.0) return false
+        // Same ADS-B ceiling the AR overlay applies (V27) — a target on one view and not the
+        // other would be worse than either rule on its own. stage() is the one funnel for
+        // live traffic and resync alike, and the removal handles a contact already on the
+        // map that climbs past the ceiling mid-flight.
+        if (ArSettings.isAboveAirTrafficCeiling(user.type, user.alt)) {
+            remove(user.uid)
+            return false
+        }
         // A LOCAL DELETE LASTS UNTIL THE SENDER SHARES THE MARKER AGAIN (V25, audit
         // 2026-08-20; the Autel sibling's fix of 2026-08-16).
         //

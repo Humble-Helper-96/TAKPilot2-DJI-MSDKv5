@@ -29,6 +29,34 @@ class ScreenCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // ⚠ PROJECTION REUSE IS LEGAL HERE ONLY BECAUSE THE CONTROLLER RUNS ANDROID 11.
+        // From Android 14 a MediaProjection token is SINGLE-USE — a second
+        // createVirtualDisplay on it throws — and this tree targets SDK 35, so the day the
+        // RC Plus 2's firmware moves past Android 13 this branch must re-request permission
+        // instead of reusing [projection]. The Autel sibling ships the same design on
+        // targetSdk 29; this note is the difference.
+        if (intent?.action == ACTION_RESTART) {
+            val proj = projection
+            if (proj == null) {
+                AppLog.w(TAG, "restart requested with no live projection — ignoring")
+                return START_NOT_STICKY
+            }
+            AppLog.i(TAG, "restart requested — re-starting stream at the current profile")
+            val ok = VideoStreamerHolder.startScreenCapture(applicationContext, proj) { good, msg ->
+                AppLog.i(TAG, "stream status: ok=$good $msg")
+                if (!good) android.os.Handler(mainLooper).post {
+                    Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
+                }
+            }
+            if (!ok) {
+                AppLog.w(TAG, "restart refused — stopping")
+                toast("Video stream could not restart")
+                teardown()
+                stopSelf()
+            }
+            return START_NOT_STICKY
+        }
+
         if (intent?.action == ACTION_STOP) {
             AppLog.i(TAG, "stop requested — tearing down projection + service")
             teardown()
@@ -121,6 +149,7 @@ class ScreenCaptureService : Service() {
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_DATA = "data"
         private const val ACTION_STOP = "com.dji.sdk.sample.tak.STOP_SCREEN_CAPTURE"
+        private const val ACTION_RESTART = "com.dji.sdk.sample.tak.RESTART_SCREEN_CAPTURE"
 
         /** Start capture: call from onActivityResult of the screen-capture permission request. */
         fun start(context: Context, resultCode: Int, data: Intent) {
@@ -128,6 +157,20 @@ class ScreenCaptureService : Service() {
                 .putExtra(EXTRA_RESULT_CODE, resultCode)
                 .putExtra(EXTRA_DATA, data)
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i) else context.startService(i)
+        }
+
+        /**
+         * Re-start the push at whatever `video_profile` the prefs now hold, reusing the live
+         * projection so no permission dialog appears. No-op if capture isn't running.
+         * (V29, audit 2026-08-20 — the in-flight quality change; see the Android-14 note in
+         * onStartCommand before any targetSdk/firmware move.)
+         */
+        fun restart(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, ScreenCaptureService::class.java).setAction(ACTION_RESTART)
+                )
+            }
         }
 
         /** Stop capture (also stops the projection). Safe to call when not running. */

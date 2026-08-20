@@ -396,6 +396,8 @@ class FieldGuideActivity : AppCompatActivity() {
             "LIVE: video to your team",
             "Starts and stops the live video to the video server of your team. Set the server " +
                 "in Pre-Flight Setup first.\n\n" +
+                "Touch and hold: the video quality. If the stream is on, the new quality " +
+                "applies immediately.\n\n" +
                 "A yellow button that flashes shows the connection stopped and the app is " +
                 "trying again. Do not touch it: that stops the app trying.",
         )
@@ -433,8 +435,9 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             emptyList(),
             "Quick marker: touch the crosshair",
-            "Touch the crosshair to put a marker immediately, with no questions. The name is " +
-                "always ${com.dji.sdk.sample.tak.TakDropMarkers.QUICK_NAME}.\n\n" +
+            "Touch the crosshair to put a marker immediately, with no questions. The marker " +
+                "keeps one short name — one letter and three digits — that belongs to this " +
+                "controller and does not change.\n\n" +
                 "THERE IS ONLY ONE QUICK MARKER. Point the camera at a new location and touch " +
                 "the crosshair again: the marker MOVES there, on the screens of all your " +
                 "team. Use it to show your team what you look at now.",

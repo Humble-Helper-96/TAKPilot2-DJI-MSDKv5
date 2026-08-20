@@ -519,6 +519,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
         liveToggle = findViewById(R.id.flightStreamButton)
         liveToggle.setOnClickListener { onLiveToggleTapped() }
+        // Long-press: the video-quality tiers, changeable IN FLIGHT (V29, audit 2026-08-20).
+        // The quality profile is a live in-flight choice by specification §5.5; until this,
+        // changing it meant leaving for Pre-Flight. Same long-press idiom as RTH, the TAK
+        // badge, AR and drop-pin.
+        liveToggle.setOnLongClickListener { onVideoQualityTapped(); true }
         // Refreshed whenever VideoStreamerHolder's state changes, from any trigger (this
         // button, a network-drop auto-reconnect, or the reconnect window giving up), not just
         // our own taps. RECONNECTING (amber, blinking) tells the pilot the app is retrying a
@@ -557,6 +562,52 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 ExposureController.setEvAt(applicationContext, idx) {}
             }
         }
+    }
+
+    /** The in-flight video-quality picker — the Autel sibling's, with the enum living inside
+     *  [com.dji.sdk.sample.tak.StreamTranscoder] in this tree. Selecting a tier saves it and,
+     *  when the stream is live, restarts the push at the new profile with no permission
+     *  dialog (the service reuses its projection — see the Android-14 note there). */
+    private fun onVideoQualityTapped() {
+        AppLog.v(TAG, "long-press: video quality")
+        val prefs = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        val current = com.dji.sdk.sample.tak.StreamTranscoder.TranscodeProfile
+            .fromPref(prefs.getString("video_profile", null))
+
+        val view = layoutInflater.inflate(R.layout.dialog_video_quality, null)
+        val group = view.findViewById<android.widget.RadioGroup>(R.id.videoQualityGroup)
+
+        // Built from the enum, not from XML — same reason as the AR category rows.
+        val ids = com.dji.sdk.sample.tak.StreamTranscoder.TranscodeProfile.values()
+            .associateWith { profile ->
+                val button = layoutInflater.inflate(R.layout.row_video_quality, group, false)
+                    as android.widget.RadioButton
+                button.id = View.generateViewId()
+                button.text = profile.label
+                group.addView(button)
+                button.id
+            }
+        group.check(ids.getValue(current))
+        group.setOnCheckedChangeListener { _, checkedId ->
+            val chosen = ids.entries.firstOrNull { it.value == checkedId }?.key
+                ?: return@setOnCheckedChangeListener
+            if (chosen == current) return@setOnCheckedChangeListener
+            prefs.edit().putString("video_profile", chosen.prefValue).apply()
+            AppLog.i(TAG, "video quality -> ${chosen.label}")
+            if (com.dji.sdk.sample.tak.VideoStreamerHolder.isActive) {
+                com.dji.sdk.sample.tak.ScreenCaptureService.restart(applicationContext)
+                Toast.makeText(this, "Video quality: ${chosen.label} — restarting stream",
+                    Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Video quality: ${chosen.label}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("Video Quality")
+            .setView(view)
+            .setPositiveButton("Done", null)
+            .show()
     }
 
     private fun onLiveToggleTapped() {
@@ -2157,6 +2208,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         toolbarTakDot.setColorFilter(if (takOk) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
 
         recordToggle.setRecording(hud?.isRecording == true)
+        // THE SHUTTER LOCKS WHILE RECORDING (V30, audit 2026-08-20; the Autel sibling's
+        // per-tick guard). A still mid-record drags the camera VIDEO->PHOTO->VIDEO under the
+        // team's live feed. Merged with the photo-sequence busy state rather than fighting
+        // it: recording OR an in-flight photo sequence each dim the button, and the tick
+        // releases it only when neither holds.
+        if (!photoSequenceActive) setShutterBusy(hud?.isRecording == true)
 
         // Home point: independent of the aircraft's current GPS fix (the home location, once
         // set, stays valid even if the live fix drops momentarily) — so this isn't gated behind

@@ -290,6 +290,9 @@ class ArOverlayView @JvmOverloads constructor(
             // air traffic is worth seeing well past the range a ground marker is.
             val category = ArSettings.categoryFor(u.uid, u.type)
             if (!ArSettings.isEnabled(context, category)) { skipped++; continue }
+            // High-altitude traffic is clutter for a UAS below 400ft — see the ceiling's doc.
+            // Shared with the map so both views show the same picture (V27).
+            if (ArSettings.isAboveAirTrafficCeiling(u.type, u.alt)) { skipped++; continue }
 
             val groundDist = CameraSlantPoint.distanceMeters(hud.lat, hud.lon, lat, lon)
             if (groundDist > ArSettings.rangeMeters(context, category)) { skipped++; continue }
@@ -339,11 +342,32 @@ class ArOverlayView @JvmOverloads constructor(
             // entire point of drawing it.
             val dzAirBallpark = if (category == ArSettings.Category.AIRCRAFT &&
                 isUsableAltitude(reported)) reported - hud.alt else null
-            val dz = dzReported ?: dzAirBallpark ?: dzTerrain
+            // GROUND CONTACTS USE TERRAIN, NOT THEIR OWN REPORTED ALTITUDE (V26, audit
+            // 2026-08-20; the Autel sibling's fix of 2026-08-04, measured there: the contact
+            // publishes `hae` above the WGS84 ELLIPSOID while aircraftMsl is MSL, and the
+            // ~12m geoid separation put a ground icon 2.3 deg high at 253m — visibly up and
+            // right of the crosshair aimed dead at its map position. For anything whose CoT
+            // type says GROUND the question is moot: it stands on the terrain, and DTED is
+            // self-consistent in MSL with no datum to mix.
+            //
+            // ⚠ NOT "trust terrain always": reported altitude remains the only source that
+            // can be right for something NOT on the ground — an upper floor, a bridge,
+            // aircraft. The cost is a ground contact genuinely on a structure rendering at
+            // street level; that is the better failure than every ground contact floating a
+            // geoid's worth into the air.
+            //
+            // ⚠ AND DO NOT "FIX" THE RESIDUAL WITH THE PITCH OFFSET. The offset also feeds
+            // lookPoint()/the SPI, so tuning it until an icon sits under the crosshair would
+            // trade a cosmetic overlay error for wrong marker DROPS.
+            val preferTerrain = com.dji.sdk.sample.tak.ArSettings.isGroundAffiliation(u.type)
+            val dz = if (preferTerrain) dzTerrain else (dzReported ?: dzAirBallpark ?: dzTerrain)
             // Only the fully DTED-backed computation is trustworthy enough to LABEL with a
             // number — see drawAircraft. The ballpark above and the flat-terrain fallback both
-            // still drive where the icon is drawn; they just don't get printed as text.
-            val dzIsTrusted = dzReported != null
+            // still drive where the icon is drawn; they just don't get printed as text. When
+            // we prefer terrain that means real DTED under the contact, not dzTerrain's
+            // flat-plane else-branch.
+            val dzIsTrusted = if (preferTerrain) (targetGroundMsl != null && aircraftMsl != null)
+                              else dzReported != null
 
             if (kotlin.math.hypot(groundDist, dz) < MIN_RANGE_M) { skipped++; continue }
 

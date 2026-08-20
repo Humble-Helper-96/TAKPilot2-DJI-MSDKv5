@@ -79,6 +79,12 @@ class StreamTranscoder(
         STANDARD(720, 15, 800_000),   // 1600x720 — default
         HIGH(1080, 15, 1_800_000);    // 2400x1080
 
+        /** The pref-file spelling, derived so a rename cannot desynchronise the two. */
+        val prefValue: String get() = name.lowercase()
+
+        /** The menu label — "Low", "Standard", "High". */
+        val label: String get() = name.lowercase().replaceFirstChar { it.uppercase() }
+
         companion object {
             fun fromPref(name: String?): TranscodeProfile = when (name) {
                 "low" -> LOW

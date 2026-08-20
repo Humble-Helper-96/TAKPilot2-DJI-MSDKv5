@@ -50,11 +50,52 @@ object TakDropMarkers {
     private const val PROP_ICON = "icon"
 
     /**
-     * Callsign carried by the reticle-tap marker (see [placeQuick]). Fixed and short: it is the
-     * same marker every time, so a name everyone learns to recognise beats a number, and a fixed
-     * string keeps it clear of the `<callsign>-P<n>` auto-naming used by ordinary drops.
+     * Callsigns the quick marker's per-install name is drawn from.
+     *
+     * ⚠ UNTIL 2026-08-20 EVERY INSTALL WAS "E419" (V28, audit): two aircraft flying together
+     * put two identically-labelled markers on the shared map and nobody could tell whose was
+     * whose. The Autel sibling's fix, verbatim: one name per install, chosen once and
+     * persisted — an identity that changes under the team is worse than a dull one, and a
+     * name everyone learns to recognise still beats a number.
+     *
+     * Format is one letter and three digits, deliberately uniform so the labels read as a set
+     * and stay short enough to sit under a map icon without crowding it, and clear of the
+     * `<callsign>-P<n>` auto-naming used by ordinary drops. The letter "H" is not used
+     * anywhere in the pool. THE POOL IS SHARED WITH THE SIBLINGS — a name is only unique if
+     * every tree draws from the same list.
      */
-    const val QUICK_NAME = "E419"
+    private val QUICK_CALLSIGNS = listOf(
+        "E419", "B312", "B320", "A259", "A266", "A239",
+        "K023", "B022", "V933", "C709", "F201", "I101",
+        "D042", "J092", "A130", "F104", "K087", "L058",
+        "S052", "S034", "S051", "M310", "G227", "N379",
+    )
+
+    private const val KEY_QUICK_CALLSIGN = "quick_marker_callsign"
+    @Volatile private var cachedQuickName: String? = null
+
+    /**
+     * This install's quick-marker callsign. Chosen once, then persisted. Falls back to the
+     * first pool entry if read before [init], loudly — silently handing back a random member
+     * is what would let a marker be created with a name this install never actually drew.
+     */
+    val QUICK_NAME: String
+        get() {
+            cachedQuickName?.let { return it }
+            val ctx = appContext ?: run {
+                AppLog.w(TAG, "quick marker callsign read before init — using fallback")
+                return QUICK_CALLSIGNS.first()
+            }
+            val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            var name = prefs.getString(KEY_QUICK_CALLSIGN, null)
+            if (name == null || name !in QUICK_CALLSIGNS) {
+                name = QUICK_CALLSIGNS.random()
+                prefs.edit().putString(KEY_QUICK_CALLSIGN, name).apply()
+                AppLog.i(TAG, "quick marker callsign for this install: $name")
+            }
+            cachedQuickName = name
+            return name
+        }
 
     enum class Affiliation(val id: String, val label: String, val res: Int) {
         // `id` is what CotBuilder.buildMarker switches on to pick the CoT type — these four
