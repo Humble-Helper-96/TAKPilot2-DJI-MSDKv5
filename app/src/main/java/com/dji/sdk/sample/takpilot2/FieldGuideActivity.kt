@@ -70,6 +70,27 @@ import com.taklite.util.AppLog
  * explanation of the consequence. Autel's own entries were the model — its "1. Aircraft
  * Settings" is 19 words where this file's was 277.
  *
+ * ## ⚠ WHAT MAKES A GUIDE LOOK LONG IS BOXES, NOT WORDS
+ *
+ * The first pass cut words and the operator rejected it: the Autel guide was still "vastly
+ * shorter" at only 15% fewer words. The word count was the wrong measurement.
+ *
+ * **Autel's whole guide has TWO callout boxes. This one had NINETEEN.** Every `warn` and
+ * `note`, and every string in an `entry`'s `caveats`, renders as a boxed blockquote. Nineteen
+ * boxes read as a wall of alarms and make a guide look twice its length, whatever it weighs.
+ *
+ * So the second pass changed the FORM and not the content: sixteen boxes became ordinary
+ * prose. **No sentence was deleted to do it.** Every safety fact still reads, in the same
+ * words, in the paragraph where it belongs.
+ *
+ * Three boxes are left. Two are the two Autel keeps — the calibration note and "the AR view
+ * is not accurate for a point". The third is "nothing in this build has flown", which is
+ * temporary and goes when the aircraft flies.
+ *
+ * **Keep it that way.** A new `warn` or `note` here is a fourth box, and the reason to reach
+ * for one is almost always that the sentence matters — which is true of most sentences in
+ * this file. Write it as prose. A box that is used nineteen times has stopped being a box.
+ *
  * A second pass on the same day took it further and removed ONE section, "What this build
  * cannot do", on the operator's decision. Its "nothing has flown" warning did NOT go with it —
  * that warning is at the top of the guide now, and the camera-angle limit it carried rides
@@ -160,7 +181,7 @@ class FieldGuideActivity : AppCompatActivity() {
         note("Do the firmware updates, the calibrations and the aircraft registration in the " +
             "DJI app first. Not here.")
 
-        note("A red TAK icon means your team cannot see the aircraft or your markers. The " +
+        body("A red TAK icon means your team cannot see the aircraft or your markers. The " +
             "aircraft still flies correctly.")
     }
 
@@ -175,7 +196,7 @@ class FieldGuideActivity : AppCompatActivity() {
         body("Max altitude, max distance and RTH altitude, in feet. The app sends them at each " +
             "connection. An empty field keeps what the aircraft holds. At the max distance the " +
             "aircraft stops and holds. It does not come home by itself.")
-        warn("Set the RTH altitude below the Max altitude, and above the highest obstacle " +
+        body("Set the RTH altitude below the Max altitude, and above the highest obstacle " +
             "between you and the aircraft.")
 
         body("Control response sets the speed of the camera controls. Stick mode sets what the " +
@@ -188,7 +209,7 @@ class FieldGuideActivity : AppCompatActivity() {
             "aircraft reports, and the boxes do nothing without obstacle sensors.")
 
         body("Battery Warning and Battery Critical are where the aircraft warns you and lands.")
-        warn("Some aircraft keep their own battery levels and refuse a change. If yours " +
+        body("Some aircraft keep their own battery levels and refuse a change. If yours " +
             "refuses, the fields become read-only and show the levels the aircraft holds. " +
             "Plan for those.")
 
@@ -202,9 +223,9 @@ class FieldGuideActivity : AppCompatActivity() {
 
         body("Active server selects between two servers, each with its own address, login, " +
             "quality and codec. Select the codec H.264: more clients can show it.")
-        warn("If your team cannot see the video and this screen shows no fault, select H.264. " +
+        body("If your team cannot see the video and this screen shows no fault, select H.264. " +
             "A client that cannot show H.265 gives no error that you can see here.")
-        note("These settings do not start the video. Use the LIVE button in flight.")
+        body("These settings do not start the video. Use the LIVE button in flight.")
 
         sub("3. TAK Server Connection")
         body("Type the address of the TAK server, the two ports, your username, your password " +
@@ -213,7 +234,7 @@ class FieldGuideActivity : AppCompatActivity() {
         body("My Channels shows the channels of the server, which holds them, not the app. A " +
             "change applies immediately. \"Rx Only\" gives you data but takes none. You can " +
             "also change channels in flight: touch and hold the TAK icon.")
-        warn("The channels belong to your certificate, not to this controller. If two " +
+        body("The channels belong to your certificate, not to this controller. If two " +
             "controllers sign in as the same user, a change on one changes the other.")
 
         sub("4. Elevation Data (DTED)")
@@ -224,7 +245,7 @@ class FieldGuideActivity : AppCompatActivity() {
         sub("5. FAA Airspace Ceilings (UASFM)")
         body("This downloads the FAA ceiling data for an area, and the flight screen then " +
             "shows the ceiling at the aircraft. Download it on wifi before you go.")
-        warn("Do not use this data as an approval to fly. It can be out of date. You must get " +
+        body("Do not use this data as an approval to fly. It can be out of date. You must get " +
             "your own airspace approval.")
 
         sub("6. Map Display")
@@ -320,12 +341,10 @@ class FieldGuideActivity : AppCompatActivity() {
                 "Touch and hold: the \"Dropped Markers\" list. Change a marker, send it again " +
                 "or remove it.\n\n" +
                 "DELETE REMOVES A MARKER FROM THIS AIRCRAFT ONLY. It stays on the screens of " +
-                "your team for about 3 days.",
-            listOf(
+                "your team for about 3 days.\n\n" +
                 "The app does not put a marker if the crosshair ring is red, if the aircraft " +
-                    "has no GPS position, or if it is less than 25 ft above the ground. Point " +
-                    "the camera down more, or climb higher.",
-            ),
+                "has no GPS position, or if it is less than 25 ft above the ground. Point the " +
+                "camera down more, or climb higher.",
         )
 
         entry(
@@ -334,12 +353,12 @@ class FieldGuideActivity : AppCompatActivity() {
             "Draws the markers on the live image near their positions. It is green when on, " +
                 "and on when you open the flight screen. A marker outside the image shows as " +
                 "an arrow at the edge: turn the camera that way.\n\n" +
-                "Touch and hold: select what the app draws, and set the air-traffic range.",
+                "Touch and hold: select what the app draws, and set the air-traffic range. " +
+                "Air traffic positions can be about ten seconds old.",
             listOf(
                 "THE AR VIEW IS NOT ACCURATE FOR A POINT. It shows the general area of a " +
                     "marker. Do not use it to choose between objects that are close together, " +
                     "such as one house in a tight row of houses.",
-                "Air traffic positions can be about ten seconds old.",
             ),
         )
 
@@ -401,12 +420,10 @@ class FieldGuideActivity : AppCompatActivity() {
                 "GREEN: 30° down or more. The error is about 50 ft.\n" +
                 "YELLOW: 15° to 30° down. The error is about 100 ft.\n\n" +
                 "RED: less than the yellow angle. The app does not put a marker. Point the " +
-                "camera down more, or fly nearer.",
-            listOf(
+                "camera down more, or fly nearer.\n\n" +
                 "These values need a good GPS position. Out of your terrain data, the ring " +
-                    "changes to the no-terrain angles. A marker near the edge of the picture " +
-                    "is less accurate than one in the centre.",
-            ),
+                "changes to the no-terrain angles. A marker near the edge of the picture is " +
+                "less accurate than one in the centre.",
         )
 
         entry(
@@ -433,12 +450,10 @@ class FieldGuideActivity : AppCompatActivity() {
             "Obstacle distances",
             "A mark at the nearest edge of the video, with the distance in feet. A curved " +
                 "line is an obstacle at that side; FWD is in front, REAR is behind. It shows " +
-                "at about 39 ft in yellow, then red at 13 ft or less.",
-            listOf(
+                "at about 39 ft in yellow, then red at 13 ft or less.\n\n" +
                 "AN EDGE WITH NO MARK DOES NOT MEAN THE DIRECTION IS CLEAR. It can also mean " +
-                    "the aircraft has no sensor there. With no obstacle sensors this display " +
-                    "always stays empty.",
-            ),
+                "the aircraft has no sensor there. With no obstacle sensors this display " +
+                "always stays empty.",
         )
 
         entry(
@@ -472,12 +487,10 @@ class FieldGuideActivity : AppCompatActivity() {
             "Aircraft data",
             "Three lines: the callsign and speed, the height above the ground and above sea " +
                 "level, then the latitude and longitude. Below them GIMBAL shows the camera " +
-                "angle, in the colour of the crosshair ring.",
-            listOf(
+                "angle, in the colour of the crosshair ring.\n\n" +
                 "AGL is the true height above the ground and needs terrain data. Without it " +
-                    "ALT shows instead: the height above your takeoff point. MSL is above sea " +
-                    "level, which airspace limits use.",
-            ),
+                "ALT shows instead: the height above your takeoff point. MSL is above sea " +
+                "level, which airspace limits use.",
         )
 
         entry(
@@ -485,11 +498,9 @@ class FieldGuideActivity : AppCompatActivity() {
             "RTH and HOME lines",
             "RTH is the return height the AIRCRAFT holds now. Two dashes mean the app does " +
                 "not know it, not that it is zero. HOME is the distance and direction to the " +
-                "home point, in degrees true.",
-            listOf(
+                "home point, in degrees true.\n\n" +
                 "RTH shows the AIRCRAFT, not what you typed in Pre-Flight Setup. If the two " +
-                    "differ, the aircraft did not accept it. Send it again with Apply.",
-            ),
+                "differ, the aircraft did not accept it. Send it again with Apply.",
         )
 
         entry(
@@ -509,10 +520,8 @@ class FieldGuideActivity : AppCompatActivity() {
                 "your map only.\n\n" +
                 "The button at the bottom left gives two zoom levels: WIDE is the full distance " +
                 "you may fly, NEAR shows more detail. Touch the map two times to make it " +
-                "large, and again to make it small.",
-            listOf(
+                "large, and again to make it small.\n\n" +
                 "Map data: OpenStreetMap contributors. Satellite images: Esri World Imagery.",
-            ),
         )
 
         sub("The resource bar: bottom left")
@@ -541,9 +550,9 @@ class FieldGuideActivity : AppCompatActivity() {
         bullet(".csv - one row each second: time, position, altitude, speed, heading, " +
             "battery and satellites. Open it in a spreadsheet.")
 
-        note("Without a GPS position the app records nothing for that time. It does not " +
+        body("Without a GPS position the app records nothing for that time. It does not " +
             "write a false position.")
-        note("The folder keeps about 50 MB, then deletes the oldest files. Copy a record " +
+        body("The folder keeps about 50 MB, then deletes the oldest files. Copy a record " +
             "away to keep it.")
     }
 
