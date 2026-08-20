@@ -124,6 +124,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private var homeLineLayer: LineLayer? = null
     private lateinit var fpvNotice: TextView
     private lateinit var flightDiagnostics: TextView
+
+    /**
+     * True while the pilot holds the warning banner open. A tap toggles it (specification §4.8).
+     *
+     * Held in the ACTIVITY and not in FlightWarnings: it is a view state, and the banner is
+     * repainted from the HUD tick, so the flag has to outlive each repaint. It clears whenever
+     * the banner hides, thus a new set of faults always arrives collapsed.
+     */
+    private var warningExpanded = false
     private lateinit var obstacles: ObstacleEdgeView
     // Edge-triggers the "Home Point Set" notice only on the false->true transition (not every
     // tick while it's already set), and only once per bridge session.
@@ -222,6 +231,13 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // so entering the flight screen with a fault already active would otherwise show nothing
         // until the fault happened to change.
         FlightWarnings.onDiagnostics(DjiSdkBridge.diagnostics)
+        // Tap the banner to open it and read every fault; tap again to close it. The banner is
+        // drawn above the crosshair, thus it takes the touch and a tap on a warning can never
+        // fall through and drop a marker.
+        flightDiagnostics.setOnClickListener {
+            warningExpanded = !warningExpanded
+            renderWarning()
+        }
         renderWarning()
         DjiSdkBridge.onDiagnostics = { items ->
             FlightWarnings.onDiagnostics(items)
@@ -1775,9 +1791,21 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         val d = FlightWarnings.display()
         if (d == null) {
             flightDiagnostics.visibility = View.GONE
+            // Collapse with the banner. A pilot who opened it for the last set of faults must
+            // not have the next one — a different fault, possibly worse — arrive pre-expanded
+            // across the video.
+            warningExpanded = false
             return
         }
-        flightDiagnostics.text = d.text
+        // Collapsed: the worst warning and a count. Expanded: every warning on its own line,
+        // worst first. The arrow is the only hint that the banner opens at all, so it is on the
+        // line whenever there is something behind the count.
+        val more = d.all.size > 1
+        flightDiagnostics.text = when {
+            warningExpanded -> d.all.joinToString("\n") + "\n▴"
+            more -> "${d.text}  ▾"
+            else -> d.text
+        }
         // Severity goes on the BACKGROUND and the text stays white — specification §4.8, and
         // the same shape as the Autel sibling. Tinting the text instead left a red-on-dark-red
         // message that was the hardest thing on the screen to read at the moment it mattered.

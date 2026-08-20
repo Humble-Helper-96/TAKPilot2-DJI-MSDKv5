@@ -172,6 +172,23 @@ class DroneTakBridge(
         )
         // A new session must not inherit the last one's banner state.
         FlightWarnings.reset()
+        // ⚠ AND THE AIRCRAFT'S OWN FAULTS MUST GO STRAIGHT BACK IN.
+        //
+        // reset() empties the active set on the documented assumption that it "rebuilds within
+        // one frame". That is true of every warning computed from telemetry, because update()
+        // recomputes them each frame. It is NOT true of AIRCRAFT_FAULT: that one arrives by
+        // event, and the event is CHANGE-ONLY, so a fault that is already standing produces no
+        // further callback and never comes back.
+        //
+        // The flight screen seeds the fault in its onCreate, and this runs after it, thus on
+        // the bench the banner went active and was discarded 26ms later — with the aircraft
+        // reporting four faults, two of them CAUTION, and the pilot shown nothing for the rest
+        // of the session (2026-08-19).
+        //
+        // It was a RACE, not a clean failure, which is why it survived so long: open the flight
+        // screen before the aircraft has finished reporting and a later change event repaints
+        // the banner, so it looks like it works. Seeding here closes the race from both sides.
+        FlightWarnings.onDiagnostics(DjiSdkBridge.diagnostics)
 
         handler.post(tick)
         AppLog.i(TAG, "DroneTakBridge started ($droneCallsign / $droneUid, every ${intervalMs}ms)")

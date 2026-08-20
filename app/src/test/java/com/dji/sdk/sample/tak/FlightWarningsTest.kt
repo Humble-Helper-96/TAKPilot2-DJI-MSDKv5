@@ -2,6 +2,7 @@ package com.dji.sdk.sample.tak
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -54,11 +55,37 @@ class FlightWarningsTest {
     }
 
     @Test
-    fun severalFaultsAreJoinedNotDropped() {
+    fun severalFaultsShowTheWorstAndCountTheRest() {
+        // CHANGED 2026-08-19. This test used to require every fault on the banner at once,
+        // which is what made the banner grow without limit — five lines over the live video on
+        // an RC Plus 2, where specification §4.8 intends one warning plus a "+N".
+        //
+        // Nothing is dropped: the other faults are carried by the count. The bridge hands this
+        // list over worst-first, thus the first entry is the one the pilot most needs.
         FlightWarnings.onDiagnostics(listOf("Compass error", "IMU error"))
         val d = FlightWarnings.displayAt(1_000L)!!
+        assertTrue("the worst fault belongs on the banner", "Compass error" in d.text)
+        assertTrue("the second fault must be COUNTED, never dropped", "+1" in d.text)
+    }
+
+    @Test
+    fun aSecondFaultChangesTheCountWithoutHidingTheFirst() {
+        FlightWarnings.onDiagnostics(listOf("Compass error"))
+        assertEquals("Compass error", FlightWarnings.displayAt(0L)!!.text)
+        FlightWarnings.onDiagnostics(listOf("Compass error", "IMU error", "Battery fault"))
+        val d = FlightWarnings.displayAt(1_000L)!!
         assertTrue("Compass error" in d.text)
-        assertTrue("IMU error" in d.text)
+        assertTrue("both of the others must be counted", "+2" in d.text)
+    }
+
+    @Test
+    fun resetDropsTheFaultListAsWellAsTheText() {
+        // The held list is what labelOf reads. If reset cleared only the text, the last
+        // session's faults would come back through it.
+        FlightWarnings.onDiagnostics(listOf("Compass error", "IMU error"))
+        assertNotNull(FlightWarnings.displayAt(0L))
+        FlightWarnings.reset()
+        assertNull("a reset session must start with no banner", FlightWarnings.displayAt(0L))
     }
 
     @Test

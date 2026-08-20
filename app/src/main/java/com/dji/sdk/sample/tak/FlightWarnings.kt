@@ -73,7 +73,15 @@ object FlightWarnings {
     }
 
     /** What the banner should show right now, or null for hidden. */
-    data class Display(val text: String, val red: Boolean)
+    /**
+     * What the banner shows.
+     *
+     * [text] is the collapsed line — the worst warning plus a "+N" for the rest. [all] is every
+     * active warning, worst first, with the aircraft's faults listed one by one instead of
+     * counted. The flight screen shows [all] while the pilot holds the banner open by tapping
+     * it, so the count is never the only way to reach the other faults.
+     */
+    data class Display(val text: String, val red: Boolean, val all: List<String> = emptyList())
 
     /** Minimum time a warning owns the banner once shown — long enough to read, short enough
      *  that a stack still cycles usefully. A WORSE warning preempts regardless. */
@@ -100,6 +108,17 @@ object FlightWarnings {
      * does not move under the reader, so the text it holds has to be the text it showed.
      */
     private var lastFaultText: String = ""
+    /**
+     * The same faults as [faultText], still separate, WORST FIRST as the bridge ordered them.
+     *
+     * The banner shows one warning and counts the rest (specification §4.8). Joining every
+     * fault into one string defeated that: [AIRCRAFT_FAULT] is a single Warning, so its whole
+     * joined text went on the banner and it grew without limit — five lines over the video on
+     * the RC Plus 2, where the design intends one (2026-08-19). Keeping the list lets the
+     * banner print the worst fault and add the others to the "+N".
+     */
+    private var faultList: List<String> = emptyList()
+    private var lastFaultList: List<String> = emptyList()
     private var shown: Warning? = null
     private var shownAtMs = 0L
 
@@ -122,7 +141,8 @@ object FlightWarnings {
             val text = items.joinToString(" · ")
             if (text == faultText) return
             faultText = text
-            if (text.isNotEmpty()) lastFaultText = text
+            faultList = items
+            if (text.isNotEmpty()) { lastFaultText = text; lastFaultList = items }
             val next = if (text.isEmpty()) active - Warning.AIRCRAFT_FAULT
                        else active + Warning.AIRCRAFT_FAULT
             logTransitions(next)
@@ -264,12 +284,21 @@ object FlightWarnings {
         else -> false
     }
 
+    /**
+     * The fault list the banner is entitled to right now: the live one while the fault stands,
+     * the last real one while it rides out its hold. Same rule as [lastFaultText] — the text
+     * must not change under a reader mid-hold.
+     */
+    private fun heldFaults(): List<String> = faultList.ifEmpty { lastFaultList }
+
     private fun labelOf(w: Warning): String =
         if (w == Warning.AIRCRAFT_FAULT) {
-            // Live text while the fault stands; the last real text while it rides out its hold.
+            // The WORST fault only — the bridge sorted the list worst-first. The rest are
+            // counted in the "+N" by displayAt, thus the banner stays one warning long however
+            // many faults the aircraft is reporting.
             // "aircraft fault" is a last resort that should never be reached in practice — an
             // AIRCRAFT_FAULT only becomes active off a non-empty list.
-            faultText.ifEmpty { lastFaultText }.ifEmpty { "aircraft fault" }
+            heldFaults().firstOrNull() ?: "aircraft fault"
         } else w.label
 
     /** Polled from the flight screen's HUD tick. */
@@ -292,16 +321,39 @@ object FlightWarnings {
             val show = shown ?: return null
             // "+N" counts what is stacked behind this one, from the LIVE set — the shown warning
             // may itself have cleared already and just be riding out its hold.
-            val others = active.count { it != show }
+            //
+            // The aircraft's own faults count INDIVIDUALLY here, not as the one AIRCRAFT_FAULT
+            // they arrive as. Three faults and a low battery read "+3", not "+1": the pilot is
+            // told how many things are wrong, and the banner is still one warning long.
+            val others = active.count { it != show } +
+                if (show == Warning.AIRCRAFT_FAULT) (heldFaults().size - 1).coerceAtLeast(0) else 0
             val label = labelOf(show)
             val text = if (others > 0) "$label  +$others" else label
-            return Display(text, show.red)
+            // Every warning, worst first, with the aircraft's faults spelled out rather than
+            // counted. Built from the LIVE set for the same reason the count is; when the shown
+            // warning is only riding out its hold the set is empty, so fall back to the one
+            // line the banner is holding — an expanded banner must never go blank.
+            val all = if (active.isEmpty()) listOf(label) else
+                active.sorted().flatMap { w ->
+                    if (w == Warning.AIRCRAFT_FAULT) heldFaults() else listOf(w.label)
+                }
+            return Display(text, show.red, all)
         }
     }
 
     /**
      * New flight screen or aircraft cycle — drop the hold state so a stale banner from the last
-     * session cannot greet the pilot. The active set rebuilds within one frame.
+     * session cannot greet the pilot.
+     *
+     * ⚠ THE ACTIVE SET DOES NOT ALL REBUILD BY ITSELF. This doc said it rebuilds within one
+     * frame; that is true only of the warnings [update] computes from telemetry each frame.
+     * [AIRCRAFT_FAULT] arrives by a CHANGE-ONLY event, thus a fault that is already standing
+     * when this runs is discarded and never returns — the aircraft has no reason to report it
+     * again. On the bench that hid four live faults, two of them CAUTION, for a whole session
+     * (2026-08-19).
+     *
+     * A caller that resets MUST therefore re-seed the fault straight afterwards, from the
+     * bridge's cached list. [DroneTakBridge.start] is the one caller and it does this.
      *
      * LOGGED, unlike the sibling's. Without the line, a flight-screen re-entry produces a second
      * "warning ACTIVE" with no "cleared" between, and a post-flight read cannot tell a condition
@@ -316,6 +368,11 @@ object FlightWarnings {
             active = emptySet()
             faultText = ""
             lastFaultText = ""
+            // The lists clear with the text they came from. Leaving them would carry the last
+            // session's faults into the new one through heldFaults(), which is the exact thing
+            // this function exists to prevent.
+            faultList = emptyList()
+            lastFaultList = emptyList()
             shown = null
             shownAtMs = 0L
         }

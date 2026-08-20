@@ -102,11 +102,18 @@
          readouts off snow or wet asphalt, light enough to see movement through it.
          Flight-tuned (operator, 2026-08-04) — do not re-tune without the aircraft. -->
     <color name="tp_hud_panel_scrim">#66000000</color>
-    <!-- Warning-banner severity tints. The banner sits on live video, so these are
-         near-opaque: white text must stay legible over an arbitrary bright scene.
-         Specification §4.8 names both values. -->
-    <color name="tp_warn_banner_red">#E6B71C1C</color>
-    <color name="tp_warn_banner_amber">#E6C15D00</color>
+    <!-- Warning-banner severity tints. The banner sits on live video, so these stay MOSTLY
+         opaque: white text must remain legible over an arbitrary bright scene — a white roof,
+         snow, wet asphalt. Specification §4.8.
+
+         ⚠ ALPHA IS CC (80%) HERE, NOT THE E6 (90%) THE OTHER TWO TREES USE. The operator asked
+         for more of the picture through the banner (2026-08-19) and §4.8 now records this tree
+         as the exception. This is as far as it should go without a check over a BRIGHT scene:
+         the lower the alpha, the more the red washes toward the background, and white text on
+         washed-out red is the hardest thing on the screen to read at the moment it matters.
+         If it must go lower, verify against a white or sunlit background first, not indoors. -->
+    <color name="tp_warn_banner_red">#CCB71C1C</color>
+    <color name="tp_warn_banner_amber">#CCC15D00</color>
 
     <!-- FLIGHT-TUNED HUD COLOURS — specification §6.1. These were chosen against live video
          with the aircraft flying. Tokenising them must not re-tune them, and changing one

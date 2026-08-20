@@ -442,7 +442,10 @@ class FieldGuideActivity : AppCompatActivity() {
                 "Most warnings come from the aircraft, in its own words. The app adds its own " +
                 "for the return to home, the battery levels, the limits, a missing home point " +
                 "and high wind. The box shows the most important one, with a count if there " +
-                "are more.",
+                "are more.\n\n" +
+                "Touch the box to open it and read all of the warnings. Touch it again to " +
+                "close it. A small arrow shows that there is more to read. The box closes " +
+                "again when the warnings go away.",
         )
 
         sub("The readout: right side")
