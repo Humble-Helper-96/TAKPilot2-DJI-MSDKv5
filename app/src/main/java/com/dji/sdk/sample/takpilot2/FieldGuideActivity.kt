@@ -482,6 +482,18 @@ class FieldGuideActivity : AppCompatActivity() {
                 "Touch the box to read all of them, and again to close it.",
         )
 
+        entry(
+            emptyList(),
+            "Antenna aim (bottom centre)",
+            "An arc that shows where the aircraft is, relative to where the controller " +
+                "points. The marker at the top of the arc means the antennas face the " +
+                "aircraft; green means close enough. It shows only when the controller has a " +
+                "compass direction and both positions are known.\n\n" +
+                "Use it when you cannot see the aircraft: turn your body until the marker is " +
+                "at the top. The antennas of the controller are directional, and a link is " +
+                "strongest when they face the aircraft.",
+        )
+
         sub("The readout: right side")
 
         entry(

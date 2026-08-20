@@ -126,6 +126,20 @@
     <!-- ATAK-UAS-Tool-style telemetry overlay, stacked directly above the mini-map (same
          bottom|end corner/size/margin the map already had — "leave the mini map where it is").
          Plain text over video, no box, to match the reference look. -->
+    <!-- BVLOS antenna-aim arc (V37, audit 2026-08-20; the Autel sibling's, verbatim): the
+         controller's antennas are directional, and during authorized BVLOS work the pilot
+         cannot see the aircraft to face it. Pilot dot at the centre, aircraft marker riding
+         the arc, marker at the TOP of the arc means the antennas face the aircraft. Bottom
+         centre, clear of the bottom-left radar labels and the right HUD column. Hidden until
+         the flight screen has a compass facing, an operator fix, and an aircraft fix. -->
+    <com.dji.sdk.sample.takpilot2.AntennaAimView
+        android:id="@+id/fpvAntennaArc"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
     <!-- RIGHT-HAND HUD COLUMN.
          Exposure + telemetry + map in ONE container, deliberately. These were previously two
          independently-anchored children (exposure top|end, telemetry bottom|end); as the readout

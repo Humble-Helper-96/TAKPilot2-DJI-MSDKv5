@@ -495,8 +495,51 @@ class DroneTakBridge(
      * Returns without sending when there is no fix: no marker is better than a marker in
      * the wrong place.
      */
+    // Transition flags for the two pilot-fix failure modes below — logged on change, not on
+    // every 2s tick.
+    @Volatile private var pilotFixMissing = false
+    @Volatile private var pilotFixOldLogged = false
+
     private fun pushPilotPli() {
-        val fix = OperatorLocation.latest ?: return
+        val fix = OperatorLocation.latest
+        if (fix == null) {
+            // ⚠ THE ONE LINE THAT EXPLAINS A DISAPPEARING PILOT MARKER (V36, audit 2026-08-20;
+            // the sibling's 2026-08-15 incident). Publishing stops here, and nothing else in
+            // the application says so — silence at this point is what makes the marker go
+            // stale on the team's map minutes later with no trace in the log.
+            if (!pilotFixMissing) {
+                pilotFixMissing = true
+                AppLog.w(TAG, "pilot marker SUSPENDED — the controller has no position fix. " +
+                    "Nothing more is published for it, thus it goes stale on the team's map. " +
+                    "See OperatorLocation for what feeds this.")
+            }
+            return
+        }
+        if (pilotFixMissing) {
+            pilotFixMissing = false
+            AppLog.i(TAG, "pilot marker resumed — the controller has a fix again")
+        }
+
+        // AGE OF THE FIX, not just its presence. A fix that stops refreshing keeps being
+        // republished at the same point: the marker stays on the map and does NOT follow the
+        // pilot — the other half of the sibling's incident, and it looks nothing like the
+        // case above. elapsedRealtime, never the wall clock: a clock correction mid-flight
+        // must not read as an hour-old fix.
+        val ageMs = (android.os.SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000L
+        if (ageMs > PILOT_FIX_OLD_MS) {
+            if (!pilotFixOldLogged) {
+                pilotFixOldLogged = true
+                AppLog.w(TAG, "pilot position is %.0fs old (provider=%s) — the marker still "
+                    .format(ageMs / 1000.0, fix.provider) +
+                    "publishes, thus it will NOT go stale, but it stops following the pilot. " +
+                    "This is normal if the pilot has not moved: the receiver only reports a " +
+                    "new fix after a small distance.")
+            }
+        } else if (pilotFixOldLogged) {
+            pilotFixOldLogged = false
+            AppLog.i(TAG, "pilot position is fresh again")
+        }
+
         runCatching {
             tak.sendPilotPLI(fix, droneCallsign, "Team Member", pilotBatteryPct(), videoUrl)
         }.onFailure { AppLog.w(TAG, "pilot PLI failed: ${it.message}") }
@@ -722,6 +765,9 @@ class DroneTakBridge(
         private const val BATTERY_CACHE_MS = 30_000L
 
         private const val EARTH_RADIUS_M = 6_371_000.0
+
+        /** A pilot fix older than this stops following the pilot — logged once (V36). */
+        private const val PILOT_FIX_OLD_MS = 5 * 60_000L
 
         /** Flight-readiness snapshots — survives the "TAK logging off" filter. */
         private const val READY_TAG = "TP2Ready"

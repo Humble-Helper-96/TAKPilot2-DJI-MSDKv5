@@ -132,6 +132,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private var homeLineLayer: LineLayer? = null
     private lateinit var fpvNotice: TextView
     private lateinit var flightDiagnostics: TextView
+    private lateinit var fpvAntennaArc: AntennaAimView
 
     /**
      * True while the pilot holds the warning banner open. A tap toggles it (specification §4.8).
@@ -259,6 +260,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
         fpvNotice = findViewById(R.id.fpvNotice)
         flightDiagnostics = findViewById(R.id.flightDiagnostics)
+        fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         obstacles = findViewById(R.id.flightObstacles)
         obstacles.update(DjiObstacleState.faces)
         DjiObstacleState.onChanged = { runOnUiThread { obstacles.update(DjiObstacleState.faces) } }
@@ -2068,6 +2070,27 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * ended up showing amber while the aircraft was seconds from acting (V23; the Autel
      * sibling's fix of 2026-08-04).
      */
+    /**
+     * BVLOS antenna aim (V37; the sibling's 2026-08-13 feature): the controller's antennas
+     * are directional, and during authorized BVLOS work the pilot cannot see the aircraft to
+     * face it. The bearing is CONTROLLER→AIRCRAFT from the operator's own GPS fix — the home
+     * point would be wrong the moment the pilot walks. No text fallback (the sibling
+     * operator's call): a bearing number without an on-screen compass gives the pilot
+     * nothing to act on.
+     */
+    private fun updateAntennaAim(hud: com.dji.sdk.sample.tak.DroneTakBridge.Hud?) {
+        val fix = com.dji.sdk.sample.tak.OperatorLocation.latest
+        val facing = com.dji.sdk.sample.tak.ControllerCompass.azimuthTrueDeg()
+        if (hud == null || !hud.hasFix || fix == null || facing == null) {
+            fpvAntennaArc.setRelativeBearing(null)
+            return
+        }
+        val bearing = CameraSlantPoint.initialBearingDeg(
+            fix.latitude, fix.longitude, hud.lat, hud.lon)
+        // Signed relative turn, -180..+180: which way and how far the pilot must rotate.
+        fpvAntennaArc.setRelativeBearing(((bearing - facing + 540.0) % 360.0) - 180.0)
+    }
+
     private fun refreshBatteryBands() {
         // AIRCRAFT FIRST, pref only as a stand-in. The pilot's saved value is what they
         // INTEND; it differs from the aircraft's whenever a level was edited but not applied,
@@ -2284,6 +2307,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // no-ops when nothing moved. See refreshBatteryBands for why the values are the
         // AIRCRAFT's. (V23, audit 2026-08-20.)
         refreshBatteryBands()
+        updateAntennaAim(hud)
 
         // Show the real satellite count whenever telemetry exists, even below lock threshold —
         // "—" used to mean "no fix," but visually that's indistinguishable from "no telemetry
@@ -2478,12 +2502,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         AppLog.v(TAG, "onResume")
+        // BVLOS antenna aim (V37); no-op on a device without the rotation-vector sensor.
+        com.dji.sdk.sample.tak.ControllerCompass.start(this)
         mapView.onResume()
         handler.post(refresh)
     }
 
     override fun onPause() {
         AppLog.v(TAG, "onPause")
+        com.dji.sdk.sample.tak.ControllerCompass.stop()
         handler.removeCallbacks(refresh)
         handler.removeCallbacks(hideNotice)
         mapView.onPause()
@@ -2722,6 +2749,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         private const val TAG = "TP2Flight"
         /** Camera capture operations specifically — recording and stills. */
         private const val REC_TAG = "TP2Record"
+
+        /** Within this many degrees of the aircraft bearing, the antenna-aim marker reads
+         *  GREEN — close enough for the controller's antenna lobe. Read by [AntennaAimView]
+         *  so the arc and this screen judge "aligned" identically. */
+        const val ANTENNA_ALIGNED_DEG = 10.0
 
         /** The gimbal camera. Every camera key on this screen names it explicitly — an
          *  untargeted key was accepted and discarded by this aircraft (2026-08-20). */
