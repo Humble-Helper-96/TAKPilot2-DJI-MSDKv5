@@ -76,24 +76,28 @@ and the two confused three sessions between them. There is now one directory and
 - Colours come from the tokens in `res/values/takpilot_colors.xml`. Do not add a new
   `Color.parseColor` call site. `res/values/colors.xml` belongs to the stock DJI sample —
   leave it alone.
-- **This application runs on a smart controller, not a phone.** The target is the DJI RC
-  Plus. It follows the Autel controller treatment and not the MSDKv4 phone layouts —
-  specification §7 and conformance finding V11. The tree is still in the phone's default dp
-  bucket today; that is the open defect, not the rule. Take the reasoning from the Autel
-  tree, never its numbers: no dp value transfers between trees, and the RC Plus dp size must
-  be read from the device before any dimension work.
+- **This application has ONE target: the DJI RC Plus 2 smart controller, not a phone.** The
+  dimension rules are specification §7 — read it, and do not restate it here. The device's
+  measured configuration and every hardware fact about it are in
+  `../DJI-RC-Plus-2-Hardware.md`. Because the tree has one target and that target resolves to
+  the base resource bucket, this tree's `values/dimens.xml` IS its per-device file; the
+  numbers live there with the reasoning beside them.
 - Release notes are short and simple, one line per function, next to the APK.
 - Do not commit without asking first.
 
 ## Verification
 
 - The build: `./gradlew :app:assembleRelease`. Gradle 8.12, AGP 8.7.0. `versionName` is
-  `1.0.0-dev1`, versionCode 4 — RELEASED 2026-08-18 as the first signed build of this
-  tree (tag `v1.0.0-dev1`). Signing comes from `app/keystore.properties`, the same AnchorTAK
-  key the MSDKv4 sibling uses; it is gitignored and must stay that way.
-- Nothing in this tree is verified on hardware yet. **`versionName` stays `-dev` until
-  something flies.** Move versionCode on every build that goes on a device; move the name
-  when the aircraft has been in the air.
+  `1.0.0-dev1`. The last signed release was versionCode 4, on 2026-08-18 (tag
+  `v1.0.0-dev1`); the current number is in `app/build.gradle`, which carries a line per bump
+  saying what each one was for. Signing comes from `app/keystore.properties`, the same
+  AnchorTAK key the MSDKv4 sibling uses; it is gitignored and must stay that way.
+- The DJI SDK key is in `app/dji-key.properties`, also gitignored. It is bound to the
+  `applicationId` — see rule 8.
+- **The bench is verified; the air is not.** As of 2026-08-19 this tree registers, links to a
+  Matrice 4T and runs its flight screen on an RC Plus 2. **NOTHING HAS FLOWN**, thus
+  `versionName` stays `-dev`. Move versionCode on every build that goes on a device; move the
+  name when the aircraft has been in the air.
 - The printable Field Guide regenerates with `python3 tools/generate_field_guide_md.py`
   after any `FieldGuideActivity` change. Output lands outside the repo, in `DJI/v5/`.
 
@@ -112,6 +116,25 @@ were dangerous rather than merely stale (conformance V15). The same trap applies
 this build runs on a smart controller. Both the layout and the Field Guide are airframe- and
 device-neutral now, and `FieldGuideActivity`'s class doc states the rule.
 
-The open defect is unchanged and is **V11**: this tree is still in the phone's default dp
-bucket and runs on an RC Plus. It is four numbers in a `values-w820dp` bucket that does not
-exist yet, and it is blocked on nobody having measured the device. Do not guess them.
+**2026-08-19: this tree ran on real hardware for the first time** — an RC Plus 2 with a
+Matrice 4T. It registers with the DJI SDK, links to the aircraft, and flies the flight screen
+with live video, HUD, telemetry and map. versionCode 10. **`versionName` stays `1.0.0-dev1`:
+nothing has flown.**
+
+Six faults were found and fixed that day, and the thing they share matters more than any one
+of them: **every single one failed silently.** No dialog, no error, no log line. A permission
+gate that held `VIBRATE` — a normal permission the manifest never declared — kept the SDK from
+ever registering. A null `description()` from a refused metering write killed the flight
+screen. `AppLog.init()` was never called anywhere. An action bar overflowed its width and put
+the record toggle off the screen. Coordinates wrapped. The letterbox showed as a black band.
+Assume the next screen holds the same kind of fault and that it will not announce itself.
+
+**V11 is closed** (2026-08-19), and its premise was wrong: the RC Plus 2 measures
+`sw480dp-w768dp-h416dp-400dpi`, reaches neither `w820dp` nor `h440dp`, is NARROWER than the
+phone, and is short on height rather than roomy. See the V11 note in the conformance ledger
+before you trust any earlier statement about this screen's size.
+
+Open on the flight screen: the **diagnostics banner** prints each item as
+`title -> description` and the M4T sends the same sentence in both, so every message is
+doubled; several arrive as untranslated Chinese, including a crash-log caution. A third of the
+live video is covered in red text a pilot cannot read.
