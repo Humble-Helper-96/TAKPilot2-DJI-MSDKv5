@@ -1596,12 +1596,34 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                         onMarkerRowTapped(row.pin)
                         dialog.dismiss()
                     }
-                    // No action menu for a shared marker: every entry on that menu (move,
-                    // rename, change type, re-send) would change it for the whole team. The X
-                    // is the one thing the pilot may legitimately do to it.
-                    row.shared != null ->
-                        Toast.makeText(this, "Shared by another user — X removes it from your map only",
-                            Toast.LENGTH_SHORT).show()
+                    // A shared marker: remove it locally, or SEND IT AGAIN. Re-sending a
+                    // received marker is ordinary TAK client behaviour (operator, adopted from
+                    // the Autel sibling 2026-08-20) — it is how a marker that went stale on
+                    // one screen is brought back for the team, and it goes out under the
+                    // marker's OWN uid and CoT type, so it updates rather than duplicates.
+                    // The old stance here ("re-sending is not the pilot's call") is the one
+                    // the sibling's dated comment records as simply wrong. Rename, retype and
+                    // move stay absent: editing another operator's marker is a larger question
+                    // than re-broadcasting one.
+                    row.shared != null -> {
+                        val shared = row.shared
+                        AlertDialog.Builder(this, R.style.TakDialogTheme)
+                            .setTitle(shared.callsign)
+                            .setItems(arrayOf("Re-send", "Remove from my map")) { _, index ->
+                                when (index) {
+                                    0 -> {
+                                        AppLog.i(TAG, "shared marker re-send: ${shared.uid}")
+                                        com.dji.sdk.sample.tak.TakMapMarkers.resendShared(shared.uid)
+                                    }
+                                    1 -> {
+                                        com.dji.sdk.sample.tak.TakMapMarkers.hideInbound(shared.uid)
+                                        refresh()
+                                    }
+                                }
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
                 }
             }
 

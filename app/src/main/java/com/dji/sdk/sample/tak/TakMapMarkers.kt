@@ -361,6 +361,35 @@ object TakMapMarkers {
             .filter { !hidden.contains(it.uid) }
             .map { SharedMarker(it.uid, it.callsign, it.type, it.lat, it.lon) }
 
+    /**
+     * Re-broadcasts a marker the TEAM shared, under its OWN uid and its OWN CoT type.
+     *
+     * Re-sending a received marker is ordinary TAK client behaviour (operator, 2026-08-15 on
+     * the Autel sibling; adopted here 2026-08-20 — this tree deliberately had NO shared
+     * re-send until then, and the old stance's comment said re-sending was not the pilot's
+     * call). The uid is what makes it an update rather than a duplicate — see
+     * [TakManager.sendMarkerWithCotType].
+     *
+     * THE TYPE IS PASSED THROUGH, NOT RE-DERIVED. The shared store admits bare
+     * `a-{f,h,n,u}-G` markers and `b-m-p-*` marker points. Only the first four can be
+     * expressed as one of this app's affiliations, so deriving a type would rewrite every
+     * ATAK waypoint as a friendly ground marker for the whole team (ledger V41).
+     *
+     * KNOWN LIMIT, ACCEPTED (same as the sibling): [SavedMarker] does not keep the original
+     * remarks, so a re-sent marker carries this aircraft's "Dropped by …" instead of whatever
+     * the originator wrote.
+     *
+     * @return true if it went to the server, false if not connected or the uid is unknown.
+     */
+    fun resendShared(uid: String): Boolean {
+        val m = savedMarkers[uid] ?: return false
+        val sent = TakManager.getInstance().sendMarkerWithCotType(
+            m.uid, m.lat, m.lon, m.alt, m.type, m.callsign, "",
+            TakMissionManager.joinedFeed, m.type)
+        AppLog.i(TAG, "shared marker re-send: $uid type=${m.type} -> ${sent != null}")
+        return sent != null
+    }
+
     /** The 2525 frame for a shared marker's type, for the list row's icon. Null leaves the row
      *  iconless rather than borrowing a symbol that means something else. */
     fun sharedIconRes(type: String?): Int? = milMarkerRes(type)
