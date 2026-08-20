@@ -45,33 +45,35 @@ object DjiSdkBridge {
     private const val DIAG_TAG = "TP2Diag"
     const val PERMISSION_REQUEST_CODE = 1001
 
+    /**
+     * The runtime permissions the pilot must grant before the SDK can register.
+     *
+     * This list holds DANGEROUS permissions only. Do not add a normal (install-time)
+     * permission here, such as INTERNET, VIBRATE, BLUETOOTH or the WiFi-state permissions.
+     * The system grants a normal permission at install time when the manifest declares it,
+     * and `requestPermissions` cannot grant one. If a normal permission is in this list and
+     * the manifest does not declare it, `checkSelfPermission` reports it denied for ever.
+     * The gate then never opens, `registerAndConnect` is never called, and the SDK never
+     * registers — with no dialog, no log line and no error.
+     *
+     * That defect was live on the bench on 2026-08-19: `VIBRATE` was in this list but was
+     * not in the manifest, so registration never started. The V1 reference tree
+     * (`Org_TAKPilot2-source-V1`, `DJIMainActivity.permissionArray`) keeps normal
+     * permissions out of its gate for this reason. Keep them out of this one.
+     */
     private val REQUIRED_PERMISSIONS: Array<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             arrayOf(
-                Manifest.permission.VIBRATE,
-                Manifest.permission.INTERNET,
-                Manifest.permission.ACCESS_WIFI_STATE,
                 Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_NETWORK_STATE,
                 Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.CHANGE_WIFI_STATE,
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
                 Manifest.permission.READ_PHONE_STATE,
                 Manifest.permission.RECORD_AUDIO
             )
         } else {
             arrayOf(
-                Manifest.permission.VIBRATE,
-                Manifest.permission.INTERNET,
-                Manifest.permission.ACCESS_WIFI_STATE,
                 Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_NETWORK_STATE,
                 Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.CHANGE_WIFI_STATE,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
                 Manifest.permission.READ_EXTERNAL_STORAGE,
                 Manifest.permission.READ_PHONE_STATE,
                 Manifest.permission.RECORD_AUDIO
