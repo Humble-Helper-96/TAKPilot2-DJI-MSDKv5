@@ -233,16 +233,45 @@ public class TakManager implements TakClient.TakClientListener {
      * the work this removal defers, not a detail to guess at.
      */
     /**
-     * Send CoT, directing it to the selected channels if any. Injects a
-     * {@code <marti><dest group="X" send="true"/>…</marti>} for each selected channel into the
-     * event's {@code <detail>}. If the CoT already has a {@code <marti>} (e.g. a mission-scoped
-     * marker), the group dests are merged into it instead of adding a second block. With no
-     * channels selected, the CoT is sent unchanged (server default routing).
+     * Sends one CoT to the server.
+     *
+     * The event goes out exactly as the builder made it. Routing is the server's job, decided by
+     * the group membership on this client's certificate — see the note on channel selection above
+     * for why this method no longer rewrites the destination.
      */
     private void sendCot(String xml) {
-        if (client == null || !connected) return;
-        client.sendMessage(xml);
+        if (client == null || !connected) {
+            AppLog.w(TAG, "CoT NOT SENT — client=" + (client == null ? "null" : "present")
+                    + " connected=" + connected);
+            return;
+        }
+        String wire = xml;
+        // THE EXACT BYTES handed to the socket. Added 2026-08-15: markers were reported as not
+        // arriving while the PLI did, and there was no way to tell a message that never left the
+        // socket from one the server rejected — the application logged nothing it sent. This log
+        // is what found the <dest group> block that was destroying them.
+        //
+        // VERBOSE, not debug. This runs several times a second; the operator turns Detailed on
+        // in Debug Log to diagnose, which is the convention the flight-test checklist already
+        // uses. AppLog.v only reaches the file when that is set.
+        AppLog.v(TAG, "CoT OUT: " + redactCredentials(wire));
+        client.sendMessage(wire);
     }
+
+    /**
+     * Masks {@code user:pass@} in any url inside a string bound for the log.
+     *
+     * ⚠ EVERY OUTBOUND LOG LINE GOES THROUGH THIS. The pilot PLI carries the video url, and that
+     * url carries the media-server password — which is why {@link #sendPilotPLI} deliberately
+     * logs no XML at all. The security review of 2026-08-03 recorded this application as not
+     * writing a credential to the log or to logcat, and a blanket outbound log would have undone
+     * that silently. Do not log a CoT without it.
+     */
+    static String redactCredentials(String s) {
+        if (s == null) return null;
+        return s.replaceAll("://[^:/@\\s\"]+:[^@\\s\"]+@", "://<user>:<pass>@");
+    }
+
 
     /**
      * The {@code <takv device="...">} value: hardware model plus the CURRENT callsign, so a
@@ -423,12 +452,40 @@ public class TakManager implements TakClient.TakClientListener {
     public String sendMarkerWithUid(String markerUid, double lat, double lon, double alt,
                                     String affiliation, String name, String remarks,
                                     String missionName) {
+        return sendMarkerWithCotType(markerUid, lat, lon, alt,
+                CotBuilder.cotTypeForAffiliation(affiliation), name, remarks, missionName,
+                affiliation);
+    }
+
+    /**
+     * Send a marker CoT under a caller-supplied uid AND a caller-supplied CoT type.
+     *
+     * Same uid contract as {@link #sendMarkerWithUid} — the uid is the marker's identity, so
+     * re-sending one updates the marker rather than spawning a second.
+     *
+     * USE THIS TO RE-BROADCAST A MARKER THIS APP DID NOT CREATE. A marker received from the
+     * team carries its own CoT type, and that type must go back out unchanged: deriving one
+     * from an affiliation can only ever produce {@code a-{f,h,n,u}-G}, which would rewrite an
+     * ATAK marker point ({@code b-m-p-*}) as a friendly ground marker on every screen in the
+     * team.
+     *
+     * @param affiliationForLog only for the log line; it does not reach the XML.
+     * @return the uid that was sent, or null if not connected.
+     */
+    public String sendMarkerWithCotType(String markerUid, double lat, double lon, double alt,
+                                        String cotType, String name, String remarks,
+                                        String missionName, String affiliationForLog) {
         if (client == null || !connected) return null;
-        String xml = CotBuilder.buildMarker(uid, callsign, markerUid, affiliation, lat, lon, alt,
-                name, remarks, missionName);
+        String xml = CotBuilder.buildMarkerWithType(uid, callsign, markerUid, cotType,
+                lat, lon, alt, name, remarks, missionName, affiliationForLog);
         sendCot(xml);
-        AppLog.d(TAG, "Marker sent" + (missionName != null ? " to mission " + missionName : "")
-                + ": " + affiliation + " @ " + lat + "," + lon + " id=" + markerUid);
+        // "QUEUED", not "sent". sendCot hands the message to a fire-and-forget writer thread and
+        // this line runs whatever that thread then does with it. Saying "sent" here cost an hour
+        // on 2026-08-15: the log said every marker was sent while none arrived. The truth about
+        // the wire is in the CoT OUT line above and in TakClient's failure lines.
+        AppLog.d(TAG, "Marker queued for send"
+                + (missionName != null ? " to mission " + missionName : "")
+                + ": " + cotType + " @ " + lat + "," + lon + " id=" + markerUid);
         return markerUid;
     }
 

@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import com.taklite.util.AppLog
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -192,6 +193,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_takpilot2go_flight)
         AppLog.v(TAG, "onCreate")
+
+        // THE SCREEN STAYS ON FOR THE WHOLE FLIGHT (V19, audit 2026-08-20). Without this flag
+        // Android's display timeout can blank the live FPV mid-sortie — and the TAK video
+        // stream is a capture of this screen, so the team's feed blanks with it. The flag is
+        // window-scoped: it clears itself when this activity goes away, so Home and
+        // Pre-Flight keep the normal timeout. Same line the Autel sibling has carried in its
+        // onCreate from the start.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // No native ActionBar on this screen (see AppTheme.NoActionBar in the manifest) — the
         // custom toolbar below is the only top bar. That theme also makes the status bar

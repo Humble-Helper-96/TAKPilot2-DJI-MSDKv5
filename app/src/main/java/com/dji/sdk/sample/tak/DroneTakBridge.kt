@@ -392,6 +392,14 @@ class DroneTakBridge(
     )
 
     private fun pushOnce() {
+        // THE PILOT MARKER GOES FIRST, AND IS NOT GATED ON THE AIRCRAFT (V22, audit
+        // 2026-08-20; Autel's fix of 2026-08-15). Everything after this line returns early on
+        // aircraft state — no location, stale telemetry, no GPS fix — and the operator is none
+        // of those things. The video stream is a capture of THEIR screen and keeps running
+        // when the aircraft is down; until this moved, an aircraft with no fix meant NEITHER
+        // marker published and nothing on the network said where the stream was.
+        pushPilotPli()
+
         val loc = lastLocation ?: run {
             AppLog.d(TAG, "tick: no aircraft location pushed yet")
             return
@@ -474,8 +482,6 @@ class DroneTakBridge(
             0.0, gimbalPitch, gimbalYaw,
             isFlying, flightTimeSec,
             lastBatteryMaxMah, lastBatteryRemainMah, lastVoltageMv / 1000.0)
-
-        pushPilotPli()
     }
 
     /**

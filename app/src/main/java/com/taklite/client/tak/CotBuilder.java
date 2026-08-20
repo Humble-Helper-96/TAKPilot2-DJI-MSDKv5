@@ -64,9 +64,15 @@ public class CotBuilder {
      * {@code SENSOR_MODEL} is the one to check on a Mini 2, because it is now the only one of
      * the three that has ever changed.
      */
+    // ⚠ THESE ARE THIS TREE'S IDENTITY ON THE TAK NETWORK, and they are the per-vendor
+    // divergence inside a contractually vendor-neutral core (ledger V34). "MINI2" went out on
+    // the wire from a Matrice 4TD until 2026-08-20 — the second wrong airframe this constant
+    // has carried (it said M30T until 2026-08-11). The real fix is extracting these to
+    // per-app configuration so com.taklite can be byte-identical again (V40); until then,
+    // the test theDronePliIdentifiesThisAirframeAndNotAnother pins the values.
     private static final String VEHICLE_TYPE_TAG = "_DJIV5_";
     private static final String VEHICLE_TYPE = "DJIV5";
-    private static final String SENSOR_MODEL = "MINI2";
+    private static final String SENSOR_MODEL = "M4TD";
 
     static {
         COT_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
@@ -140,10 +146,7 @@ public class CotBuilder {
         sb.append(" platform=\"").append(escapeXml(takvPlatform)).append("\"");
         sb.append(" version=\"").append(escapeXml(takvVersion)).append("\" />");
         sb.append("<uid Droid=\"").append(escapeXml(callsign)).append("\" />");
-        if (videoUrl != null && !videoUrl.isEmpty()) {
-            sb.append("<__video sensor=\"").append(escapeXml(callsign)).append("\"");
-            sb.append(" url=\"").append(escapeXml(videoUrl)).append("\" />");
-        }
+        appendVideo(sb, videoUrl, callsign, null);
         sb.append("</detail>");
         sb.append("</event>");
         return sb.toString();
@@ -229,13 +232,7 @@ public class CotBuilder {
             sb.append("<_route sender=\"").append(escapeXml(operatorUid)).append("\" />");
         }
         sb.append("<commandedData climbRate=\"0.0\" />");
-        if (videoUrl != null && !videoUrl.isEmpty()) {
-            sb.append("<__video sensor=\"").append(escapeXml(callsign)).append("\"");
-            if (spiUid != null && !spiUid.isEmpty()) {
-                sb.append(" spi=\"").append(escapeXml(spiUid)).append("\"");
-            }
-            sb.append(" url=\"").append(escapeXml(videoUrl)).append("\" />");
-        }
+        appendVideo(sb, videoUrl, callsign, spiUid);
         if (operatorUid != null && !operatorUid.isEmpty()) {
             sb.append("<link uid=\"").append(escapeXml(operatorUid)).append("\"");
             sb.append(" type=\"a-f-G-U-C\" relation=\"p-p\" />");
@@ -415,6 +412,46 @@ public class CotBuilder {
     public static String buildMarker(String senderUid, String senderCallsign, String markerUid,
                                       String affiliation, double lat, double lon, double alt,
                                       String name, String remarks, String missionName) {
+        return buildMarkerWithType(senderUid, senderCallsign, markerUid,
+                cotTypeForAffiliation(affiliation), lat, lon, alt, name, remarks, missionName,
+                affiliation);
+    }
+
+    /**
+     * The CoT type this application emits for one of its four affiliations.
+     *
+     * Every marker THIS app places is a bare affiliation-plus-domain type. The trailing
+     * qualifiers other clients use (…-G-E-V and the like) say equipment or platform, which a
+     * dropped point is not.
+     */
+    public static String cotTypeForAffiliation(String affiliation) {
+        switch (affiliation == null ? "" : affiliation.toLowerCase()) {
+            case "hostile":  return "a-h-G";
+            case "unknown":  return "a-u-G";
+            case "neutral":  return "a-n-G";
+            case "friendly":
+            default:         return "a-f-G";
+        }
+    }
+
+    /**
+     * Build a marker CoT under an EXPLICIT CoT type, rather than deriving one from an
+     * affiliation.
+     *
+     * WHY THIS EXISTS: a marker this app RE-BROADCASTS was not necessarily made by this app.
+     * A marker received from the team can be a bare {@code a-{f,h,n,u}-G} — which the
+     * affiliation switch reproduces exactly — or a {@code b-m-p-*} marker point, which it does
+     * NOT: every affiliation maps to an {@code a-*} type, so re-sending an ATAK waypoint
+     * through the affiliation path would quietly turn it into a friendly ground marker on every
+     * screen in the team. The type has to be carried, not re-derived.
+     *
+     * {@code affiliationForLog} is only for the log line; it has no effect on the XML.
+     */
+    public static String buildMarkerWithType(String senderUid, String senderCallsign,
+                                      String markerUid, String cotType,
+                                      double lat, double lon, double alt,
+                                      String name, String remarks, String missionName,
+                                      String affiliationForLog) {
         long now = System.currentTimeMillis();
         String time = formatTime(now);
         // The lifetime is MARKER_STALE_DURATION_MS. Its declaration above holds the figure and
@@ -423,15 +460,7 @@ public class CotBuilder {
         // DRONE_STALE_DURATION_MS (a live track) and to SENSOR_POINT_STALE_MS — a static marker
         // and a moving aircraft want completely different lifetimes.
         String stale = formatTime(now + MARKER_STALE_DURATION_MS);
-
-        String cotType;
-        switch (affiliation.toLowerCase()) {
-            case "hostile":  cotType = "a-h-G"; break;
-            case "unknown":  cotType = "a-u-G"; break;
-            case "neutral":  cotType = "a-n-G"; break;
-            case "friendly":
-            default:         cotType = "a-f-G"; break;
-        }
+        String affiliation = affiliationForLog;
 
         String callsign = (name != null && !name.isEmpty()) ? name : affiliation;
         String remarksText = (remarks != null && !remarks.isEmpty()) ? remarks
@@ -477,6 +506,82 @@ public class CotBuilder {
         synchronized (COT_DATE_FORMAT) {
             return COT_DATE_FORMAT.format(new Date(millis));
         }
+    }
+
+    /**
+     * The video advertisement, in the shape TAK clients actually parse.
+     *
+     * <p>⚠ This used to emit {@code <__video sensor=".." url=".."/>} and nothing else. That is
+     * self-consistent — our own {@link CotParser} reads exactly those two attributes — but no
+     * client can build a player from it, so the marker arrived on ATAK/CloudTAK/TAKAware with no
+     * play control and the stream never reached the video manager. Confirmed on the DJI
+     * sibling's 2026-08-12 flight: the url WAS on the wire (246 of 702 operator PLIs carried it)
+     * and still nothing offered to play it.
+     *
+     * <p>The shape below is the one CloudTAK's CoT library (dfpc-coe/node-CoT) requires: a nested
+     * {@code ConnectionEntry} whose {@code uid} and {@code address} are BOTH mandatory. Optional
+     * attributes are sent anyway, with ATAK's own defaults, because a client that reads them and
+     * finds them missing falls back to values we did not choose.
+     *
+     * <p>The video uid is derived from the URL, so it is stable across restarts and IDENTICAL on
+     * the aircraft and the operator marker. That is deliberate: it is one stream, and two markers
+     * advertising it under one uid give a client one video entry referenced twice, not two
+     * competing entries for the same feed.
+     *
+     * <p>⚠ {@code url} keeps whatever the caller passed, credentials included — that is how the
+     * stream authenticates today and removing them would break playback on a server that needs
+     * them. {@code address} is the bare host, so a client that builds only from ConnectionEntry
+     * gets a clean address. If a feed needs auth and a client uses ConnectionEntry alone, this is
+     * where that shows up.
+     *
+     * @param alias human-readable name for the feed; shown in a client's video manager.
+     */
+    private static void appendVideo(StringBuilder sb, String videoUrl, String alias, String spiUid) {
+        if (videoUrl == null || videoUrl.isEmpty()) return;
+
+        String videoUid = videoUidFor(videoUrl);
+        String host = "";
+        int port = -1;
+        String path = "";
+        String protocol = "raw";
+        try {
+            java.net.URI u = java.net.URI.create(videoUrl);
+            if (u.getScheme() != null) protocol = u.getScheme();
+            if (u.getHost() != null) host = u.getHost();
+            port = u.getPort();
+            if (u.getPath() != null) path = u.getPath();
+        } catch (IllegalArgumentException e) {
+            // An unparseable url is still worth advertising: `url` carries the whole thing, and
+            // `address` falling back to it matches how ATAK advertises non-host feeds.
+        }
+        if (host.isEmpty()) host = videoUrl;
+
+        sb.append("<__video uid=\"").append(escapeXml(videoUid)).append("\"");
+        sb.append(" sensor=\"").append(escapeXml(alias)).append("\"");
+        if (spiUid != null && !spiUid.isEmpty()) {
+            sb.append(" spi=\"").append(escapeXml(spiUid)).append("\"");
+        }
+        sb.append(" url=\"").append(escapeXml(videoUrl)).append("\">");
+        sb.append("<ConnectionEntry uid=\"").append(escapeXml(videoUid)).append("\"");
+        sb.append(" alias=\"").append(escapeXml(alias)).append("\"");
+        sb.append(" address=\"").append(escapeXml(host)).append("\"");
+        sb.append(" port=\"").append(port).append("\"");
+        sb.append(" path=\"").append(escapeXml(path)).append("\"");
+        sb.append(" protocol=\"").append(escapeXml(protocol)).append("\"");
+        sb.append(" networkTimeout=\"12000\" bufferTime=\"-1\" roverPort=\"-1\"");
+        sb.append(" rtspReliable=\"0\" ignoreEmbeddedKLV=\"false\" />");
+        sb.append("</__video>");
+    }
+
+    /**
+     * A stable uid for a feed, derived from its URL.
+     *
+     * <p>Must not be random: a fresh uid on every position report (one every 2 seconds) would
+     * have a client either create a new video entry each time or churn the existing one.
+     */
+    static String videoUidFor(String videoUrl) {
+        return UUID.nameUUIDFromBytes(videoUrl.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .toString();
     }
 
     private static String escapeXml(String s) {
