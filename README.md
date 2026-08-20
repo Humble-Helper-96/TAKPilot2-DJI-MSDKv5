@@ -1,6 +1,7 @@
 # TAKPilot2 - DJI MSDKv5
 
-TAK flight interface for the DJI Matrice 4T on DJI MSDK v5 (5.18.0).
+TAK flight interface for the DJI Matrice 4 series on DJI MSDK v5 (5.18.0). The bench
+aircraft is a Matrice 4TD.
 Third member of the TAKPilot2 family (Autel, DJI v4, DJI v5). All three
 variants look, feel, and function the same. The only differences come
 from aircraft capabilities.

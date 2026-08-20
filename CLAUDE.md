@@ -19,15 +19,23 @@ A UI change lands in all three applications, or it lands in none.
 
 ## What this application is
 
-The TAK flight interface for the DJI Matrice 4T on MSDK 5.18. It is one of three TAKPilot2
-applications, with the Autel EVO II 640T and the DJI MSDKv4 siblings:
+The TAK flight interface for the DJI Matrice 4 series on MSDK 5.18. It is one of three
+TAKPilot2 applications, with the Autel EVO II 640T and the DJI MSDKv4 siblings:
 
 > A pilot changes airframe and finds the same screens, the same controls in the same places,
 > and the same words.
 
 The shared protocol core is `com.taklite`, which all three hold as the same code.
 
-The M4T is a thermal aircraft, like the EVO II 640T. Thermal palettes, lens switching, zoom
+⚠ **THE BENCH AIRCRAFT IS A MATRICE 4TD, NOT A 4T.** DJI Pilot 2 reads `MATRICE 4TD` and the
+SDK reports `DJI_MATRICE_4D_SERIES` — the 4D series, which MSDK 5.18 supports as "Matrice 4D
+Enterprise". Documents written before 2026-08-19, this file included, say "Matrice 4T"
+throughout; that was never checked against the aircraft. Nothing in the code branches on
+product type today, so nothing is broken by it, but do not assume a 4T capability list. The
+aircraft carries three payloads — CAM, an AS1 speaker and an AL1 light. See
+`../DJI-RC-Plus-2-Hardware.md`.
+
+It is a thermal aircraft, like the EVO II 640T. Thermal palettes, lens switching, zoom
 behaviour and the recording storage guards match the Autel application's implementation.
 Do not reinvent them, and do not copy the third-party V1 tree's GUI — that tree is an API
 crib sheet only.
@@ -95,7 +103,7 @@ and the two confused three sessions between them. There is now one directory and
 - The DJI SDK key is in `app/dji-key.properties`, also gitignored. It is bound to the
   `applicationId` — see rule 8.
 - **The bench is verified; the air is not.** As of 2026-08-19 this tree registers, links to a
-  Matrice 4T and runs its flight screen on an RC Plus 2. **NOTHING HAS FLOWN**, thus
+  Matrice 4TD and runs its flight screen on an RC Plus 2. **NOTHING HAS FLOWN**, thus
   `versionName` stays `-dev`. Move versionCode on every build that goes on a device; move the
   name when the aircraft has been in the air.
 - The printable Field Guide regenerates with `python3 tools/generate_field_guide_md.py`
@@ -117,7 +125,7 @@ this build runs on a smart controller. Both the layout and the Field Guide are a
 device-neutral now, and `FieldGuideActivity`'s class doc states the rule.
 
 **2026-08-19: this tree ran on real hardware for the first time** — an RC Plus 2 with a
-Matrice 4T. It registers with the DJI SDK, links to the aircraft, and flies the flight screen
+Matrice 4TD. It registers with the DJI SDK, links to the aircraft, and flies the flight screen
 with live video, HUD, telemetry and map. versionCode 10. **`versionName` stays `1.0.0-dev1`:
 nothing has flown.**
 
@@ -134,7 +142,15 @@ Assume the next screen holds the same kind of fault and that it will not announc
 phone, and is short on height rather than roomy. See the V11 note in the conformance ledger
 before you trust any earlier statement about this screen's size.
 
-Open on the flight screen: the **diagnostics banner** prints each item as
-`title -> description` and the M4T sends the same sentence in both, so every message is
-doubled; several arrive as untranslated Chinese, including a crash-log caution. A third of the
-live video is covered in red text a pilot cannot read.
+**The warning banner was then fixed the same day** (versionCode 16). It had FIVE defects
+stacked, and only one of them was visible at the start: it displayed nothing at all; every
+message printed twice; some arrived as untranslated Chinese; it ignored §4.8's "worst plus a
+count" and grew without limit; and the aircraft sends its faults NOTICE-first, so collapsing
+it to one line without a severity sort would have hidden two CAUTIONs behind the count.
+
+That last one is the lesson: **shrinking the banner turned a harmless ordering quirk into a
+safety fault**, and it would have shipped looking like an improvement. When you make something
+show less, check what it stopped showing.
+
+Open on the flight screen: dead vertical space in the right-hand column, and the collapse
+arrow sits alone on its own line when the banner is expanded.
