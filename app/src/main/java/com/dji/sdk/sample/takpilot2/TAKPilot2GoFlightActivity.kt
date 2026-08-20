@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.dji.sdk.sample.R
 import com.dji.sdk.sample.tak.ArSettings
+import com.dji.sdk.sample.tak.AircraftLights
 import com.dji.sdk.sample.tak.CameraSlantPoint
 import com.dji.sdk.sample.tak.FlightLimitsController
 import com.dji.sdk.sample.tak.ZoomLadder
@@ -60,6 +61,7 @@ import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.value.common.CameraLensType
 import dji.sdk.keyvalue.value.camera.CameraMode
+import dji.sdk.keyvalue.value.camera.CameraThermalPalette
 import dji.sdk.keyvalue.value.camera.CameraVideoStreamSourceType
 import dji.sdk.keyvalue.value.camera.ZoomRatiosRange
 import dji.sdk.keyvalue.value.common.ComponentIndexType
@@ -102,6 +104,13 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private lateinit var recordToggle: RecordToggleView
     private lateinit var rthButton: ImageButton
     private lateinit var zoomButton: TextView
+    private lateinit var irButton: TextView
+    private lateinit var irPaletteButton: TextView
+    private lateinit var lightsButton: ImageButton
+    /** True while the INFRARED camera is the live source. Mirrors the aircraft's answer:
+     *  set from the stream-source read-back, never from what was asked. */
+    private var irOn = false
+    private var irPalette = 0
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
     private lateinit var fpvHomeDistance: TextView
@@ -485,11 +494,40 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             true
         }
 
-        findViewById<ImageButton>(R.id.flightResyncButton).setOnClickListener {
-            AppLog.v(TAG, "tap: Video Re-Sync")
+        // VIDEO RE-SYNC MOVED OFF THE ACTION BAR (2026-08-20). The Autel sibling has no such
+        // control, and matching its run of controls needed the 54dp. Re-sync is a rare
+        // recovery action, not a per-flight one, so it became a long-press on the image it
+        // repairs — where a pilot looking at a frozen picture will reach.
+        fpvView.setOnLongClickListener {
+            AppLog.v(TAG, "long-press: Video Re-Sync")
             fpvView.requestResync()
             Toast.makeText(this, "Re-syncing video…", Toast.LENGTH_SHORT).show()
+            true
         }
+
+        irButton = findViewById(R.id.flightIrButton)
+        irButton.setOnClickListener { onIrTapped() }
+        irPaletteButton = findViewById(R.id.flightIrPaletteButton)
+        irPaletteButton.setOnClickListener { onIrPaletteTapped() }
+
+        lightsButton = findViewById(R.id.flightLightsButton)
+        lightsButton.setOnClickListener {
+            // The AIRCRAFT's state decides the direction, not a local flag — see AircraftLights.
+            val currentlyDark = AircraftLights.isDark == true
+            AppLog.v(TAG, "tap: Exterior lights (currently dark=$currentlyDark)")
+            lightsButton.isEnabled = false
+            AircraftLights.setAllOff(!currentlyDark) { confirmed ->
+                runOnUiThread {
+                    lightsButton.isEnabled = true
+                    renderLightsButton()
+                    if (!confirmed) {
+                        Toast.makeText(this, "The aircraft did not change the lights.",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        AircraftLights.refresh { runOnUiThread { renderLightsButton() } }
 
         zoomButton = findViewById(R.id.flightZoomButton)
         zoomButton.setOnClickListener { onZoomTapped() }
@@ -2160,6 +2198,112 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         fpvAntennaArc.setRelativeBearing(((bearing - facing + 540.0) % 360.0) - 180.0)
     }
 
+    /**
+     * THERMAL ON/OFF — the same stream-source key the zoom ladder drives, with INFRARED as a
+     * third source (2026-08-20). The mechanism is the one the zoom work proved on this
+     * aircraft: set [CameraKey.KeyCameraVideoStreamSource], then READ IT BACK and render from
+     * the answer. A source switch that returns OK and does not take is exactly how the zoom
+     * button spent two days lying about its magnification.
+     *
+     * Leaving IR returns to the WIDE camera, which is the ladder's 1X rung, so the zoom label
+     * and the camera agree again the moment IR goes off.
+     */
+    private fun onIrTapped() {
+        val target = if (irOn) CameraVideoStreamSourceType.WIDE_CAMERA
+                     else CameraVideoStreamSourceType.INFRARED_CAMERA
+        val sourceKey = KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, MAIN_CAM)
+        AppLog.i(TAG, "IR: switching stream source to $target")
+        irButton.isEnabled = false
+        KeyManager.getInstance().setValue(sourceKey, target,
+            object : CommonCallbacks.CompletionCallback {
+                override fun onSuccess() {
+                    val nowSource = runCatching {
+                        KeyManager.getInstance().getValue(
+                            sourceKey, CameraVideoStreamSourceType.UNKNOWN)
+                    }.getOrNull()
+                    AppLog.i(TAG, "IR: stream source read-back = $nowSource")
+                    runOnUiThread {
+                        irButton.isEnabled = true
+                        // THE READ-BACK DECIDES, not the request.
+                        irOn = nowSource == CameraVideoStreamSourceType.INFRARED_CAMERA
+                        if (!irOn) {
+                            // Back on the wide lens: that IS the ladder's 1X rung.
+                            zoomRatio = 1.0
+                            zoomButton.text = ZoomLadder.label(1.0)
+                            TakBridgeHolder.setZoomFactor(1.0)
+                        }
+                        renderIrButtons()
+                    }
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    AppLog.w(TAG, "IR: stream source switch refused: ${describeError(error)}")
+                    runOnUiThread {
+                        irButton.isEnabled = true
+                        Toast.makeText(this@TAKPilot2GoFlightActivity,
+                            "Could not switch to thermal: ${describeError(error)}",
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            })
+    }
+
+    /** White hot -> black hot -> ironbow, then round again. Only reachable while [irOn]. */
+    private fun onIrPaletteTapped() {
+        val next = (irPalette + 1) % IR_PALETTES.size
+        val (palette, label) = IR_PALETTES[next]
+        val key = KeyTools.createCameraKey(
+            CameraKey.KeyThermalPalette, MAIN_CAM, CameraLensType.CAMERA_LENS_THERMAL)
+        AppLog.i(TAG, "IR palette: asking for $label")
+        KeyManager.getInstance().setValue(key, palette,
+            object : CommonCallbacks.CompletionCallback {
+                override fun onSuccess() {
+                    runOnUiThread {
+                        irPalette = next
+                        irPaletteButton.text = label
+                        AppLog.i(TAG, "IR palette now $label")
+                    }
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    AppLog.w(TAG, "IR palette refused: ${describeError(error)}")
+                    runOnUiThread {
+                        Toast.makeText(this@TAKPilot2GoFlightActivity,
+                            "Could not change the palette: ${describeError(error)}",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            })
+    }
+
+    /**
+     * Paints the IR pill, shows the palette button only while thermal is live, and GREYS THE
+     * ZOOM PILL while IR is on (operator, 2026-08-20).
+     *
+     * The zoom ladder and IR are the same SDK control — one key picks WIDE, ZOOM or INFRARED
+     * — so zoom is genuinely unavailable in thermal, and the honest thing is to say so rather
+     * than invent a behaviour. Same idiom as the shutter dimming during a recording.
+     */
+    private fun renderIrButtons() {
+        irButton.setBackgroundResource(
+            if (irOn) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        irButton.setTextColor(
+            if (irOn) ContextCompat.getColor(applicationContext, R.color.tp_state_go)
+            else android.graphics.Color.WHITE)
+        irPaletteButton.visibility = if (irOn) View.VISIBLE else View.GONE
+        zoomButton.isEnabled = !irOn
+        zoomButton.alpha = if (irOn) 0.45f else 1f
+    }
+
+    /** The lights icon reports the AIRCRAFT's state; unknown keeps its own look (amber-dim),
+     *  never collapsed into "off". */
+    private fun renderLightsButton() {
+        val dark = AircraftLights.isDark
+        lightsButton.setImageResource(
+            if (dark == true) R.drawable.ic_led_off else R.drawable.ic_led_on)
+        lightsButton.alpha = if (dark == null) 0.5f else 1f
+    }
+
     private fun refreshBatteryBands() {
         // AIRCRAFT FIRST, pref only as a stand-in. The pilot's saved value is what they
         // INTEND; it differs from the aircraft's whenever a level was edited but not applied,
@@ -2818,6 +2962,16 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         private const val TAG = "TP2Flight"
         /** Camera capture operations specifically — recording and stills. */
         private const val REC_TAG = "TP2Record"
+
+        /** The three palettes the sibling offers, in its order. Kept short on purpose: a
+         *  cycle button with ten entries is a button nobody can aim. */
+        private val IR_PALETTES = listOf(
+            CameraThermalPalette.WHITE_HOT to "WHITE HOT",
+            CameraThermalPalette.BLACK_HOT to "BLACK HOT",
+            // IRONBOW1, not "IRONBOW": the SDK ships two ironbow ramps and there is no
+            // unnumbered one. The first is the conventional ramp.
+            CameraThermalPalette.IRONBOW1 to "IRONBOW",
+        )
 
         /** Within this many degrees of the aircraft bearing, the antenna-aim marker reads
          *  GREEN — close enough for the controller's antenna lobe. Read by [AntennaAimView]

@@ -218,6 +218,22 @@
                     android:layout_weight="1" android:gravity="end" android:text="+2" />
             </LinearLayout>
 
+            <!-- Thermal palette, only while the IR camera is live: a colour change the pilot
+                 cannot see is worse than no action. White hot -> black hot -> ironbow. -->
+            <TextView
+                android:id="@+id/flightIrPaletteButton"
+                android:layout_width="match_parent"
+                android:layout_height="30dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_zoom_pill"
+                android:contentDescription="Cycle thermal palette (white hot / black hot / ironbow)"
+                android:gravity="center"
+                android:text="WHITE HOT"
+                android:textColor="@color/tp_text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <!-- Wall clock. Right-aligned and directly above the telemetry block so it reads as
                  part of the readouts, not as a label on the EV slider. The flight screen is
                  full-screen and covers the system status bar, so without this there is no time
@@ -504,7 +520,7 @@
              pair either way round. -->
         <ImageButton
             android:id="@+id/flightDropPinButton"
-            android:layout_width="56dp"
+            android:layout_width="46dp"
             android:layout_height="46dp"
             android:layout_marginEnd="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
@@ -539,7 +555,7 @@
 
         <TextView
             android:id="@+id/flightZoomButton"
-            android:layout_width="54dp"
+            android:layout_width="48dp"
             android:layout_height="34dp"
             android:layout_marginStart="8dp"
             android:background="@drawable/bg_zoom_pill"
@@ -550,16 +566,39 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <ImageButton
-            android:id="@+id/flightResyncButton"
+        <!-- THERMAL. Same pill frame and the Autel sibling's order (camera, zoom, IR,
+             lights, LIVE, REC), so a pilot changing airframe finds the same run of controls.
+             8dp margins, not the sibling's 16dp: its controller is 1024dp wide and this one
+             is 768dp, so the COMPOSITION is matched and the spacing stays per-device.
+             This slot held a video re-sync button until 2026-08-20; the sibling has no such
+             control, and its 54dp is what pays for these two pills. Re-sync moved to a
+             long-press on the FPV image. -->
+        <TextView
+            android:id="@+id/flightIrButton"
             android:layout_width="46dp"
             android:layout_height="34dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="6dp"
             android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Video re-sync"
-            android:padding="6dp"
+            android:contentDescription="Toggle thermal (IR) camera"
+            android:gravity="center"
+            android:text="IR"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- EXTERIOR LIGHTS: the beacon AND the red/green LEDs on the motor arms, as one
+             dark toggle (operator, 2026-08-20). The icon reports the AIRCRAFT's state, never
+             our request — see AircraftLights. -->
+        <ImageButton
+            android:id="@+id/flightLightsButton"
+            android:layout_width="46dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Exterior lights"
+            android:padding="5dp"
             android:scaleType="fitCenter"
-            android:src="@drawable/ic_resync" />
+            android:src="@drawable/ic_led_on" />
 
         <com.dji.sdk.sample.takpilot2.LiveToggleView
             android:id="@+id/flightStreamButton"
