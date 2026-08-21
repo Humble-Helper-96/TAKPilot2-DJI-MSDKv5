@@ -1169,6 +1169,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                         // Zoom crops the camera's angular width, so both the FOV cone
                         // published to TAK and the AR projection have to narrow with it.
                         TakBridgeHolder.setZoomFactor(targetFactor)
+                        com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
                     }
                 }
 
@@ -1444,7 +1445,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             v = TakBridgeHolder.currentVFovBase   // derived, shown read-only
             hValue.text = "%.1f°".format(h)
             vValue.text = "%.1f°".format(v)
-            hint.text = if (TakBridgeHolder.currentZoomFactor > 1.0) {
+            hint.text = if (TakBridgeHolder.hasCameraFov) {
+                ("THE CAMERA NOW REPORTS ITS OWN FIELD OF VIEW (%.1f° × %.1f° right now), " +
+                    "and the app uses that answer. This manual value is only the fallback " +
+                    "for a camera that has not reported.")
+                    .format(
+                        com.dji.sdk.sample.tak.DroneTakBridge.hFovDeg(),
+                        com.dji.sdk.sample.tak.DroneTakBridge.vFovDeg())
+            } else if (TakBridgeHolder.currentZoomFactor > 1.0) {
                 "Effective at %.0fx zoom: %.1f° × %.1f°".format(
                     TakBridgeHolder.currentZoomFactor,
                     com.dji.sdk.sample.tak.DroneTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
@@ -2276,6 +2284,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         cameraStateSynced = true
         irOn = source == CameraVideoStreamSourceType.INFRARED_CAMERA
         renderIrButtons()
+        com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
         AppLog.i(TAG, "camera state adopted from the aircraft: source=$source")
 
         if (source == CameraVideoStreamSourceType.ZOOM_CAMERA) {
@@ -2351,6 +2360,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                         irButton.isEnabled = true
                         // THE READ-BACK DECIDES, not the request.
                         irOn = nowSource == CameraVideoStreamSourceType.INFRARED_CAMERA
+                        com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
                         if (!irOn) {
                             // Back on the wide lens: that IS the ladder's 1X rung.
                             zoomRatio = 1.0

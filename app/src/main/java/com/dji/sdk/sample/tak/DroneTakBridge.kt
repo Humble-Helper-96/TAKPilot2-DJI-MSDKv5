@@ -783,8 +783,17 @@ class DroneTakBridge(
          * Digital zoom is a centre crop, so the angular width shrinks non-linearly:
          * effectiveHalfAngle = atan(tan(baseHalfAngle) / zoom).
          */
-        fun hFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentHFovBase, zoom)
-        fun vFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentVFovBase, zoom)
+        // THE CAMERA'S OWN ANSWER FIRST (CameraFov, 2026-08-20). It already includes the
+        // zoom — the hybrid focal length is live — so the nominal-rung division below is
+        // only the fallback for a camera that has not reported. That fallback is known-wrong
+        // above 1x (the tele lens is a different focal length); the report is not.
+        fun hFovDeg(zoom: Double = 1.0) =
+            if (TakBridgeHolder.hasCameraFov) TakBridgeHolder.currentHFov()
+            else zoomedFov(TakBridgeHolder.currentHFovBase, zoom)
+
+        fun vFovDeg(zoom: Double = 1.0) =
+            if (TakBridgeHolder.hasCameraFov) TakBridgeHolder.vFovFor(TakBridgeHolder.currentHFov())
+            else zoomedFov(TakBridgeHolder.currentVFovBase, zoom)
 
         private fun zoomedFov(baseDeg: Double, zoom: Double): Double {
             if (!zoom.isFinite() || zoom <= 1.0) return baseDeg

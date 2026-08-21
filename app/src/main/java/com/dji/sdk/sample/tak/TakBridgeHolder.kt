@@ -130,6 +130,42 @@ object TakBridgeHolder {
      * that is wrong in a way more tuning cannot fix. Deriving the vertical means the two axes
      * cannot drift apart and a camera mode change re-derives it for free.
      */
+    /**
+     * The DIAGONAL field the camera itself reported for the live lens AT ITS CURRENT ZOOM,
+     * or null when the camera has not answered. See [com.dji.sdk.sample.tak.CameraFov] for
+     * the measurement and the units. Preferred over the calibrated base wherever present:
+     * the aircraft's answer beats the pilot's estimate, and it is the only source that is
+     * right above 1x — the tele lens is a different focal length, and dividing the wide
+     * base by the nominal rung was wrong twice over (the real gear at "3X" is 2.917x).
+     */
+    @Volatile private var cameraDFovDeg: Double? = null
+
+    fun setCameraFov(dfovDeg: Double) {
+        // ⚠ NOT MIN_FOV. That bound guards the calibrated BASE, where 5 deg would mean a
+        // mistyped value. A camera-reported field INCLUDES the zoom, and at 28x the true
+        // diagonal is 3.7 deg — the first bench pass used MIN_FOV here, rejected the correct
+        // answer, and silently fell back to the known-wrong division at exactly the rung
+        // where the camera's answer matters most. The floor only has to reject nonsense.
+        cameraDFovDeg = dfovDeg.takeIf { it.isFinite() && it in 0.5..MAX_FOV * 2 }
+    }
+
+    fun clearCameraFov() { cameraDFovDeg = null }
+
+    /**
+     * The CURRENT horizontal field, zoom included: the camera's own answer when it has given
+     * one, else the calibrated base narrowed by the nominal zoom factor. The vertical always
+     * follows through [vFovFor], so the axes cannot disagree whichever source wins.
+     */
+    fun currentHFov(): Double {
+        val d = cameraDFovDeg ?: return Double.NaN
+        // Diagonal -> horizontal under the live aspect: tanH = tanD * w/sqrt(w*w+h*h).
+        val a = videoAspect
+        val f = a / Math.sqrt(a * a + 1.0)
+        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(d / 2.0)) * f))
+    }
+
+    val hasCameraFov: Boolean get() = cameraDFovDeg != null
+
     fun setHFovBase(hDeg: Double) {
         hFovBase = hDeg.coerceIn(MIN_FOV, MAX_FOV)
     }
