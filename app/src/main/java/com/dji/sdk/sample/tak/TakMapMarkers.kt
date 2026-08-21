@@ -778,9 +778,13 @@ object TakMapMarkers {
      * were worse here than they were there — a 32dp marker was a quarter of the map's width.
      * The expanded 260dp state makes the new sizes roomier again rather than tighter.
      */
-    private const val MIL_ICON_DP = 14f    // shared markers AND the pilot's own dropped markers
-    private const val AIR_ICON_DP = 12f    // ADS-B traffic — context, not something acted on
-    private const val PLI_DOT_DP = 10f     // team position dots
+    // All three stepped down 2026-08-20 (from 14/12/10) with the self and home icons — the
+    // operator's judgement on the real 148dp map: everything was outsized together.
+    // ⚠ These match the Autel sibling's CONSTANTS no longer; its numbers render smaller than
+    // they read because its drawableToBitmap call sites pass raw pixels.
+    private const val MIL_ICON_DP = 11f    // shared markers AND the pilot's own dropped markers
+    private const val AIR_ICON_DP = 9f     // ADS-B traffic — context, not something acted on
+    private const val PLI_DOT_DP = 8f      // team position dots
     private const val LABEL_SP = 8f
 
     /**

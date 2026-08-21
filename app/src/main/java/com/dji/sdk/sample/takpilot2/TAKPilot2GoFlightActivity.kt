@@ -3286,13 +3286,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         private const val AIRCRAFT_ICON_ID = "aircraft-icon"
         private const val AIRCRAFT_SOURCE_ID = "aircraft-source"
         private const val AIRCRAFT_LAYER_ID = "aircraft-layer"
-        private const val AIRCRAFT_ICON_DP = 28
+        // 16, from 28 (operator, 2026-08-20: "HUGE relatively"). The Autel sibling's self
+        // marker rasterises at ~11dp effective; 28dp on a 148dp map was a fifth of the map.
+        private const val AIRCRAFT_ICON_DP = 16
         private const val HOME_ICON_ID = "home-icon"
         private const val HOME_SOURCE_ID = "home-source"
         private const val HOME_LAYER_ID = "home-layer"
         private const val HOME_LINE_SOURCE_ID = "home-line-source"
         private const val HOME_LINE_LAYER_ID = "home-line-layer"
-        private const val HOME_ICON_DP = 18
+        private const val HOME_ICON_DP = 12
         private const val HOME_NOTICE_MS = 5000L
 
         /** Minimum height above ground for a marker drop, feet. Below this the slant
