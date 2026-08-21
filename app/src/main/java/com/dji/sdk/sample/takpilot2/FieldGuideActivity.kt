@@ -401,6 +401,28 @@ class FieldGuideActivity : AppCompatActivity() {
                 live(LiveToggleView.State.LIVE) to "Video on",
                 live(LiveToggleView.State.RECONNECTING) to "Connects again",
             ),
+            "IR: the thermal camera",
+            "Touch to change between the usual camera and the thermal camera. The button is " +
+                "green when the thermal camera is on.\n\n" +
+                "When the thermal camera is on, a colour button shows in the column on the " +
+                "right. Touch it to change the colours: white hot, black hot, ironbow.\n\n" +
+                "The zoom button is not available when the thermal camera is on. The two " +
+                "controls use the same camera.",
+        )
+
+        entry(
+            emptyList(),
+            "Lights: the navigation lights and the beacon",
+            "Touch to turn the navigation lights on or off. These are the red and green LEDs " +
+                "near each motor.\n\n" +
+                "Touch and hold to turn the beacon on or off. The small dot at the corner of " +
+                "the button shows the beacon: green is on, grey is off.\n\n" +
+                "The button shows what the AIRCRAFT does, not what you asked for. If the " +
+                "aircraft refuses, a message tells you and the button does not change.",
+        )
+
+        entry(
+            emptyList(),
             "LIVE: video to your team",
             "Starts and stops the live video to the video server of your team. Set the server " +
                 "in Pre-Flight Setup first.\n\n" +

@@ -11,20 +11,20 @@ import dji.v5.manager.KeyManager
 import com.taklite.util.AppLog
 
 /**
- * The aircraft's EXTERIOR LIGHTS, as one dark/lit toggle.
+ * The aircraft's EXTERIOR LIGHTS: the navigation LEDs and the beacon, CONTROLLED SEPARATELY.
  *
- * "Exterior" here is the whole set the operator named (2026-08-20): the beacon AND the red
- * and green LEDs near each motor, not one of them. A pilot going covert needs the aircraft
- * dark, and a control that only killed the beacon while the arm LEDs still shone would be a
- * control that lies about what it did.
+ * They were one dark/lit toggle for a few hours on 2026-08-20 and the operator split them the
+ * same day: a tap works the navigation lights (the red and green LEDs near each motor), a
+ * touch-and-hold works the beacon. The two serve different purposes in the air — the beacon
+ * is the anti-collision strobe others see, the navigation LEDs say which way the aircraft
+ * faces — so a pilot needs to kill one without losing the other.
  *
- * The SDK splits this over two keys, which is why this object exists rather than a pair of
- * call sites:
+ * The SDK holds them on two keys, which is what makes the split clean:
  *  - [FlightControllerKey.KeyLEDsSettings] carries four booleans — front, rear, navigation
  *    and status-indicator LEDs. The arm LEDs are the front/rear/navigation members.
  *  - [FlightControllerKey.KeyIsBeaconOpened] is the beacon, separately.
  *
- * ⚠ [isDark] IS THE AIRCRAFT'S ANSWER, NEVER OUR REQUEST (safety rule 4, and the Autel
+ * ⚠ [navOn] AND [beaconOn] ARE THE AIRCRAFT'S ANSWER, NEVER OUR REQUEST (safety rule 4, and the Autel
  * sibling's design). Every write is followed by a read-back, and the button renders from what
  * comes back. A refused write that painted the icon anyway would tell a pilot they are dark
  * when the aircraft is lit — the exact failure the read-back rule exists to prevent.
@@ -37,12 +37,17 @@ object AircraftLights {
     private const val TAG = "AircraftLights"
 
     /**
-     * True when the aircraft reports every exterior light off, false when any is on, and NULL
-     * when it has not answered yet. Null is its own state on purpose: the button shows unknown
-     * rather than guessing off, per the UI convention.
+     * The navigation LEDs: true when the aircraft reports any of them on, false when all are
+     * off, NULL when it has not answered. Null is its own state on purpose — the button shows
+     * unknown rather than guessing off, per the UI convention.
      */
     @Volatile
-    var isDark: Boolean? = null
+    var navOn: Boolean? = null
+        private set
+
+    /** The beacon, independently. Same null-is-unknown rule as [navOn]. */
+    @Volatile
+    var beaconOn: Boolean? = null
         private set
 
     private val ledsKey: DJIKey<LEDsSettings>
@@ -52,7 +57,7 @@ object AircraftLights {
         get() = KeyTools.createKey(BeaconKey.KeyIsBeaconOpened)
 
     /**
-     * Asks the aircraft what its lights are doing and updates [isDark].
+     * Asks the aircraft what its lights are doing and updates [navOn] and [beaconOn].
      *
      * Call on flight-screen entry and after any write. Reading is free of the write rule —
      * rule 3 forbids timed WRITES, not polling a state.
@@ -60,68 +65,61 @@ object AircraftLights {
     fun refresh(onDone: (() -> Unit)? = null) {
         val leds = runCatching { KeyManager.getInstance().getValue(ledsKey) }.getOrNull()
         val beacon = runCatching { KeyManager.getInstance().getValue(beaconKey) }.getOrNull()
-        isDark = computeDark(leds, beacon)
-        AppLog.v(TAG, "lights read-back: leds=$leds beacon=$beacon -> isDark=$isDark")
+        navOn = computeNav(leds)
+        beaconOn = beacon
+        AppLog.v(TAG, "lights read-back: nav=$navOn beacon=$beaconOn (raw leds=$leds)")
         onDone?.invoke()
     }
 
     /**
-     * Dark is EVERY light off. An unknown member does not count as off — if the aircraft will
-     * not say, the answer is unknown, not "probably dark".
+     * The nav lights are ON when ANY member is on. An unknown member does not count as off —
+     * if the aircraft will not say, the answer is unknown, not "probably dark".
      */
-    private fun computeDark(leds: LEDsSettings?, beacon: Boolean?): Boolean? {
-        if (leds == null && beacon == null) return null
+    private fun computeNav(leds: LEDsSettings?): Boolean? {
         val members = listOfNotNull(
             leds?.frontLEDsOn, leds?.rearLEDsOn,
-            leds?.navigationLEDsOn, leds?.statusIndicatorLEDsOn, beacon,
+            leds?.navigationLEDsOn, leds?.statusIndicatorLEDsOn,
         )
         if (members.isEmpty()) return null
-        return members.none { it }
+        return members.any { it }
     }
 
     /**
-     * Turns every exterior light off (dark = true) or back on.
+     * Turns the NAVIGATION LEDs on or off. The beacon is untouched — see [setBeacon].
      *
-     * @param onResult true only when the aircraft CONFIRMED the new state on read-back. A
-     * false here means the pilot must be told the aircraft did not change the lights.
+     * @param onResult true only when the aircraft CONFIRMED the new state on read-back. False
+     * means the pilot must be told the aircraft did not change the lights.
      */
-    fun setAllOff(dark: Boolean, onResult: (Boolean) -> Unit) {
-        val on = !dark
-        AppLog.i(TAG, "lights: asking for ${if (dark) "DARK" else "LIT"}")
-        val settings = LEDsSettings(on, on, on, on)
-
-        var ledsDone = false
-        var beaconDone = false
-        fun finish() {
-            if (!ledsDone || !beaconDone) return
-            // The read-back is the answer, not the two callbacks above. Either write can be
-            // refused while the other succeeds, which would leave the aircraft half-dark.
-            refresh { onResult(isDark == dark) }
-        }
-
-        KeyManager.getInstance().setValue(ledsKey, settings,
+    fun setNav(on: Boolean, onResult: (Boolean) -> Unit) {
+        AppLog.i(TAG, "nav lights: asking for ${if (on) "ON" else "OFF"}")
+        KeyManager.getInstance().setValue(ledsKey, LEDsSettings(on, on, on, on),
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "KeyLEDsSettings(on=$on): OK")
-                    ledsDone = true; finish()
+                    // The read-back is the answer, not this callback (safety rule 4).
+                    refresh { onResult(navOn == on) }
                 }
 
                 override fun onFailure(error: IDJIError) {
                     AppLog.w(TAG, "KeyLEDsSettings refused: ${error.description()}")
-                    ledsDone = true; finish()
+                    refresh { onResult(false) }
                 }
             })
+    }
 
+    /** Turns the BEACON on or off. The navigation LEDs are untouched — see [setNav]. */
+    fun setBeacon(on: Boolean, onResult: (Boolean) -> Unit) {
+        AppLog.i(TAG, "beacon: asking for ${if (on) "ON" else "OFF"}")
         KeyManager.getInstance().setValue(beaconKey, on,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "KeyIsBeaconOpened($on): OK")
-                    beaconDone = true; finish()
+                    refresh { onResult(beaconOn == on) }
                 }
 
                 override fun onFailure(error: IDJIError) {
                     AppLog.w(TAG, "KeyIsBeaconOpened refused: ${error.description()}")
-                    beaconDone = true; finish()
+                    refresh { onResult(false) }
                 }
             })
     }

@@ -589,16 +589,36 @@
         <!-- EXTERIOR LIGHTS: the beacon AND the red/green LEDs on the motor arms, as one
              dark toggle (operator, 2026-08-20). The icon reports the AIRCRAFT's state, never
              our request — see AircraftLights. -->
-        <ImageButton
+        <FrameLayout
             android:id="@+id/flightLightsButton"
             android:layout_width="46dp"
             android:layout_height="34dp"
             android:layout_marginStart="6dp"
             android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Exterior lights"
-            android:padding="5dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_led_on" />
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Navigation lights; touch and hold for the beacon">
+
+            <ImageView
+                android:id="@+id/flightLightsIcon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="5dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_led_on" />
+
+            <!-- BEACON STATE, as a corner dot — the same idiom the TAK badge uses for its
+                 connection state, and it overlays rather than adding width, which this bar
+                 does not have to give. The dot is what makes the touch-and-hold discoverable:
+                 without it the beacon would be a hidden control with no readout. -->
+            <ImageView
+                android:id="@+id/flightBeaconDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="2dp"
+                android:src="@drawable/bg_status_dot" />
+        </FrameLayout>
 
         <com.dji.sdk.sample.takpilot2.LiveToggleView
             android:id="@+id/flightStreamButton"

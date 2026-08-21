@@ -106,7 +106,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private lateinit var zoomButton: TextView
     private lateinit var irButton: TextView
     private lateinit var irPaletteButton: TextView
-    private lateinit var lightsButton: ImageButton
+    private lateinit var lightsButton: android.widget.FrameLayout
+    private lateinit var lightsIcon: ImageView
+    private lateinit var beaconDot: ImageView
     /** True while the INFRARED camera is the live source. Mirrors the aircraft's answer:
      *  set from the stream-source read-back, never from what was asked. */
     private var irOn = false
@@ -511,12 +513,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         irPaletteButton.setOnClickListener { onIrPaletteTapped() }
 
         lightsButton = findViewById(R.id.flightLightsButton)
+        lightsIcon = findViewById(R.id.flightLightsIcon)
+        beaconDot = findViewById(R.id.flightBeaconDot)
+
+        // TAP = NAVIGATION LIGHTS, TOUCH AND HOLD = BEACON (operator, 2026-08-20). They were
+        // one combined toggle for a few hours; the two do different jobs in the air, so a
+        // pilot must be able to kill one without losing the other. The AIRCRAFT's state
+        // decides each direction, never a local flag — see AircraftLights.
         lightsButton.setOnClickListener {
-            // The AIRCRAFT's state decides the direction, not a local flag — see AircraftLights.
-            val currentlyDark = AircraftLights.isDark == true
-            AppLog.v(TAG, "tap: Exterior lights (currently dark=$currentlyDark)")
+            val on = AircraftLights.navOn == true
+            AppLog.v(TAG, "tap: navigation lights (currently on=$on)")
             lightsButton.isEnabled = false
-            AircraftLights.setAllOff(!currentlyDark) { confirmed ->
+            AircraftLights.setNav(!on) { confirmed ->
                 runOnUiThread {
                     lightsButton.isEnabled = true
                     renderLightsButton()
@@ -526,6 +534,25 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+        lightsButton.setOnLongClickListener {
+            val on = AircraftLights.beaconOn == true
+            AppLog.v(TAG, "long-press: beacon (currently on=$on)")
+            lightsButton.isEnabled = false
+            AircraftLights.setBeacon(!on) { confirmed ->
+                runOnUiThread {
+                    lightsButton.isEnabled = true
+                    renderLightsButton()
+                    // ALWAYS ANNOUNCED, unlike the tap. The beacon is on the aircraft, not on
+                    // this screen, and the corner dot is small — a pilot who cannot see the
+                    // aircraft gets no other confirmation that a hidden gesture did anything.
+                    Toast.makeText(this,
+                        if (!confirmed) "The aircraft did not change the beacon."
+                        else if (AircraftLights.beaconOn == true) "Beacon ON" else "Beacon OFF",
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+            true
         }
         AircraftLights.refresh { runOnUiThread { renderLightsButton() } }
 
@@ -2295,13 +2322,24 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         zoomButton.alpha = if (irOn) 0.45f else 1f
     }
 
-    /** The lights icon reports the AIRCRAFT's state; unknown keeps its own look (amber-dim),
-     *  never collapsed into "off". */
+    /**
+     * Both light states, from the AIRCRAFT's answer. The icon is the navigation lights (what a
+     * tap works); the corner dot is the beacon (what a touch-and-hold works). Unknown keeps
+     * its own dimmed look and is never collapsed into "off".
+     */
     private fun renderLightsButton() {
-        val dark = AircraftLights.isDark
-        lightsButton.setImageResource(
-            if (dark == true) R.drawable.ic_led_off else R.drawable.ic_led_on)
-        lightsButton.alpha = if (dark == null) 0.5f else 1f
+        val nav = AircraftLights.navOn
+        lightsIcon.setImageResource(
+            if (nav == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
+        lightsIcon.alpha = if (nav == null) 0.5f else 1f
+
+        val beacon = AircraftLights.beaconOn
+        beaconDot.imageTintList = android.content.res.ColorStateList.valueOf(
+            ContextCompat.getColor(applicationContext, when (beacon) {
+                true -> R.color.tp_state_go
+                false -> R.color.tp_text_secondary
+                null -> R.color.tp_state_unknown
+            }))
     }
 
     private fun refreshBatteryBands() {
