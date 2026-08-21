@@ -79,15 +79,20 @@ android {
         // 27: the zoom ladder is the camera's own gears — 1, 3, 7, 14, 28.
         // 28: "Lock battery levels" locks the battery levels, and no longer the stick mode and
         //     the signal-loss behaviour as well.
-        versionCode 83
-        // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
-        // does not move: the channel work is ported from the Autel tree and proved on Autel
-        // hardware, which says nothing about this airframe.
-        //
-        // The -devN suffix counts the DEVELOPMENT releases, which is the only part free to
-        // move before a flight. It goes to 1.0.0 when the aircraft has been in the air, and
-        // not before — the same rule the MSDKv4 sibling followed from 1.1.0-dev to 1.1.0.
-        versionName "1.0.0-dev1"
+        // 29-83: one bench-and-flight day, 2026-08-20 — the Autel-parity audit worked to
+        //     zero, the wire triage (video plays from both markers), the readiness card,
+        //     IR/lights on the bar with the light map measured on the airframe, the camera
+        //     reporting its own FOV at every ratio, the zoom converging to dial+snap after
+        //     five designs, L1 as the crosshair in button form, and the mini-map brought to
+        //     scale. Two test flights, clean logs.
+        // 84: v1.0.0 — the aircraft has flown, so the name moves. First signed release
+        //     of this tree as a 1.0.
+        versionCode 84
+        // 1.0.0 on 2026-08-20: THE AIRCRAFT HAS FLOWN — two test flights the same day, both
+        // with clean logs (no errors, no dropped CoT, pilot marker solid, video streaming).
+        // That was the gate the -dev suffix waited for, the same rule the MSDKv4 sibling
+        // followed from 1.1.0-dev to 1.1.0.
+        versionName "1.0.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey
