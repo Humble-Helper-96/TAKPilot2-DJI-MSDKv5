@@ -51,17 +51,11 @@
             android:text="Vertical"
             android:textColor="#FFFFFF"
             android:textSize="15sp" />
-        <Button
-            android:id="@+id/arFovVMinus"
-            style="@style/takFovStepButton"
-            android:text="−" />
+        
         <TextView
             android:id="@+id/arFovVValue"
             style="@style/takFovValue" />
-        <Button
-            android:id="@+id/arFovVPlus"
-            style="@style/takFovStepButton"
-            android:text="+" />
+        
     </LinearLayout>
 
     <TextView

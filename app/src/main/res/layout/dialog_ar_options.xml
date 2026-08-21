@@ -70,6 +70,23 @@
 
         </RadioGroup>
 
-    </LinearLayout>
+    
+    <!-- A ROW, not a fourth button: all three dialog button slots are taken (Done /
+         Calibrate FOV / Aim Offsets), and a row can carry the accuracy warning that a button
+         caption could not. -->
+    <TextView
+        android:id="@+id/arFieldGuideLink"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:text="Field Guide: AR accuracy →"
+        android:textColor="@color/tp_accent"
+        android:textSize="14sp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp" />
+
+</LinearLayout>
 
 </ScrollView>

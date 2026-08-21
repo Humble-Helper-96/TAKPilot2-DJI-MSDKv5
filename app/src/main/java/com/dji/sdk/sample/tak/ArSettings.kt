@@ -231,25 +231,25 @@ object ArSettings {
      */
     fun loadFov(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        TakBridgeHolder.setFovBase(
-            p.getFloat(KEY_HFOV, TakBridgeHolder.DEFAULT_HFOV.toFloat()).toDouble(),
-            p.getFloat(KEY_VFOV, TakBridgeHolder.DEFAULT_VFOV.toFloat()).toDouble(),
-        )
+        // ONLY THE HORIZONTAL IS STORED. The vertical is derived — see setHFovBase. A
+        // KEY_VFOV written by an older build is deliberately ignored rather than migrated:
+        // it may hold a value that never paired with the horizontal beside it.
+        TakBridgeHolder.setHFovBase(
+            p.getFloat(KEY_HFOV, TakBridgeHolder.DEFAULT_HFOV.toFloat()).toDouble())
     }
 
     /** Applies immediately AND persists — the pilot is adjusting while watching the overlay. */
-    fun saveFov(context: Context, hDeg: Double, vDeg: Double) {
-        TakBridgeHolder.setFovBase(hDeg, vDeg)
+    fun saveFov(context: Context, hDeg: Double) {
+        TakBridgeHolder.setHFovBase(hDeg)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putFloat(KEY_HFOV, TakBridgeHolder.currentHFovBase.toFloat())
-            .putFloat(KEY_VFOV, TakBridgeHolder.currentVFovBase.toFloat())
             .apply()
         AppLog.i(TAG, "AR FOV calibrated to %.1f x %.1f deg"
             .format(TakBridgeHolder.currentHFovBase, TakBridgeHolder.currentVFovBase))
     }
 
     fun resetFov(context: Context) =
-        saveFov(context, TakBridgeHolder.DEFAULT_HFOV, TakBridgeHolder.DEFAULT_VFOV)
+        saveFov(context, TakBridgeHolder.DEFAULT_HFOV)
 
     /** Default ON: the toggle implies everything shows, so first run should match that. */
     fun isEnabled(context: Context, category: Category): Boolean =

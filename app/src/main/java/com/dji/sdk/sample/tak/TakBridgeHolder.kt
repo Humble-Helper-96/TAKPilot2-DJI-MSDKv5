@@ -48,8 +48,24 @@ object TakBridgeHolder {
     // (83 deg diagonal on a 16:9 frame); the real lens is whatever it is, which is what the 6D-D
     // calibration measures. Held here so the published FOV cone and the AR projection always
     // read the same numbers.
+    /** 16:9, the shape of the visible-camera stream. Only used before the first frame. */
+    private const val FALLBACK_ASPECT = 16.0 / 9.0
+
     private var hFovBase: Double = DEFAULT_HFOV
-    private var vFovBase: Double = DEFAULT_VFOV
+
+    /**
+     * The live video's width/height. Fed from [com.dji.sdk.sample.takpilot2.FpvTextureView],
+     * which already computes it to letterbox the frame, so the two can never disagree about
+     * the shape of the picture.
+     *
+     * It matters more than it looks: the thermal camera is 640x512 (5:4), not 16:9, so the
+     * vertical field changes the moment the pilot touches IR.
+     */
+    @Volatile private var videoAspect: Double = FALLBACK_ASPECT
+
+    fun setVideoAspect(aspect: Double) {
+        if (aspect.isFinite() && aspect > 0.0) videoAspect = aspect
+    }
 
     fun start(droneUid: String, droneCallsign: String) {
         // finalizeFlight=false: this is a RESTART, and the flight is the same flight. The
@@ -101,13 +117,34 @@ object TakBridgeHolder {
      * Set the calibrated 1x field of view. Clamped to sane bounds so a mis-tap can't drive the
      * projection somewhere absurd — an FOV near zero sends every marker to infinity.
      */
-    fun setFovBase(hDeg: Double, vDeg: Double) {
+    /**
+     * Sets the calibrated 1x HORIZONTAL field of view. THERE IS NO VERTICAL SETTER.
+     *
+     * ⚠ THE TWO AXES ARE NOT INDEPENDENT. For any rectilinear camera they are bound by
+     *
+     *     tan(hFov/2) / tan(vFov/2) == frameWidth / frameHeight
+     *
+     * so the vertical is whatever that identity says it is. This tree carried SEPARATE H and V
+     * knobs until 2026-08-20, tied by nothing, which let a pilot calibrate the pair into a
+     * shape no real lens has — and because the projection uses both, the result is an overlay
+     * that is wrong in a way more tuning cannot fix. Deriving the vertical means the two axes
+     * cannot drift apart and a camera mode change re-derives it for free.
+     */
+    fun setHFovBase(hDeg: Double) {
         hFovBase = hDeg.coerceIn(MIN_FOV, MAX_FOV)
-        vFovBase = vDeg.coerceIn(MIN_FOV, MAX_FOV)
     }
 
     val currentHFovBase: Double get() = hFovBase
-    val currentVFovBase: Double get() = vFovBase
+
+    /** The vertical that pairs with the calibrated horizontal under the LIVE video aspect. */
+    val currentVFovBase: Double get() = vFovFor(hFovBase)
+
+    /** The vertical that pairs with [hDeg]. Shared so the published `<sensor>` cone and the AR
+     *  projection derive it exactly one way. */
+    fun vFovFor(hDeg: Double): Double {
+        val aspect = videoAspect.takeIf { it > 0.0 } ?: FALLBACK_ASPECT
+        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(hDeg / 2.0)) / aspect))
+    }
 
 
     val isRunning: Boolean get() = bridge != null

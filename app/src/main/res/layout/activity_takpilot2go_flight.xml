@@ -120,6 +120,7 @@
         <TextView android:id="@+id/flightResSys" style="@style/flightResCell" />
         <TextView android:id="@+id/flightResApp" style="@style/flightResCell" />
         <TextView android:id="@+id/flightResCpu" style="@style/flightResCell" />
+        <TextView android:id="@+id/flightResGpu" style="@style/flightResCell" />
         <TextView android:id="@+id/flightResTak" style="@style/flightResCell" />
     </LinearLayout>
 

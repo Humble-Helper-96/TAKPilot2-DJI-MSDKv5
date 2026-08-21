@@ -167,6 +167,8 @@ class FieldGuideActivity : AppCompatActivity() {
         body("If this guide does not agree with the aircraft, obey the aircraft. Then tell " +
             "the person who maintains the app.")
         spacer(24)
+
+        scrollToAnchor(intent?.getStringExtra(EXTRA_SCROLL_TO))
     }
 
     // ---------------------------------------------------------------- Section 1
@@ -360,6 +362,9 @@ class FieldGuideActivity : AppCompatActivity() {
                 "an arrow at the edge: turn the camera that way.\n\n" +
                 "Touch and hold: select what the app draws, set the air-traffic range, and " +
                 "open Aim Offsets. Air traffic positions can be about ten seconds old.\n\n" +
+                "Calibrate FOV changes how wide the app thinks the camera sees. Adjust it " +
+                "against an object near the TOP or BOTTOM edge of the picture: there is one " +
+                "control, and the up-down direction is where an error shows.\n\n" +
                 "Aim Offsets moves every marker and the camera point together. If all the " +
                 "markers are wrong in the same direction, calibrate there: aim at a known " +
                 "object with the camera 25 degrees down, then adjust until the point sits on " +
@@ -369,6 +374,7 @@ class FieldGuideActivity : AppCompatActivity() {
                     "marker. Do not use it to choose between objects that are close together, " +
                     "such as one house in a tight row of houses.",
             ),
+            anchor = ANCHOR_AR,
         )
 
         entry(
@@ -716,17 +722,48 @@ class FieldGuideActivity : AppCompatActivity() {
      * One control: its icon in each state worth recognising, its name, what it does, and any
      * caveats. [icons] may be empty for parts of the screen that aren't a button.
      */
+    /**
+     * Jumps to the entry tagged [anchor], for a deep link from elsewhere in the app.
+     *
+     * Posted rather than called directly: the guide is built in onCreate and nothing has been
+     * measured or laid out yet, so the card's y position is still 0 and an immediate scroll
+     * would silently do nothing. Runs after the first layout pass instead.
+     *
+     * Fails OPEN — an absent or unrecognised anchor leaves the guide at the top, which is what
+     * a reader wants if a link ever goes stale.
+     */
+    private fun scrollToAnchor(anchor: String?) {
+        if (anchor.isNullOrEmpty()) return
+        val scroll = findViewById<android.widget.ScrollView>(R.id.fieldGuideScroll) ?: return
+        val target = content.findViewWithTag<View>(anchor)
+        if (target == null) {
+            AppLog.w(TAG, "field guide anchor '$anchor' not found — opening at the top")
+            return
+        }
+        scroll.post {
+            // Offset up a little so the reader lands with the entry's title in view, not with
+            // the card's top edge flush against the action bar.
+            scroll.scrollTo(0, (target.top - dp(12)).coerceAtLeast(0))
+            AppLog.v(TAG, "field guide opened at '$anchor'")
+        }
+    }
+
     private fun entry(
         icons: List<Pair<View, String>>,
         name: String,
         what: String,
         caveats: List<String> = emptyList(),
+        anchor: String? = null,
     ) {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(ContextCompat.getColor(applicationContext, R.color.tp_surface_guide))
             setPadding(dp(14), dp(12), dp(14), dp(12))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+            // Deep-link target — see EXTRA_SCROLL_TO. A tag rather than a generated view id
+            // because the whole guide is built in code and ids would have to be kept unique
+            // by hand against a resource file that has no other reason to exist.
+            if (anchor != null) tag = anchor
         }
 
         if (icons.isNotEmpty()) {
@@ -873,6 +910,25 @@ class FieldGuideActivity : AppCompatActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     companion object {
+
+        /**
+         * Optional intent extra: open the guide scrolled to one entry rather than at the top.
+         * Value is one of the ANCHOR_* constants, matched against the tag [entry] puts on its
+         * card. An unknown or absent value opens at the top, which is the safe default — a
+         * deep link that stops matching must not open a blank-looking screen.
+         */
+        const val EXTRA_SCROLL_TO = "scrollTo"
+
+        /** The AR overlay entry, reached from the flight screen's AR menu. */
+        const val ANCHOR_AR = "ar"
+
+        /** Opens the guide at [anchor] (or the top if null). */
+        @JvmStatic
+        fun intent(context: android.content.Context, anchor: String? = null) =
+            android.content.Intent(context, FieldGuideActivity::class.java).apply {
+                if (anchor != null) putExtra(EXTRA_SCROLL_TO, anchor)
+            }
+
         private const val TAG = "TP2Guide"
         private const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         private const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT

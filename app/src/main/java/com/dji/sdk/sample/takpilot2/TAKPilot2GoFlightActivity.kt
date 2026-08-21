@@ -310,6 +310,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             findViewById(R.id.flightResSys),
             findViewById(R.id.flightResApp),
             findViewById(R.id.flightResCpu),
+            findViewById(R.id.flightResGpu),
             findViewById(R.id.flightResTak),
         )
         // Read once at open, not per tick: the Debug switch cannot change while this screen is
@@ -1310,13 +1311,22 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             }
         }
 
-        AlertDialog.Builder(this, R.style.TakDialogTheme)
+        val dialog = AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("AR Overlay")
             .setView(view)
             .setPositiveButton("Done", null)
             .setNeutralButton("Calibrate FOV…") { _, _ -> onArCalibrateTapped() }
             .setNegativeButton("Aim Offsets…") { _, _ -> onAimOffsetsTapped() }
-            .show()
+            .create()
+
+        // Straight to the guide's AR entry, where the accuracy limits are written out. The AR
+        // overlay is the one control whose caveats matter more than its settings.
+        view.findViewById<TextView>(R.id.arFieldGuideLink).setOnClickListener {
+            dialog.dismiss()
+            AppLog.v(TAG, "AR menu: opening field guide at the AR section")
+            startActivity(FieldGuideActivity.intent(this, FieldGuideActivity.ANCHOR_AR))
+        }
+        dialog.show()
     }
 
     /**
@@ -1429,9 +1439,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         var v = TakBridgeHolder.currentVFovBase
 
         fun apply() {
-            com.dji.sdk.sample.tak.ArSettings.saveFov(this, h, v)
+            com.dji.sdk.sample.tak.ArSettings.saveFov(this, h)
             h = TakBridgeHolder.currentHFovBase
-            v = TakBridgeHolder.currentVFovBase
+            v = TakBridgeHolder.currentVFovBase   // derived, shown read-only
             hValue.text = "%.1f°".format(h)
             vValue.text = "%.1f°".format(v)
             hint.text = if (TakBridgeHolder.currentZoomFactor > 1.0) {
@@ -1441,15 +1451,17 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     com.dji.sdk.sample.tak.DroneTakBridge.vFovDeg(TakBridgeHolder.currentZoomFactor),
                 )
             } else {
-                "Marker too far OUT from centre → reduce. Too far IN → increase."
+                "CALIBRATE ON THE TOP OR BOTTOM EDGE. Put a marker on a known object near " +
+                    "the top or bottom of the picture and adjust until the icon sits on it. " +
+                    "The vertical is derived from the horizontal and the live picture shape, " +
+                    "so there is one control, and the vertical is where an error shows.\n\n" +
+                    "Marker too far OUT from centre → reduce. Too far IN → increase."
             }
         }
         apply()
 
         view.findViewById<Button>(R.id.arFovHMinus).setOnClickListener { h -= FOV_STEP_DEG; apply() }
         view.findViewById<Button>(R.id.arFovHPlus).setOnClickListener { h += FOV_STEP_DEG; apply() }
-        view.findViewById<Button>(R.id.arFovVMinus).setOnClickListener { v -= FOV_STEP_DEG; apply() }
-        view.findViewById<Button>(R.id.arFovVPlus).setOnClickListener { v += FOV_STEP_DEG; apply() }
 
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Calibrate AR field of view")

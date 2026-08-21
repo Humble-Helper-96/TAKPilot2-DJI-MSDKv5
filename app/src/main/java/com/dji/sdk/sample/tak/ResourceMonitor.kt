@@ -20,11 +20,15 @@ import java.io.File
  * CPU is instantaneous load, not memory. A software encoder pegging a core shows here first and
  * does not show in the memory figures at all.
  *
- * ⚠ NO GPU READ, unlike the sibling. That one reads an Adreno sysfs node it confirmed was
- * readable by an app process on its specific controller. That is a device and build property,
- * not an Android guarantee — SELinux locks it to root on plenty of devices, and this app runs on
- * whatever phone is attached to the RC-N1. A figure that silently reads "—" on most hardware is
- * not worth the code.
+ * GPU comes from this SoC's Adreno sysfs node (`/sys/class/kgsl/kgsl-3d0/`), CONFIRMED
+ * READABLE BY AN ORDINARY APP PROCESS on the RC Plus 2 — verified with `run-as` on 2026-08-20,
+ * which answered 25%. That is a device and build property, not an Android guarantee: SELinux
+ * locks this node to root on plenty of devices, so every read is wrapped and degrades to "—".
+ *
+ * ⚠ THIS USED TO SAY THERE WAS NO GPU READ "because this app runs on whatever phone is attached
+ * to the RC-N1". That is the MSDKv4 tree's world. This tree has ONE target — the RC Plus 2 — and
+ * the node is readable on it, so the reason for leaving the figure out was void. Inherited
+ * premise, never re-checked against the hardware this app actually runs on.
  *
  * ⚠ `cpu=` may show "—/x%" on a modern Android. The system figure comes from `/proc/stat`, which
  * SELinux hides from apps on API 26 and above; the app's own figure uses the official
@@ -48,6 +52,9 @@ object ResourceMonitor {
         /** Null on the first sample only — both need a delta against the previous call. */
         val sysCpuPct: Int?,
         val appCpuPct: Int?,
+        /** Null if this device/build does not expose GPU sysfs to an app process. */
+        val gpuBusyPct: Int?,
+        val gpuClockMhz: Int?,
     )
 
     // Previous-sample state for the CPU deltas. SystemClock.elapsedRealtime() (monotonic, immune
@@ -109,6 +116,8 @@ object ResourceMonitor {
             heapUsedMb = heapUsedMb,
             heapMaxMb = heapMaxMb,
             contactCount = contactCount,
+            gpuBusyPct = readGpuBusyPct(),
+            gpuClockMhz = readGpuClockMhz(),
             sysCpuPct = sysCpuPct,
             appCpuPct = appCpuPct,
         )
@@ -131,15 +140,21 @@ object ResourceMonitor {
      * ALWAYS four, in this order, even when a value is unavailable — a cell that disappears
      * shifts the ones beside it, and this row is watched for a value that CHANGES.
      *
-     * Four, not the sibling's five: there is no GPU cell here, because there is no GPU read.
+     * Five, matching the sibling: SYS / APP / CPU / GPU / TAK. Always five entries in this
+     * order even when a value is unavailable (GPU shows "—" rather than the cell disappearing),
+     * so the cell positions never shift while the row is being watched.
      */
     fun formattedSegments(context: Context): List<String> {
         val s = snapshot(context)
         val lowFlag = if (s.lowMemory) " !" else ""
+        val gpu = if (s.gpuBusyPct != null || s.gpuClockMhz != null) {
+            (s.gpuBusyPct?.let { "$it%" } ?: "—") + (s.gpuClockMhz?.let { " ${it}MHz" } ?: "")
+        } else "—"
         return listOf(
             "SYS ${s.sysAvailMb}/${s.sysTotalMb}MB$lowFlag",
             "APP ${s.appPssMb}MB/${s.heapUsedMb}MB",
             "CPU ${s.sysCpuPct?.let { "$it%" } ?: "—"}/${s.appCpuPct?.let { "$it%" } ?: "—"}",
+            "GPU $gpu",
             "TAK ${s.contactCount}",
         )
     }
@@ -161,4 +176,14 @@ object ResourceMonitor {
             "app=${s.appPssMb}MB heap=${s.heapUsedMb}/${s.heapMaxMb}MB " +
             "cpu=$sysCpu/$appCpu tak=${s.contactCount}"
     }
+    private fun readGpuBusyPct(): Int? = runCatching {
+        java.io.File("/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage")
+            .readText().trim().takeWhile { it.isDigit() }.toIntOrNull()
+    }.getOrNull()
+
+    private fun readGpuClockMhz(): Int? = runCatching {
+        (java.io.File("/sys/class/kgsl/kgsl-3d0/gpuclk").readText().trim().toLong() / 1_000_000L)
+            .toInt()
+    }.getOrNull()
+
 }

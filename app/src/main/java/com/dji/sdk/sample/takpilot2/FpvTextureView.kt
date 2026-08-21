@@ -160,6 +160,11 @@ class FpvTextureView @JvmOverloads constructor(
         if (vw <= 0f || vh <= 0f || streamW <= 0 || streamH <= 0) return
         val viewAspect = vw / vh
         val videoAspect = streamW.toFloat() / streamH.toFloat()
+        // The FOV model derives its VERTICAL from the horizontal and this shape, so it has to
+        // come from the same number that letterboxes the picture — otherwise the two disagree
+        // about what the pilot is looking at. It changes with the lens: the thermal camera is
+        // 640x512 (5:4), the visible one 16:9.
+        com.dji.sdk.sample.tak.TakBridgeHolder.setVideoAspect(videoAspect.toDouble())
         val rect = if (videoAspect >= viewAspect) {
             // Video is wider: full width, letterboxed top/bottom.
             val h = vw / videoAspect
