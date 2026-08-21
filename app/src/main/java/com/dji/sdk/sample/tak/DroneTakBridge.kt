@@ -715,6 +715,27 @@ class DroneTakBridge(
      * look-point" flow). Returns (lat, lon, terrain elevation) or null if GPS/gimbal state
      * hasn't arrived yet.
      */
+    /**
+     * Ground distance to the look point, metres, or null when there is none (camera at or
+     * above the horizon — same reason the SPI stays silent there). Feeds the reticle readout
+     * on the HUD tick; the SAME [CameraSlantPoint] solve as [lookPoint], so the number and a
+     * dropped marker cannot disagree.
+     */
+    fun lookRangeMeters(): Double? {
+        val gimbal = lastGimbalAttitude ?: return null
+        val loc = lastLocation ?: return null
+        if (!isValidLat(loc.latitude) || !isValidLon(loc.longitude)) return null
+        val pitchAdj = gimbal.pitch + TakBridgeHolder.currentPitchOffset
+        if (pitchAdj > -1.0) return null
+        val hae = loc.altitude
+        val heading = (((lastHeading ?: 0.0) % 360.0) + 360.0) % 360.0
+        val gp = CameraSlantPoint.compute(
+            loc.latitude, loc.longitude, hae, cameraBearing(gimbal.yaw, heading), pitchAdj,
+            ::elevationLookup, aircraftMsl(hae),
+        )
+        return gp.rangeMeters
+    }
+
     fun lookPoint(): Triple<Double, Double, Double>? {
         val gimbal = lastGimbalAttitude ?: return null
         val loc = lastLocation ?: return null

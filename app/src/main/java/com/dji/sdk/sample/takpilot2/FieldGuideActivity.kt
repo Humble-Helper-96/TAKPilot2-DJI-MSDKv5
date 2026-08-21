@@ -527,12 +527,13 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             emptyList(),
             "The controller buttons: L1, L2, L3",
-            "The three buttons on the front left of the controller do the same as the " +
-                "controls on the screen.\n\n" +
-                "L1 puts the quick marker where the crosshair points, the same as a touch " +
-                "on the crosshair.\n\n" +
-                "L2 puts a new static marker where the crosshair points, the same as a " +
-                "touch and hold on the crosshair. Each press makes a new marker.\n\n" +
+            "The buttons on the front left of the controller do the same as the controls " +
+                "on the screen. Small labels at the left edge of the screen show what each " +
+                "button does.\n\n" +
+                "L1 is the crosshair as a button. Press it to put the quick marker where " +
+                "the crosshair points. Press and hold it to put a new static marker there. " +
+                "Each hold makes a new marker.\n\n" +
+                "L2 does nothing now.\n\n" +
                 "L3 changes between the usual camera and the thermal camera, the same as " +
                 "the IR button.",
         )

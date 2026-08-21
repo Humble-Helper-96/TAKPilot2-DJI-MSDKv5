@@ -127,6 +127,55 @@
     <!-- ATAK-UAS-Tool-style telemetry overlay, stacked directly above the mini-map (same
          bottom|end corner/size/margin the map already had — "leave the mini map where it is").
          Plain text over video, no box, to match the reference look. -->
+    <!-- HARDWARE-BUTTON HINTS, DJI Pilot 2's own idiom for these slots: terse chips at the
+         screen edge with an arrowhead pointing at the physical button (see
+         pilot2-reference/pilot2-flight-screen.png — "◄ IR", "◄ ZOOM"). L1 is the top button
+         on the front-left column, L3 the bottom; the stack keeps that order, with L2's slot
+         empty because the button is unassigned. Above the resource row, below the AR edge
+         band. -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|bottom"
+        android:layout_marginStart="2dp"
+        android:layout_marginBottom="3dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/hintL1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#66000000"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="2dp"
+            android:text="◀ MARK"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <!-- L2's slot, deliberately empty but present so the IR chip sits at L3's height.
+             60dp, set over two rounds of the operator's bezel judgement 2026-08-20 (the
+             first guess had IR riding at L2's height). The stack's bottom margin is 0 —
+             IR wanted 4dp more than the margin had left to give, so it sits directly on the
+             resource row's top edge, which is fine: that row is debug-only and hidden in
+             normal flight. -->
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="56dp" />
+
+        <TextView
+            android:id="@+id/hintL3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#66000000"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="2dp"
+            android:text="◀ IR"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <!-- BVLOS antenna-aim arc (V37, audit 2026-08-20; the Autel sibling's, verbatim): the
          controller's antennas are directional, and during authorized BVLOS work the pilot
          cannot see the aircraft to face it. Pilot dot at the centre, aircraft marker riding
@@ -138,7 +187,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="12dp"
         android:visibility="gone" />
 
     <!-- RIGHT-HAND HUD COLUMN.

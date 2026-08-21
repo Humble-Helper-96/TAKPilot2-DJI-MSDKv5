@@ -136,6 +136,38 @@ class CrosshairView @JvmOverloads constructor(
         return gesture.onTouchEvent(event)
     }
 
+    /**
+     * Look-point distance and bearing, drawn off the lower-right arm (the Autel sibling's
+     * 2026-08-13 feature: the pilot had no way to know how far away the thing under the
+     * reticle was). Null hides the text — the flight screen passes null when the camera is
+     * at or above the horizon, where no ground distance exists.
+     */
+    fun setRangeText(text: String?) {
+        if (text == rangeText) return   // avoid invalidating on every HUD tick
+        rangeText = text
+        invalidate()
+    }
+
+    private var rangeText: String? = null
+    private val rangeFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        // 10sp, not the sibling's 14sp: its screen is 1024dp wide and this one is 768dp, so
+        // the same size reads a third larger here — and the text sits beside the aiming
+        // point, where loud is wrong (operator, 2026-08-20).
+        textSize = 10f * resources.displayMetrics.scaledDensity
+        isFakeBoldText = true
+    }
+    /** Dark halo behind the range text — same job as the arms' outline: stay legible on
+     *  bright ground. */
+    private val rangeOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        alpha = 160
+        textSize = 10f * resources.displayMetrics.scaledDensity
+        isFakeBoldText = true
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (videoRect.isEmpty) return
@@ -157,6 +189,14 @@ class CrosshairView @JvmOverloads constructor(
         // bright background whatever colour it is.
         canvas.drawCircle(cx, cy, ringR, ringOutline)
         canvas.drawCircle(cx, cy, ringR, ring)
+        // Look-point distance, off the lower-right arm — outside the arms so it never
+        // covers what the pilot is sighting.
+        rangeText?.let {
+            val tx = cx + armLen * 0.75f
+            val ty = cy + armLen * 0.75f + rangeFill.textSize * 0.5f
+            canvas.drawText(it, tx, ty, rangeOutline)
+            canvas.drawText(it, tx, ty, rangeFill)
+        }
     }
 
     companion object {

@@ -1089,39 +1089,58 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     /**
-     * THE CONTROLLER'S L BUTTONS, mirroring the screen exactly (operator, 2026-08-20):
+     * THE CONTROLLER'S L BUTTONS (operator, 2026-08-20, second revision same day):
      *
-     *   L1 — the quick (dynamic) marker: same function as touching the crosshair.
-     *   L2 — a static Unknown marker: same function as holding the crosshair.
-     *   L3 — thermal on/off: same function as the IR pill.
+     *   L1 tap  — the quick (dynamic) marker: same function as touching the crosshair.
+     *   L1 hold — a static Unknown marker: same function as holding the crosshair.
+     *   L2      — unassigned, kept free on purpose.
+     *   L3      — thermal on/off: same function as the IR pill.
      *
-     * Each button ends in the SAME function as its on-screen control — the Autel sibling's
-     * doctrine — so a pilot who has learned one route has learned the other, and the two can
-     * never drift apart. The buttons arrive as ordinary Android keycodes (F1/F2/F3 from
-     * gpio-keys, hardware doc §6.2, every mapping operator-verified), so this is plain
-     * onKeyDown — no SDK listener, no slot to collide with.
+     * One button for both marker kinds, the same tap/hold split the crosshair itself has —
+     * so L1 IS the crosshair, in button form. Each route ends in the SAME function as its
+     * on-screen control (the sibling's doctrine); the hint chips on the screen's left edge
+     * say what the buttons do, DJI Pilot 2's own idiom for these slots.
      *
-     * repeatCount 0 only: a held button auto-repeats at the keyboard rate, and "held L2" must
-     * not scatter a line of markers.
+     * The tap/hold split uses the framework's own tracking: startTracking() on the down,
+     * onKeyLongPress for the hold, and the up only fires the tap when the long press has not
+     * (isCanceled). No hand-rolled timers.
      */
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
-        if (event.repeatCount == 0) {
-            when (keyCode) {
-                android.view.KeyEvent.KEYCODE_F1 -> {
-                    AppLog.i(TAG, "controller button L1 — quick marker")
-                    onQuickDropTapped(); return true
-                }
-                android.view.KeyEvent.KEYCODE_F2 -> {
-                    AppLog.i(TAG, "controller button L2 — static marker")
-                    onUnknownMarkerAction(); return true
-                }
-                android.view.KeyEvent.KEYCODE_F3 -> {
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_F1 -> {
+                event.startTracking()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_F3 -> {
+                if (event.repeatCount == 0) {
                     AppLog.i(TAG, "controller button L3 — IR toggle")
-                    if (irButton.isEnabled) onIrTapped(); return true
+                    if (irButton.isEnabled) onIrTapped()
                 }
+                return true
             }
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_F1) {
+            AppLog.i(TAG, "controller button L1 held — static marker")
+            onUnknownMarkerAction()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_F1) {
+            // isCanceled is true when the long press already fired — the up then does nothing.
+            if (!event.isCanceled) {
+                AppLog.i(TAG, "controller button L1 — quick marker")
+                onQuickDropTapped()
+            }
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     /**
@@ -1283,6 +1302,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         val dtedAvailable = hud != null &&
             com.dji.sdk.sample.tak.DtedIndex.elevationAt(this, hud.lat, hud.lon) != null
         crosshairView.setGimbalPitch(pitch, dtedAvailable)
+        // Look-point distance and bearing at the reticle's lower-right (the Autel sibling's
+        // 2026-08-13 feature, ported at the operator's request 2026-08-20). Null — and no
+        // text — when the camera is at/above the horizon or telemetry is not ready;
+        // Units.distance keeps the range in the HUD's imperial convention. The bearing is
+        // the camera's own true bearing, the same model the SPI and a marker drop use, so
+        // the reticle cannot disagree with them.
+        crosshairView.setRangeText(
+            TakBridgeHolder.lookRangeMeters()?.let { range ->
+                val brg = TakBridgeHolder.cameraPose()?.bearingDeg
+                if (brg == null) Units.distance(range)
+                else "%s  %03.0f°T".format(Units.distance(range), brg)
+            })
         if (pitch == null) {
             fpvGimbalPitch.text = "GIMBAL —"
             fpvGimbalPitch.setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
@@ -2724,13 +2755,23 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
         // Directly under RTH: how far home is, and how high the aircraft will climb to get
         // there. Its own view rather than a line in the telemetry block, matching the sibling.
-        fpvHomeDistance.text = if (hud != null && hud.hasFix && hud.homeSet) {
-            val dist = CameraSlantPoint.distanceMeters(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
+        val homeKnown = hud != null && hud.hasFix && hud.homeSet
+        fpvHomeDistance.text = if (homeKnown) {
+            val dist = CameraSlantPoint.distanceMeters(hud!!.homeLat, hud.homeLon, hud.lat, hud.lon)
             val bearing = CameraSlantPoint.initialBearingDeg(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
             "HOME %s  %03.0f°T".format(Units.feet(dist), bearing)
         } else {
             "HOME — ft  —°T"
         }
+        // Grey like RTH and the airspace row (operator, 2026-08-20) — the three advisory
+        // lines read as one block. Amber while unknown, the same known/unknown convention
+        // as RTH: dashes in the ordinary colour would make "no home point" look routine.
+        fpvHomeDistance.setTextColor(
+            ContextCompat.getColor(
+                applicationContext,
+                if (homeKnown) R.color.tp_text_secondary else R.color.tp_state_unknown,
+            )
+        )
 
         toolbarBattery.setPercent(hud?.batteryPct)
         // Re-asked every tick, not just at entry: the bands pick up the aircraft's read-back
@@ -3270,12 +3311,17 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
          * the whole permitted area — better than the sibling manages, which accepted the home
          * point leaving the map before the limit.
          *
-         * NEAR is the zoom this screen has always used and is the default, so the view is
-         * unchanged for anyone who never touches the button. See [mapWide] for why that differs
-         * from the sibling's default in name but not in what a pilot sees.
+         * NEAR was 15.0 from the fork until 2026-08-20 — about 850 m across the mini-map at
+         * this latitude, "the zoom this screen has always used", inherited and never
+         * re-judged. The operator brought it to 16.0 (~420 m across; 17 was tried and read
+         * too close): the mini-map's job is
+         * "where is the aircraft relative to me and the near team", which is a street-scale
+         * question. The Autel sibling runs 18.0/15.5; the operator chose 17 for this screen
+         * rather than matching it, and left WIDE alone deliberately — its job is context, and
+         * 3 km of context is the point of it.
          */
         private const val MAP_ZOOM_WIDE = 13.0
-        private const val MAP_ZOOM_NEAR = 15.0
+        private const val MAP_ZOOM_NEAR = 16.0
 
         private const val KEY_MAP_WIDE = "flight_map_wide"
 

@@ -210,6 +210,9 @@ object TakBridgeHolder {
      *  or null if the bridge isn't running / GPS+gimbal aren't ready. */
     fun lookPoint(): Triple<Double, Double, Double>? = bridge?.lookPoint()
 
+    /** See [DroneTakBridge.lookRangeMeters]. Null with no bridge, or no ground intersection. */
+    fun lookRangeMeters(): Double? = bridge?.lookRangeMeters()
+
     /** Latest telemetry snapshot for the on-screen HUD, or null if the bridge isn't running. */
     fun hud(): DroneTakBridge.Hud? = bridge?.hud()
 
