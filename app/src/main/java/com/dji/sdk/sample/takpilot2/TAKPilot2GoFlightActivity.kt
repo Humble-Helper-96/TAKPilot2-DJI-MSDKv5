@@ -517,10 +517,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // pilot must be able to kill one without losing the other. The AIRCRAFT's state
         // decides each direction, never a local flag — see AircraftLights.
         lightsButton.setOnClickListener {
-            val on = AircraftLights.navOn == true
-            AppLog.v(TAG, "tap: navigation lights (currently on=$on)")
+            val on = AircraftLights.motorLedsOn == true
+            AppLog.v(TAG, "tap: motor LEDs (currently on=$on)")
             lightsButton.isEnabled = false
-            AircraftLights.setNav(!on) { confirmed ->
+            AircraftLights.setMotorLeds(!on) { confirmed ->
                 runOnUiThread {
                     lightsButton.isEnabled = true
                     renderLightsButton()
@@ -531,6 +531,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 }
             }
         }
+
         lightsButton.setOnLongClickListener {
             val on = AircraftLights.beaconOn == true
             AppLog.v(TAG, "long-press: beacon (currently on=$on)")
@@ -540,8 +541,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     lightsButton.isEnabled = true
                     renderLightsButton()
                     // ALWAYS ANNOUNCED, unlike the tap. The beacon is on the aircraft, not on
-                    // this screen, and it has no readout here (operator, 2026-08-20: a state
-                    // dot on the pill was tried and rejected) — so this toast is the pilot's
+                    // this screen, and it has no readout here (a state dot on the pill was
+                    // tried and rejected, operator 2026-08-20) — so this toast is the pilot's
                     // only confirmation that a hidden gesture did anything.
                     Toast.makeText(this,
                         if (!confirmed) "The aircraft did not change the beacon."
@@ -2320,18 +2321,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     /**
-     * The icon is the NAVIGATION LIGHTS — what a tap works. Unknown keeps its own dimmed look
-     * and is never collapsed into "off".
+     * The icon is the MOTOR LEDs — what a tap works. Unknown keeps its own dimmed look and is
+     * never collapsed into "off".
      *
      * The beacon has no indicator here on purpose (operator, 2026-08-20): its state is
      * reported by the toast on every touch-and-hold, and a second state light on a 46dp pill
      * was rejected as clutter.
      */
     private fun renderLightsButton() {
-        val nav = AircraftLights.navOn
+        val on = AircraftLights.motorLedsOn
         lightsButton.setImageResource(
-            if (nav == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
-        lightsButton.alpha = if (nav == null) 0.5f else 1f
+            if (on == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
+        lightsButton.alpha = if (on == null) 0.5f else 1f
     }
 
     private fun refreshBatteryBands() {
@@ -2551,6 +2552,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // AIRCRAFT's. (V23, audit 2026-08-20.)
         refreshBatteryBands()
         updateAntennaAim(hud)
+        // The lights read is asked again ONLY while the answer is unknown. The aircraft link
+        // comes up after this screen does, so a single read at setup left the pill greyed for
+        // the whole flight (bench, 2026-08-20) — and a grey pill is a control the pilot
+        // cannot use, because a write with no known state is refused. This stops the moment
+        // the aircraft answers, and it is a READ, which rule 3 permits on a tick.
+        if (AircraftLights.motorLedsOn == null) {
+            AircraftLights.refresh { renderLightsButton() }
+        }
 
         // Show the real satellite count whenever telemetry exists, even below lock threshold —
         // "—" used to mean "no fix," but visually that's indistinguishable from "no telemetry
