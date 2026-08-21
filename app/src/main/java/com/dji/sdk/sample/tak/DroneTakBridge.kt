@@ -568,14 +568,15 @@ class DroneTakBridge(
 
     /**
      * True geographic bearing the camera points along. Prefers KeyYawRelativeToAircraftHeading
-     * (heading-stable), falling back to rawYaw + a fixed offset.
+     * (heading-stable), falling back to rawYaw. The pilot's bearing calibration
+     * ([TakBridgeHolder.currentBearingOffset]) applies to EITHER path — R16: it used to apply
+     * only on the fallback, so a dialed-in correction did nothing on the M4TD's preferred path
+     * (the one this airframe actually takes), same as the pitch offset already applies on both.
      */
     private fun cameraBearing(rawYaw: Double, aircraftHeading: Double): Double {
         val relYaw = lastGimbalYawRel
-        return if (relYaw != null && relYaw.isFinite())
-            CameraSlantPoint.norm360(aircraftHeading + relYaw)
-        else
-            CameraSlantPoint.norm360(rawYaw + TakBridgeHolder.currentBearingOffset)
+        val base = if (relYaw != null && relYaw.isFinite()) aircraftHeading + relYaw else rawYaw
+        return CameraSlantPoint.norm360(base + TakBridgeHolder.currentBearingOffset)
     }
 
     private fun pushCameraPoint(lat: Double, lon: Double, aglMeters: Double, aircraftHeading: Double) {

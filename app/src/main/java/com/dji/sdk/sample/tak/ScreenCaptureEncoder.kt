@@ -41,12 +41,17 @@ class ScreenCaptureEncoder(
     private val codec: VideoCodec,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
     private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) -> Unit,
+    // R14: the drain thread dying (codec error) or the system stopping the projection used to
+    // be silent — the encoder just quietly quit while `streaming` stayed true upstream. This
+    // fires once, either way, so the owner can tear down and tell the pilot.
+    private val onGone: (String) -> Unit = {},
 ) {
     private var encoder: MediaCodec? = null
     private var inputSurface: Surface? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var drainThread: Thread? = null
     @Volatile private var running = false
+    @Volatile private var goneNotified = false
     private var encFrameCount = 0
     private var encBytesSinceLog = 0L
 
@@ -67,7 +72,20 @@ class ScreenCaptureEncoder(
     /** Registered by the caller (the projection owner) so a stop from the system side tears
      *  this down too. */
     val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() { AppLog.i(TAG, "media projection stopped by system"); release() }
+        override fun onStop() {
+            AppLog.i(TAG, "media projection stopped by system")
+            release()
+            notifyGone("media projection stopped by system")
+        }
+    }
+
+    /** Fires [onGone] at most once — the drain thread dying and the system stopping the
+     *  projection can both reach here. Posted to main so the owner's teardown (which may
+     *  join [drainThread]) never runs ON [drainThread] itself, which would deadlock. */
+    private fun notifyGone(reason: String) {
+        if (goneNotified) return
+        goneNotified = true
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onGone(reason) }
     }
 
     fun start(): Boolean {
@@ -167,7 +185,10 @@ class ScreenCaptureEncoder(
                 }
             }
         } catch (t: Throwable) {
-            if (running) AppLog.w(TAG, "drain loop error: ${t.message}")
+            if (running) {
+                AppLog.w(TAG, "drain loop error: ${t.message}")
+                notifyGone("drain loop error: ${t.message}")
+            }
         }
     }
 

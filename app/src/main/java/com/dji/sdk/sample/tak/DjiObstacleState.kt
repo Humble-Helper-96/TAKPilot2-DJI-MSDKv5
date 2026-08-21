@@ -215,44 +215,80 @@ object DjiObstacleState {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             if (appliedForThisConnect) return@postDelayed
             // Read from the bridge-independent keys: this fires at product connect, usually
-            // before the pilot reaches the flight screen and its bridge.
-            val flying = runCatching {
-                dji.v5.manager.KeyManager.getInstance().getValue(
-                    dji.sdk.keyvalue.key.KeyTools.createKey(
-                        dji.sdk.keyvalue.key.FlightControllerKey.KeyIsFlying)) == true
-            }.getOrDefault(false)
-            val motorsOn = runCatching {
-                dji.v5.manager.KeyManager.getInstance().getValue(
-                    dji.sdk.keyvalue.key.KeyTools.createKey(
-                        dji.sdk.keyvalue.key.FlightControllerKey.KeyAreMotorsOn)) == true
-            }.getOrDefault(false)
-            if (flying || motorsOn) {
-                AppLog.w(TAG, "aircraft is flying/armed — SKIPPING avoidance enforcement this connect")
-                return@postDelayed
-            }
-            appliedForThisConnect = true
-            val desired = savedSystem(context)
-            if (collisionAvoidance == desired) {
-                AppLog.i(TAG, "collisionAvoidance already $desired — no write")
-                return@postDelayed
-            }
-            val type = if (desired) ObstacleAvoidanceType.BRAKE else ObstacleAvoidanceType.CLOSE
-            AppLog.i(TAG, "enforcing obstacleAvoidanceType -> $type (aircraft had $collisionAvoidance)")
-            runCatching {
-                PerceptionManager.getInstance().setObstacleAvoidanceType(
-                    type,
-                    object : CommonCallbacks.CompletionCallback {
-                        override fun onSuccess() {
-                            AppLog.i(TAG, "set obstacleAvoidanceType=$type: OK")
-                            collisionAvoidance = desired
-                        }
+            // before the pilot reaches the flight screen and its bridge, so nothing has
+            // necessarily subscribed to these keys yet. CLAUDE.md rule 4: the one-argument
+            // getValue(key) answers from MSDK's local CACHE only, and a key nothing has
+            // fetched or listened to is absent from it — it returns null FOR EVER, which
+            // getOrDefault(false) used to read as "not flying". Use the two-argument
+            // getValue(key, callback) form, which actually queries the aircraft.
+            readFlightState { flying, motorsOn ->
+                if (flying || motorsOn) {
+                    AppLog.w(TAG, "aircraft is flying/armed — SKIPPING avoidance enforcement this connect")
+                    return@readFlightState
+                }
+                appliedForThisConnect = true
+                val desired = savedSystem(context)
+                if (collisionAvoidance == desired) {
+                    AppLog.i(TAG, "collisionAvoidance already $desired — no write")
+                    return@readFlightState
+                }
+                val type = if (desired) ObstacleAvoidanceType.BRAKE else ObstacleAvoidanceType.CLOSE
+                AppLog.i(TAG, "enforcing obstacleAvoidanceType -> $type (aircraft had $collisionAvoidance)")
+                runCatching {
+                    PerceptionManager.getInstance().setObstacleAvoidanceType(
+                        type,
+                        object : CommonCallbacks.CompletionCallback {
+                            override fun onSuccess() {
+                                AppLog.i(TAG, "set obstacleAvoidanceType=$type: OK")
+                                collisionAvoidance = desired
+                            }
 
-                        override fun onFailure(error: IDJIError) {
-                            AppLog.i(TAG, "set obstacleAvoidanceType=$type: ${error.description()}")
-                        }
-                    })
-            }.onFailure { AppLog.w(TAG, "set obstacleAvoidanceType threw: ${it.message}") }
+                            override fun onFailure(error: IDJIError) {
+                                AppLog.i(TAG, "set obstacleAvoidanceType=$type: ${error.description()}")
+                            }
+                        })
+                }.onFailure { AppLog.w(TAG, "set obstacleAvoidanceType threw: ${it.message}") }
+            }
         }, APPLY_DELAY_MS)
+    }
+
+    /**
+     * Reads KeyIsFlying and KeyAreMotorsOn with the two-argument (aircraft-querying) form of
+     * getValue, then calls [onResult] once both have answered. A read that fails or never
+     * answers resolves FAIL-SAFE — as flying/armed — so a dead key can only ever make this
+     * gate MORE cautious, never let a write through it should have blocked.
+     */
+    private fun readFlightState(onResult: (flying: Boolean, motorsOn: Boolean) -> Unit) {
+        var flying = true
+        var motorsOn = true
+        val remaining = java.util.concurrent.atomic.AtomicInteger(2)
+        fun oneDone() { if (remaining.decrementAndGet() == 0) onResult(flying, motorsOn) }
+
+        runCatching {
+            dji.v5.manager.KeyManager.getInstance().getValue(
+                dji.sdk.keyvalue.key.KeyTools.createKey(
+                    dji.sdk.keyvalue.key.FlightControllerKey.KeyIsFlying),
+                object : CommonCallbacks.CompletionCallbackWithParam<Boolean> {
+                    override fun onSuccess(v: Boolean?) { flying = v == true; oneDone() }
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.w(TAG, "KeyIsFlying read failed, assuming flying: ${error.description()}")
+                        oneDone()
+                    }
+                })
+        }.onFailure { AppLog.w(TAG, "KeyIsFlying getValue threw, assuming flying: ${it.message}"); oneDone() }
+
+        runCatching {
+            dji.v5.manager.KeyManager.getInstance().getValue(
+                dji.sdk.keyvalue.key.KeyTools.createKey(
+                    dji.sdk.keyvalue.key.FlightControllerKey.KeyAreMotorsOn),
+                object : CommonCallbacks.CompletionCallbackWithParam<Boolean> {
+                    override fun onSuccess(v: Boolean?) { motorsOn = v == true; oneDone() }
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.w(TAG, "KeyAreMotorsOn read failed, assuming motors on: ${error.description()}")
+                        oneDone()
+                    }
+                })
+        }.onFailure { AppLog.w(TAG, "KeyAreMotorsOn getValue threw, assuming motors on: ${it.message}"); oneDone() }
     }
 
     /** Long enough for the getter to answer before enforcement compares against it. */

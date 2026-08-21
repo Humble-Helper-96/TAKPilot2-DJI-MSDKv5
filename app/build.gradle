@@ -87,12 +87,20 @@ android {
         //     scale. Two test flights, clean logs.
         // 84: v1.0.0 — the aircraft has flown, so the name moves. First signed release
         //     of this tree as a 1.0.
-        versionCode 84
-        // 1.0.0 on 2026-08-20: THE AIRCRAFT HAS FLOWN — two test flights the same day, both
-        // with clean logs (no errors, no dropped CoT, pilot marker solid, video streaming).
-        // That was the gate the -dev suffix waited for, the same rule the MSDKv4 sibling
-        // followed from 1.1.0-dev to 1.1.0.
-        versionName "1.0.0"
+        // 85: v1.0.1 — the v1.0.0 code review's findings, worked one at a time: three
+        //     dead-on-arrival features (flight recording, marker naming/persistence, feed
+        //     membership) now actually initialize; a re-broadcast marker's type is escaped
+        //     (CoT injection); a mission-feed subscribe failure no longer logs the password;
+        //     the obstacle-avoidance connect-time write now uses a real (not cached-empty)
+        //     flying/armed read, fail-safe; the lights refresh callback is marshalled to
+        //     main; the OOM-restart guard's onDestroy no longer crashes on an unset view; a
+        //     dead video encoder and a wrong video password now both stop the stream instead
+        //     of leaving it "live" with nothing behind it; the aim-bearing calibration
+        //     applies on the M4TD's normal (non-fallback) path; DTED elevation lookups are
+        //     cached in memory instead of reopening the tile file per contact per frame. NOT
+        //     FLIGHT-TESTED — bench/compile verified only.
+        versionCode 85
+        versionName "1.0.1"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

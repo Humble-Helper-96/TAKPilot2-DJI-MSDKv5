@@ -131,6 +131,11 @@ class DroneVideoStreamer(
             VideoCodec.fromPref(config.codec),
             onEncoded = { buf, info -> onEncodedFrame(buf, info) },
             onParamsReady = { s, p, v -> onEncoderParamsReady(s, p, v) },
+            // R14: the encoder used to die silently (drain-thread codec error, or the system
+            // revoking the projection) — the RTSP link, the LIVE pill and the notification all
+            // stayed "healthy" with no frames actually moving. giveUp() is the one hook already
+            // built for "the streaming machinery is dead, tear it all down and tell the pilot".
+            onGone = { reason -> onScreenCaptureGone(reason) },
         )
         if (!enc.start()) {
             onStatus(false, "Screen capture failed to start")
@@ -249,6 +254,15 @@ class DroneVideoStreamer(
         reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
     }
 
+    /** The screen-capture encoder reported itself dead (codec error, or the system revoked the
+     *  projection). Streaming cannot continue without it — give up the same way a non-retryable
+     *  RTSP failure does, rather than leaving `streaming` true with nothing behind it. */
+    private fun onScreenCaptureGone(reason: String) {
+        if (stopped) return
+        AppLog.w(TAG, "screen capture ended ($reason) — stopping stream")
+        giveUp("Video capture stopped: $reason")
+    }
+
     private fun giveUp(statusMsg: String) {
         stopped = true
         isReconnecting = false
@@ -256,7 +270,16 @@ class DroneVideoStreamer(
         onStatus(false, statusMsg)
         onGiveUp()
     }
-    override fun onAuthErrorRtsp() { streaming = false; onStatus(false, "Stream auth error (check user/pass)") }
+    // R15: unlike onConnectionFailedRtsp right above, this used to only flip `streaming` and
+    // report status — it never called releaseInternal()/onGiveUp(), so a wrong user/pass left
+    // the encoder and VirtualDisplay capturing, the foreground service and notification up, and
+    // onEncodedFrame feeding a dead sender forever. Wrong credentials are not transient — same
+    // non-retryable category as "Endpoint malformed"/"access denied" in handleConnectionDropped.
+    override fun onAuthErrorRtsp() {
+        if (stopped) return
+        AppLog.w(TAG, "auth error — giving up immediately")
+        giveUp("Stream auth error (check user/pass)")
+    }
     override fun onAuthSuccessRtsp() { AppLog.i(TAG, "auth ok") }
     override fun onNewBitrateRtsp(bitrate: Long) {}
 

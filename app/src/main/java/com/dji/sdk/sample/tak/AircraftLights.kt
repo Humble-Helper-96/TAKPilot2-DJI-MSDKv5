@@ -99,6 +99,7 @@ object AircraftLights {
     fun refresh(onDone: (() -> Unit)? = null) {
         var ledsDone = false
         var battDone = false
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
         fun finish() {
             if (!ledsDone || !battDone) return
             val leds = lastLeds
@@ -108,7 +109,11 @@ object AircraftLights {
             motorLedsOn = if (motors.isEmpty()) null else motors.any { it }
             beaconOn = leds?.navigationLEDsOn
             AppLog.v(TAG, "lights read-back: motors=$motorLedsOn beacon=$beaconOn leds=$leds")
-            onDone?.invoke()
+            // The SDK callback below can land on a non-main thread. onDone renders a view
+            // (renderLightsButton) at one of its two call sites, and only one of them
+            // remembers to wrap itself in runOnUiThread (R12) — post here so every caller,
+            // present and future, gets a main-thread callback for free.
+            main.post { onDone?.invoke() }
         }
 
         KeyManager.getInstance().getValue(ledsKey,

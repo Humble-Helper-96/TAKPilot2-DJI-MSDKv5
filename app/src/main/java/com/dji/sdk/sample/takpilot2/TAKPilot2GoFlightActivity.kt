@@ -3028,9 +3028,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         AppLog.v(TAG, "onDestroy")
+        // R13: the OOM-restart guard in onCreate can finish() before setContentView ever runs,
+        // which leaves every lateinit view (arOverlay, mapView included) unassigned. onDestroy
+        // still runs on that path, so a bare arOverlay.stop() threw
+        // UninitializedPropertyAccessException and killed the exact recovery the guard exists
+        // for. Guard each lateinit view touch the same way the Autel sibling does.
         // Stop the AR redraw loop explicitly — it posts to a Handler several times a second and
         // would otherwise keep firing against a dead Activity.
-        arOverlay.stop()
+        if (::arOverlay.isInitialized) arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         // Same reason as the line above: DjiSdkBridge is a process-wide singleton and would
         // otherwise hold this Activity alive through its diagnostics callback.
@@ -3038,7 +3043,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         DjiObstacleState.onChanged = null
         TakDropMarkers.ui = null
         com.dji.sdk.sample.tak.TakMapMarkers.onMapDestroyed()
-        mapView.onDestroy()
+        if (::mapView.isInitialized) mapView.onDestroy()
         super.onDestroy()
     }
 

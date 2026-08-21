@@ -1,18 +1,27 @@
 package com.dji.sdk.sample.tak
 
+import com.taklite.util.AppLog
 import java.io.File
 import java.io.RandomAccessFile
 import kotlin.math.floor
 
 /**
- * Parsed DTED tile (MIL-PRF-89020B: UHL + DSI + ACC + per-longitude data records), with
- * on-demand point-elevation lookup via direct file seeks rather than loading the whole
- * file (~13MB+ for the DTED2-ish tiles this app has been tested with) into memory.
+ * Parsed DTED tile (MIL-PRF-89020B: UHL + DSI + ACC + per-longitude data records).
  *
  * The header's own longitude-interval field already bakes in the latitude-dependent post
  * spacing DTED uses above 50°/70°/etc. (fewer longitude posts at high latitude, to keep
  * physical spacing roughly constant) — nothing special-cased here, [nLon]/[lonIntervalDeg]
  * are just read from the file as given.
+ *
+ * R17: this used to look up every point with a fresh `RandomAccessFile` open + 4 seeks, on
+ * whichever thread called it — including the flight overlay's `onDraw`, at up to 70 contacts
+ * and 10 Hz, i.e. hundreds of blocking file opens per second on the render thread. [elevationAt]
+ * now decodes the WHOLE tile into memory ([grid]) on its first call and every later call is a
+ * pure array read. Worst case (a full DTED2 tile, 2 bytes/post) is ~26 MB resident, and a
+ * flight session normally touches 1-4 tiles — affordable on every device this app has been
+ * fielded on (lowest free RAM observed so far is ~1800 MB). If the decode itself fails (file
+ * missing/corrupt mid-flight), lookups fall back to the old per-point file read rather than
+ * going permanently null.
  */
 class DtedTile private constructor(
     private val file: File,
@@ -46,6 +55,10 @@ class DtedTile private constructor(
     fun contains(lat: Double, lon: Double): Boolean =
         lon in minLon..maxLon && lat in minLat..maxLat
 
+    /** The whole tile decoded to elevations, 2 bytes/post, `[col * nLat + row]`. Null until
+     *  the first [elevationAt] call; see [ensureDecoded]. */
+    @Volatile private var grid: ShortArray? = null
+
     /** Bilinear-interpolated elevation (meters, DTED's native vertical datum) at (lat, lon),
      *  or null if outside this tile or a surrounding post is void/unreadable. */
     fun elevationAt(lat: Double, lon: Double): Double? {
@@ -59,19 +72,69 @@ class DtedTile private constructor(
         val tc = (fc - c0).coerceIn(0.0, 1.0)
         val tr = (fr - r0).coerceIn(0.0, 1.0)
 
-        return try {
-            RandomAccessFile(file, "r").use { raf ->
-                val e00 = postAt(raf, c0, r0) ?: return null
-                val e10 = postAt(raf, c1, r0) ?: return null
-                val e01 = postAt(raf, c0, r1) ?: return null
-                val e11 = postAt(raf, c1, r1) ?: return null
-                val eLow = e00 + (e10 - e00) * tc
-                val eHigh = e01 + (e11 - e01) * tc
-                eLow + (eHigh - eLow) * tr
+        val g = ensureDecoded()
+        val e00: Double?; val e10: Double?; val e01: Double?; val e11: Double?
+        if (g != null) {
+            e00 = postFromGrid(g, c0, r0); e10 = postFromGrid(g, c1, r0)
+            e01 = postFromGrid(g, c0, r1); e11 = postFromGrid(g, c1, r1)
+        } else {
+            // Decode failed (file missing/corrupt mid-flight) — fall back to the direct-seek
+            // read rather than going permanently null for this tile.
+            return try {
+                RandomAccessFile(file, "r").use { raf ->
+                    val f00 = postAt(raf, c0, r0) ?: return null
+                    val f10 = postAt(raf, c1, r0) ?: return null
+                    val f01 = postAt(raf, c0, r1) ?: return null
+                    val f11 = postAt(raf, c1, r1) ?: return null
+                    val eLow = f00 + (f10 - f00) * tc
+                    val eHigh = f01 + (f11 - f01) * tc
+                    eLow + (eHigh - eLow) * tr
+                }
+            } catch (t: Throwable) {
+                null
             }
-        } catch (t: Throwable) {
-            null
         }
+        if (e00 == null || e10 == null || e01 == null || e11 == null) return null
+        val eLow = e00 + (e10 - e00) * tc
+        val eHigh = e01 + (e11 - e01) * tc
+        return eLow + (eHigh - eLow) * tr
+    }
+
+    /** Decodes the whole tile into [grid] on first call; every later call is a volatile-field
+     *  read plus an already-cheap synchronized check. One sequential pass over the file
+     *  (one open, one forward read per column record) rather than the per-lookup seeks. */
+    private fun ensureDecoded(): ShortArray? {
+        grid?.let { return it }
+        synchronized(this) {
+            grid?.let { return it }
+            val decoded = runCatching {
+                val recLen = recordLength.toInt()
+                val buf = ByteArray(recLen)
+                ShortArray(nLon * nLat).also { g ->
+                    RandomAccessFile(file, "r").use { raf ->
+                        raf.seek(dataStartOffset)
+                        for (col in 0 until nLon) {
+                            raf.readFully(buf, 0, recLen)
+                            for (row in 0 until nLat) {
+                                val b0 = buf[8 + 2 * row].toInt() and 0xFF
+                                val b1 = buf[9 + 2 * row].toInt() and 0xFF
+                                val magnitude = ((b0 and 0x7F) shl 8) or b1
+                                val value = if (b0 and 0x80 != 0) -magnitude else magnitude
+                                g[col * nLat + row] = value.toShort()
+                            }
+                        }
+                    }
+                }
+            }.onFailure { AppLog.w(TAG, "DTED tile decode failed, falling back to file reads: ${it.message}") }
+                .getOrNull()
+            grid = decoded
+            return decoded
+        }
+    }
+
+    private fun postFromGrid(g: ShortArray, col: Int, row: Int): Double? {
+        val value = g[col * nLat + row].toInt()
+        return if (value == VOID_VALUE) null else value.toDouble()
     }
 
     private fun postAt(raf: RandomAccessFile, col: Int, row: Int): Double? {
@@ -86,6 +149,7 @@ class DtedTile private constructor(
     }
 
     companion object {
+        private const val TAG = "DtedTile"
         private const val UHL_LEN = 80L
         private const val DSI_LEN = 648L
         private const val ACC_LEN = 2700L
