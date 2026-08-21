@@ -97,8 +97,8 @@ android {
         //     dead video encoder and a wrong video password now both stop the stream instead
         //     of leaving it "live" with nothing behind it; the aim-bearing calibration
         //     applies on the M4TD's normal (non-fallback) path; DTED elevation lookups are
-        //     cached in memory instead of reopening the tile file per contact per frame. NOT
-        //     FLIGHT-TESTED — bench/compile verified only.
+        //     cached in memory instead of reopening the tile file per contact per frame. Flown
+        //     2026-08-21, clean log, full track recorded start to landing.
         versionCode 85
         versionName "1.0.1"
         buildConfigField "String", "BUILD_TIME",
