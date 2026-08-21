@@ -1747,7 +1747,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             .show()
     }
 
-    /** 6C: markers list panel (dialog_markers_list.xml) — two red action buttons up top
+    /** 6C: markers list panel (dialog_markers.xml) — two red action buttons up top
      *  (Reset Numbering, Clear All Markers), then one row per dropped pin (a red X for a quick
      *  individual delete, its affiliation icon, range/bearing from the aircraft). Tapping a
      *  row's body (not its X) opens the full action menu (move/rename/retype/re-send/delete);

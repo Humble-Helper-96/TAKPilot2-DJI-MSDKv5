@@ -17,6 +17,9 @@ import com.dji.sdk.sample.tak.NetworkStatus
 import com.dji.sdk.sample.DataSyncActivity
 import com.dji.sdk.sample.tak.DebugActivity
 import com.dji.sdk.sample.tak.DjiSdkBridge
+import com.dji.sdk.sample.tak.AircraftStorage
+import com.dji.sdk.sample.tak.DjiObstacleState
+import com.dji.sdk.sample.tak.ControlResponse
 import com.dji.sdk.sample.tak.FlightLimitsController
 import com.dji.sdk.sample.tak.FlightPathLogger
 import com.dji.sdk.sample.tak.TakAutoConnect
@@ -28,6 +31,14 @@ import com.taklite.client.tak.TakManager
 import com.taklite.util.AppLog
 import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.key.ProductKey
+import dji.sdk.keyvalue.value.flightcontroller.FailsafeAction
+import dji.sdk.keyvalue.value.common.ComponentIndexType
+import dji.sdk.keyvalue.key.GimbalKey
+import dji.sdk.keyvalue.key.FlightControllerKey
+import dji.v5.common.error.IDJIError
+import dji.v5.common.callback.CommonCallbacks
+import dji.sdk.keyvalue.value.remotecontroller.ControlMode
+import dji.sdk.keyvalue.key.RemoteControllerKey
 import dji.v5.manager.KeyManager
 
 /**
@@ -49,6 +60,21 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     private lateinit var aircraft: TextView
     private lateinit var sdk: TextView
     private lateinit var batteryLevels: TextView
+    private lateinit var storage: TextView
+    private lateinit var avoidance: TextView
+    private lateinit var signalLoss: TextView
+    private lateinit var stickMode: TextView
+    private lateinit var controlResponse: TextView
+    private lateinit var initializing: TextView
+    /** The controller's stick mapping as the RC reports it. Written by Pre-Flight and, until
+     *  now, never read back — so this row is the first thing that can contradict it. */
+    @Volatile private var aircraftStickMode: ControlMode? = null
+    /** The failsafe, pitch speed and battery thresholds READ HERE rather than borrowed from
+     *  whatever another screen happened to leave behind. See [readReadinessState]. */
+    @Volatile private var aircraftFailsafeHere: FailsafeAction? = null
+    @Volatile private var aircraftPitchSpeedHere: Int? = null
+    @Volatile private var warnPctHere: Int? = null
+    @Volatile private var critPctHere: Int? = null
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
     private lateinit var network: TextView
@@ -72,6 +98,12 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         aircraft = findViewById(R.id.homeAircraft)
         sdk = findViewById(R.id.homeSdk)
         batteryLevels = findViewById(R.id.homeBatteryLevels)
+        storage = findViewById(R.id.homeStorage)
+        avoidance = findViewById(R.id.homeAvoidance)
+        signalLoss = findViewById(R.id.homeSignalLoss)
+        stickMode = findViewById(R.id.homeStickMode)
+        controlResponse = findViewById(R.id.homeControlResponse)
+        initializing = findViewById(R.id.homeInitializing)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
         network = findViewById(R.id.homeNetwork)
@@ -198,20 +230,21 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         // did not take, this is where it shows, so falling back to what the pilot typed would
         // hide the one failure this line exists to catch. Blank before a product is connected
         // and a dash until the aircraft answers: unknown must not look like a value.
-        val warn = FlightLimitsController.aircraftWarningPct
-        val crit = FlightLimitsController.aircraftCriticalPct
-        batteryLevels.text = when {
-            productType == null -> ""
-            warn != null && crit != null -> "BATTERY: WARN $warn% \u00b7 CRIT $crit%"
-            else -> "BATTERY: \u2014"
+        // ONE writer for this row — see refreshBatteryRow. It used to be painted here from
+        // FlightLimitsController's statics, which are only populated once Pre-Flight has run;
+        // this screen now reads the thresholds itself and that call would have overwritten
+        // the fresh values with the stale ones on every resume.
+        refreshBatteryRow()
+
+        // WHERE THE CAMERA WILL WRITE. Blunt about the one case that loses footage: red when
+        // the target is internal memory or the card cannot be written, green for a verified
+        // card, amber while the camera has not answered. See AircraftStorage.
+        if (productType != null) {
+            AircraftStorage.refresh { runOnUiThread { renderStorage(); renderReadiness() } }
+            readReadinessState()
         }
-        batteryLevels.setTextColor(
-            ContextCompat.getColor(
-                applicationContext,
-                if (productType != null && (warn == null || crit == null)) R.color.tp_state_unknown
-                else R.color.tp_text_secondary,
-            )
-        )
+        renderStorage()
+        renderReadiness()
 
         val connected = TakManager.getInstance().isConnected
         val color = if (connected) ContextCompat.getColor(applicationContext, R.color.tp_state_go) else ContextCompat.getColor(applicationContext, R.color.tp_state_danger)
@@ -266,5 +299,173 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         @Volatile
         var visitedThisProcess = false
             private set
+    }
+
+    /** Paints the storage row from what the CAMERA reported. Unknown is amber and is never
+     *  collapsed into "fine" — a blank or dashed row must not read as a working card. */
+    private fun renderStorage() {
+        val connected = KeyManager.getInstance().getValue(
+            KeyTools.createKey(ProductKey.KeyConnection), false) == true
+        storage.text = if (!connected) "" else AircraftStorage.label()
+        storage.setTextColor(ContextCompat.getColor(applicationContext, when {
+            !connected -> R.color.tp_text_secondary
+            AircraftStorage.recordingToInternal -> R.color.tp_state_danger
+            AircraftStorage.willRecord -> R.color.tp_state_go
+            AircraftStorage.location == null -> R.color.tp_state_unknown
+            else -> R.color.tp_state_danger
+        }))
+    }
+
+    /** Asks the REMOTE CONTROLLER what stick mapping it actually holds. Pre-Flight writes
+     *  this key and nothing ever read it, so a write that did not take was invisible. */
+    /**
+     * Reads every readiness value STRAIGHT FROM THE AIRCRAFT.
+     *
+     * ⚠ IT USED TO BORROW THEM FROM OTHER SCREENS' STATICS, AND THREE ROWS SAT EMPTY. The
+     * battery thresholds and the failsafe are populated by Pre-Flight, and the pitch speed by
+     * the bridge when the gimbal comes up — so on a fresh start, with the pilot going straight
+     * to this card, none of them had a value. A readiness card whose rows are blank until you
+     * have visited other screens is not a readiness card. Same lesson as the camera state:
+     * ask the aircraft, never a leftover.
+     */
+    private fun readReadinessState() {
+        readStickMode()
+
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(FlightControllerKey.KeyFailsafeAction),
+            object : CommonCallbacks.CompletionCallbackWithParam<FailsafeAction> {
+                override fun onSuccess(value: FailsafeAction?) {
+                    aircraftFailsafeHere = value
+                    runOnUiThread { renderReadiness() }
+                }
+                override fun onFailure(error: IDJIError) {}
+            })
+
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(GimbalKey.KeyPitchControlMaxSpeed, ComponentIndexType.LEFT_OR_MAIN),
+            object : CommonCallbacks.CompletionCallbackWithParam<Int> {
+                override fun onSuccess(value: Int?) {
+                    aircraftPitchSpeedHere = value
+                    runOnUiThread { renderReadiness() }
+                }
+                override fun onFailure(error: IDJIError) {}
+            })
+
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(FlightControllerKey.KeyLowBatteryWarningThreshold),
+            object : CommonCallbacks.CompletionCallbackWithParam<Int> {
+                override fun onSuccess(value: Int?) {
+                    warnPctHere = value
+                    runOnUiThread { refreshBatteryRow() }
+                }
+                override fun onFailure(error: IDJIError) {}
+            })
+
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(FlightControllerKey.KeySeriousLowBatteryWarningThreshold),
+            object : CommonCallbacks.CompletionCallbackWithParam<Int> {
+                override fun onSuccess(value: Int?) {
+                    critPctHere = value
+                    runOnUiThread { refreshBatteryRow() }
+                }
+                override fun onFailure(error: IDJIError) {}
+            })
+    }
+
+    /** The battery row, from this screen's own read — falling back to whatever Pre-Flight
+     *  left behind, which is better than a dash when it happens to be there. */
+    private fun refreshBatteryRow() {
+        val warn = warnPctHere ?: FlightLimitsController.aircraftWarningPct
+        val crit = critPctHere ?: FlightLimitsController.aircraftCriticalPct
+        val connected = KeyManager.getInstance().getValue(
+            KeyTools.createKey(ProductKey.KeyConnection), false) == true
+        batteryLevels.text = when {
+            !connected -> ""
+            warn != null && crit != null -> "BATTERY: WARN $warn% \u00b7 CRIT $crit%"
+            else -> "BATTERY: \u2014"
+        }
+        batteryLevels.setTextColor(ContextCompat.getColor(applicationContext,
+            if (connected && (warn == null || crit == null)) R.color.tp_state_unknown
+            else R.color.tp_text_secondary))
+        renderReadiness()
+    }
+
+    private fun readStickMode() {
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(RemoteControllerKey.KeyControlMode),
+            object : CommonCallbacks.CompletionCallbackWithParam<ControlMode> {
+                override fun onSuccess(value: ControlMode?) {
+                    aircraftStickMode = value
+                    runOnUiThread { renderReadiness() }
+                }
+
+                override fun onFailure(error: IDJIError) {}
+            })
+    }
+
+    /**
+     * The pre-flight readiness rows, each from the AIRCRAFT's own answer.
+     *
+     * ⚠ AMBER MEANS "NOT READ YET" AND IS NOT THE SAME AS OFF. Telling a pilot avoidance is
+     * off when the aircraft simply has not answered is a lie with consequences; so is the
+     * reverse. Every row here is blank before a product connects and amber until its value
+     * lands.
+     */
+    private fun renderReadiness() {
+        val connected = KeyManager.getInstance().getValue(
+            KeyTools.createKey(ProductKey.KeyConnection), false) == true
+        val unknown = ContextCompat.getColor(applicationContext, R.color.tp_state_unknown)
+        val info = ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)
+
+        val avoid = DjiObstacleState.collisionAvoidance
+        avoidance.text = when {
+            !connected -> ""
+            avoid == true -> "OBSTACLE AVOIDANCE: ON"
+            avoid == false -> "OBSTACLE AVOIDANCE: OFF"
+            else -> "OBSTACLE AVOIDANCE: \u2014"
+        }
+        avoidance.setTextColor(ContextCompat.getColor(applicationContext, when {
+            avoid == true -> R.color.tp_state_go
+            avoid == false -> R.color.tp_state_danger
+            else -> R.color.tp_state_unknown
+        }))
+
+        // Signal loss is the failsafe the aircraft will actually perform. This tree CAN set it
+        // (the Autel sibling's SDK cannot expose it at all), so the row states the real value.
+        val fs = aircraftFailsafeHere ?: FlightLimitsController.aircraftFailsafe
+        signalLoss.text = when {
+            !connected -> ""
+            fs != null -> "SIGNAL LOSS: " + fs.name.replace('_', ' ')
+            else -> "SIGNAL LOSS: \u2014"
+        }
+        signalLoss.setTextColor(if (fs == null) unknown else info)
+
+        val stick = aircraftStickMode
+        stickMode.text = when {
+            !connected -> ""
+            stick != null -> "STICK MODE: " + when (stick) {
+                ControlMode.JP -> "1"
+                ControlMode.USA -> "2"
+                ControlMode.CH -> "3"
+                else -> stick.name
+            }
+            else -> "STICK MODE: \u2014"
+        }
+        stickMode.setTextColor(if (stick == null) unknown else info)
+
+        val pitch = aircraftPitchSpeedHere ?: ControlResponse.aircraftPitchSpeed
+        val mode = ControlResponse.Mode.values().firstOrNull { it.pitchSpeed == pitch }
+        controlResponse.text = when {
+            !connected -> ""
+            mode != null -> "CONTROL RESPONSE: " + mode.label.uppercase()
+            else -> "CONTROL RESPONSE: \u2014"
+        }
+        controlResponse.setTextColor(if (mode == null) unknown else info)
+
+        // The hold: visible while any row is still waiting on the aircraft.
+        val waiting = connected && (avoid == null || fs == null || stick == null ||
+            mode == null || AircraftStorage.location == null ||
+            (warnPctHere ?: FlightLimitsController.aircraftWarningPct) == null)
+        initializing.visibility = if (waiting) android.view.View.VISIBLE else android.view.View.GONE
     }
 }

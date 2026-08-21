@@ -268,13 +268,52 @@
                  the pilot's only statement of what will actually happen.
 
                  THIS IS THE ONE STATUS FIELD THE PHONE KEEPS beyond the first five
-                 (specification §3.1). The other five — avoidance, signal loss, stick mode,
-                 control response, storage — do not fit this card on a 411dp screen and are
-                 static configuration a pilot sets once. Do not add them here without
-                 re-checking the card's height budget; there is about 16dp of slack left. -->
+                 (specification §3.1).
+
+                 ⚠ THE OLD NOTE HERE SAID THESE ROWS "DO NOT FIT THIS CARD ON A 411dp SCREEN"
+                 AND THAT ABOUT 16dp OF SLACK REMAINED. That was measured on a phone, and this
+                 tree has ONE target — the RC Plus 2, 768x480dp landscape. Measured from a
+                 screenshot of this very card on 2026-08-20: the empty band between the last
+                 readout and TAP TO ENTER is 165dp, room for about nine rows. The premise was
+                 inherited, not checked, which is the same mistake conformance V11 recorded.
+                 Measure before trusting a height claim in this file. -->
             <TextView android:id="@+id/homeBatteryLevels" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="2dp" android:textStyle="bold" />
+
+            <!-- WHERE THE CAMERA WILL WRITE. Red means no recording will happen — the target
+                 is internal memory, or the card is missing, full or unusable. See
+                 AircraftStorage for why this readout exists at all. -->
+            <TextView android:id="@+id/homeStorage" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" android:textStyle="bold" />
+
+            <!-- The rest of the pre-flight readiness block, matching the Autel sibling. Each
+                 row reports the AIRCRAFT's answer; amber is "not read yet" and must never be
+                 painted as a working value. -->
+            <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" />
+
+            <TextView android:id="@+id/homeSignalLoss" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" />
+
+            <TextView android:id="@+id/homeStickMode" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" />
+
+            <TextView android:id="@+id/homeControlResponse" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" />
+
+            <!-- Shown while the aircraft has not finished reporting. It is a HOLD, not a
+                 spinner: a pilot who reads a half-arrived card can act on a value that is
+                 about to change. Hidden the moment every row above has an answer. -->
+            <TextView android:id="@+id/homeInitializing" style="@style/homeCardSub"
+                android:text="READING AIRCRAFT…" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="4dp" android:textStyle="bold"
+                android:textColor="@color/tp_state_unknown" android:visibility="gone" />
         </LinearLayout>
 
         <!-- Spacer pushes the tap hint to the bottom -->
