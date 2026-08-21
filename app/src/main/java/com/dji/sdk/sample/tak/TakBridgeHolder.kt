@@ -158,10 +158,31 @@ object TakBridgeHolder {
      */
     fun currentHFov(): Double {
         val d = cameraDFovDeg ?: return Double.NaN
-        // Diagonal -> horizontal under the live aspect: tanH = tanD * w/sqrt(w*w+h*h).
+        // Diagonal -> horizontal under the live aspect: tanH = tanD * w/sqrt(w*w+h*h) —
+        // then narrowed by the display crop, which zooms exactly as a real gear does.
         val a = videoAspect
         val f = a / Math.sqrt(a * a + 1.0)
-        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(d / 2.0)) * f))
+        val h = 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(d / 2.0)) * f))
+        return cropFov(h)
+    }
+
+    /**
+     * The hybrid ladder's display crop, 1.0 = none. The camera reports the FOV of its GEAR;
+     * the crop is this application's own narrowing on top, so the effective field is
+     * tan(eff/2) = tan(gear/2) / crop — the same identity a real zoom obeys. Fed from the
+     * flight screen beside FpvTextureView.setDigitalCrop, so the picture and the geometry
+     * cannot disagree about the crop.
+     */
+    @Volatile private var digitalCrop: Double = 1.0
+
+    fun setDigitalCrop(crop: Double) {
+        digitalCrop = crop.takeIf { it.isFinite() && it >= 1.0 } ?: 1.0
+    }
+
+    fun cropFov(deg: Double): Double {
+        val c = digitalCrop
+        if (c <= 1.0 || !deg.isFinite()) return deg
+        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(deg / 2.0)) / c))
     }
 
     val hasCameraFov: Boolean get() = cameraDFovDeg != null

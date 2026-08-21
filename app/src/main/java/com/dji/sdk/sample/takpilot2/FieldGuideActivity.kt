@@ -386,11 +386,14 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
             "Zoom",
-            "Each touch magnifies one step: 1X, 3X, 7X, 14X, 28X. A touch at 28X goes back to " +
-                "1X. Your team sees the same view in the video.\n\n" +
-                "1X is the wide camera. Each larger step uses the zoom camera, thus the view " +
-                "changes camera when you go from 1X to 3X.\n\n" +
-                "The markers are less accurate when you magnify. Put your markers at 1X.",
+            "The RIGHT DIAL on top of the controller moves the zoom smoothly, from 1X to " +
+                "28X. The button shows the true value, for example 4.6X, and lights up when " +
+                "you are zoomed in.\n\n" +
+                "Touch the button to go back to 1X immediately.\n\n" +
+                "Your team sees the same view in the video.\n\n" +
+                "The app knows the true view angle at every step, so the markers and the " +
+                "camera point stay accurate when you magnify. Small movements of the aircraft " +
+                "are magnified too — hold steady before you put a marker.",
         )
 
         entry(

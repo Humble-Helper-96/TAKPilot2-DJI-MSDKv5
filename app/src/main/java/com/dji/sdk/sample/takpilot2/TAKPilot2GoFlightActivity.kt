@@ -113,6 +113,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     /** False until the aircraft has told us which lens, zoom and palette it is actually on.
      *  See [syncCameraFromAircraft] — the UI must not claim a state it has not been told. */
     private var cameraStateSynced = false
+    /** True while the ZOOM (tele) camera is the live stream source. Maintained at every
+     *  source switch — the zoom-follow logic must know which camera the pilot is LOOKING at,
+     *  and inferring it from the display ratio broke the moment ratios went fractional. */
+    private var teleLive = false
+    /** True while a source switch is in flight; follow events hold off until it lands. */
+    private var sourceSwitchPending = false
     private var irPalette = 0
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
@@ -1082,44 +1088,70 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * THE ZOOM CAMERA IS THE ONLY VISIBLE-LIGHT SOURCE (operator, 2026-08-20). The bench
+     * showed the tele stream at 1x is the same framing as the wide camera — DJI's ratio
+     * scale is wide-referenced and the zoom stream covers 1x-28x continuously — so the wide
+     * lens bought this app nothing but a second state to manage, and the afternoon's worth
+     * of lens-crossing races to manage it with. Pilot 2 keeps its Wide for sensor-quality
+     * reasons that matter to recording, not to a TAK observation stream.
+     *
+     * So: the DIAL is the zoom, firmware-wired, smooth, 1x to 28x, and the display follows.
+     * THE PILL IS SNAP-TO-1X — the one thing a zoomed-in pilot actually wants a button for.
+     */
     private fun onZoomTapped() {
-        AppLog.v(TAG, "tap: zoom (currently ${ZoomLadder.label(zoomRatio)})")
+        AppLog.v(TAG, "tap: snap to 1X (currently ${"%.1f".format(zoomRatio)}x)")
         if (!DjiSdkBridge.isProductConnected) {
-            AppLog.w(TAG, "zoom ignored — aircraft not connected")
             Toast.makeText(this, "Aircraft not connected", Toast.LENGTH_SHORT).show()
             return
         }
-        // One button, so a tap walks up the ladder and wraps to 1x at the top. Every rung is
-        // a gear the camera published — see [ZoomLadder], and do not put a value here that the
-        // camera did not name.
-        val targetFactor = ZoomLadder.stepUpOrWrap(zoomRatio)
-        val targetZoomedIn = !ZoomLadder.isWide(targetFactor)
+        KeyManager.getInstance().setValue(
+            KeyTools.createCameraKey(
+                CameraKey.KeyCameraZoomRatios, MAIN_CAM, CameraLensType.CAMERA_LENS_ZOOM),
+            1.0,
+            object : CommonCallbacks.CompletionCallback {
+                override fun onSuccess() {
+                    // The follow listener hears the echo and settles the display; nothing
+                    // more to do here.
+                    AppLog.i(TAG, "snap to 1X: OK")
+                }
 
-        // ⚠ ZOOM LIVES ON THE STREAM SOURCE, NOT ON A LENS ARGUMENT.
-        //
-        // Measured on the bench 2026-08-20, in this order:
-        //  - A bare createKey(KeyCameraZoomRatios) was accepted and the picture never moved.
-        //  - Naming CAMERA_LENS_ZOOM changed nothing: setting the ratio on ONE lens makes
-        //    BOTH lenses read it back, so the camera holds one zoom value and the lens
-        //    argument is ignored.
-        //  - Asking 2.0 returned 3.0. The camera reports isContinuous=false with gears
-        //    [1, 3, 7, 14, 28, 56, 112], thus 2x does not exist and the button was showing a
-        //    magnification the camera was not at.
-        //  - Asking 3.0 returned exactly 3.0, and the picture STILL did not move, because the
-        //    video stream was CAMERA_LENS_WIDE — the wide lens's own view, which does not
-        //    care about the zoom ratio.
-        //
-        // So: the wide lens is 1x, and any magnification means streaming the ZOOM camera.
-        // 1x switches back. That is the operator's design (2026-08-20) and it is the only one
-        // the measurements leave standing.
-        val targetSource =
-            if (targetZoomedIn) CameraVideoStreamSourceType.ZOOM_CAMERA
-            else CameraVideoStreamSourceType.WIDE_CAMERA
-        val sourceKey = KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, MAIN_CAM)
-        val zoomKey = KeyTools.createCameraKey(
-            CameraKey.KeyCameraZoomRatios, MAIN_CAM, CameraLensType.CAMERA_LENS_ZOOM)
-        AppLog.i(TAG, "zoom: switching stream source to $targetSource, then ratio $targetFactor")
+                override fun onFailure(error: IDJIError) {
+                    AppLog.w(TAG, "snap to 1X refused: ${describeError(error)}")
+                    runOnUiThread {
+                        Toast.makeText(this@TAKPilot2GoFlightActivity,
+                            "Zoom reset failed: ${describeError(error)}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            })
+    }
 
+    /** The pill: the live value, lit while zoomed in so 1X reads at a glance. A tap snaps
+     *  back to 1X — see onZoomTapped. */
+    private fun renderZoomPill() {
+        zoomButton.setBackgroundResource(
+            if (zoomRatio > 1.05) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        zoomButton.text = if (zoomRatio == Math.floor(zoomRatio)) ZoomLadder.label(zoomRatio)
+                          else "%.1fX".format(zoomRatio)
+    }
+
+    private fun onCameraZoomChanged(ratio: Double) {
+        if (irOn || sourceSwitchPending) return
+        if (kotlin.math.abs(ratio - zoomRatio) < 0.01) return
+        zoomRatio = ratio
+        renderZoomPill()
+        fpvView.setDigitalCrop(1.0)
+        TakBridgeHolder.setDigitalCrop(1.0)
+        TakBridgeHolder.setZoomFactor(ratio)
+        com.dji.sdk.sample.tak.CameraFov.refresh(irOn, ratio)
+    }
+
+    private fun switchSourceThenFinish(
+        sourceKey: dji.sdk.keyvalue.key.DJIKey<CameraVideoStreamSourceType>,
+        targetSource: CameraVideoStreamSourceType,
+        gearHeld: Double,
+        crop: Double,
+    ) {
         KeyManager.getInstance().setValue(sourceKey, targetSource,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
@@ -1128,12 +1160,25 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                             sourceKey, CameraVideoStreamSourceType.UNKNOWN)
                     }.getOrNull()
                     AppLog.i(TAG, "zoom: stream source read-back = $nowSource")
-                    applyZoomRatio(zoomKey, targetFactor, targetZoomedIn)
+                    runOnUiThread {
+                        teleLive = nowSource == CameraVideoStreamSourceType.ZOOM_CAMERA
+                        sourceSwitchPending = false
+                        cameraStateSynced = true   // an entry migration counts as the adoption
+                        // The display follows the READ-BACK gear times the asked crop — the
+                        // camera's answer, never the request (bench, 2026-08-20).
+                        zoomRatio = gearHeld * crop
+                        renderZoomPill()
+                        fpvView.setDigitalCrop(crop)
+                        TakBridgeHolder.setDigitalCrop(crop)
+                        TakBridgeHolder.setZoomFactor(zoomRatio)
+                        com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
+                    }
                 }
 
                 override fun onFailure(error: IDJIError) {
                     AppLog.w(TAG, "zoom: stream source switch refused: ${describeError(error)}")
                     runOnUiThread {
+                        sourceSwitchPending = false
                         Toast.makeText(this@TAKPilot2GoFlightActivity,
                             "Could not switch lens: ${describeError(error)}",
                             Toast.LENGTH_SHORT).show()
@@ -1142,47 +1187,6 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             })
     }
 
-    /** Sets the zoom ratio and reports what the camera actually holds afterwards. */
-    private fun applyZoomRatio(
-        zoomKey: dji.sdk.keyvalue.key.DJIKey<Double>,
-        targetFactor: Double,
-        targetZoomedIn: Boolean,
-    ) {
-        KeyManager.getInstance().setValue(
-            zoomKey,
-            targetFactor,
-            object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() {
-                    AppLog.i(TAG, "KeyCameraZoomRatios($targetFactor): OK")
-                    // READ IT BACK. The set returning OK is what misled this screen for two
-                    // days; the value the camera holds is the only answer that counts.
-                    val readBack = runCatching {
-                        KeyManager.getInstance().getValue(zoomKey, -1.0)
-                    }.getOrNull()
-                    AppLog.i(TAG, "zoom read-back: camera holds $readBack (asked $targetFactor)")
-                    runOnUiThread {
-                        zoomRatio = readBack?.takeIf { it > 0 } ?: targetFactor
-                        // The LABEL COMES FROM THE READ-BACK, not from what was asked. Asking
-                        // 2.0 and being given 3.0 is exactly how this button spent two days
-                        // lying about the magnification (bench, 2026-08-20).
-                        zoomButton.text = ZoomLadder.label(zoomRatio)
-                        // Zoom crops the camera's angular width, so both the FOV cone
-                        // published to TAK and the AR projection have to narrow with it.
-                        TakBridgeHolder.setZoomFactor(targetFactor)
-                        com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
-                    }
-                }
-
-                override fun onFailure(error: IDJIError) {
-                    AppLog.i(TAG, "KeyCameraZoomRatios($targetFactor): ${describeError(error)}")
-                    runOnUiThread {
-                        Toast.makeText(this@TAKPilot2GoFlightActivity,
-                            "Zoom failed: ${describeError(error)}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            },
-        )
-    }
 
     /** Shutter button: takes a single still photo, saved to the aircraft's SD card (not the
      *  phone) — same storage target as video recording. First cut of "quickpic" (a later phase
@@ -2260,6 +2264,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * after this screen does. Reads only, which rule 3 permits on a tick.
      */
     private fun syncCameraFromAircraft() {
+        if (sourceSwitchPending) return
         // ⚠ THE ASYNCHRONOUS getValue. The one-argument form reads MSDK's LOCAL CACHE, and a
         // key nothing has fetched yet is absent from it — so on a fresh start it answers null
         // for ever and the controls keep their assumed defaults. Same trap the lights pill
@@ -2281,8 +2286,40 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     /** Applies the lens the aircraft reported, then chases the zoom or palette that goes
      *  with it. Split out so the async callbacks stay readable. */
     private fun adoptCameraSource(source: CameraVideoStreamSourceType) {
+        // A leftover WIDE source (DJI Pilot 2's Wide button, or an old build of this app)
+        // is moved to the zoom camera AT 1x. The framing the pilot chose on Wide IS 1x, but
+        // the tele idles at whatever ratio it last held — possibly 28x from another session —
+        // so the ratio is written FIRST (invisible on the off-screen lens, the proven order)
+        // and the lens switches second. cameraStateSynced stays false until the migration
+        // lands, so the HUD tick retries the whole adoption if any step is refused; the
+        // pending flag keeps those retries from overlapping.
+        if (source == CameraVideoStreamSourceType.WIDE_CAMERA) {
+            if (sourceSwitchPending) return
+            AppLog.i(TAG, "entry found the WIDE camera live — moving to the zoom camera at 1x")
+            sourceSwitchPending = true
+            KeyManager.getInstance().setValue(
+                KeyTools.createCameraKey(
+                    CameraKey.KeyCameraZoomRatios, MAIN_CAM, CameraLensType.CAMERA_LENS_ZOOM),
+                1.0,
+                object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
+                        switchSourceThenFinish(
+                            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, MAIN_CAM),
+                            CameraVideoStreamSourceType.ZOOM_CAMERA, 1.0, 1.0)
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.w(TAG, "entry migration: ratio write refused: " +
+                            describeError(error))
+                        sourceSwitchPending = false   // the tick will retry the adoption
+                    }
+                })
+            return
+        }
+
         cameraStateSynced = true
         irOn = source == CameraVideoStreamSourceType.INFRARED_CAMERA
+        teleLive = source == CameraVideoStreamSourceType.ZOOM_CAMERA
         renderIrButtons()
         com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
         AppLog.i(TAG, "camera state adopted from the aircraft: source=$source")
@@ -2343,7 +2380,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * and the camera agree again the moment IR goes off.
      */
     private fun onIrTapped() {
-        val target = if (irOn) CameraVideoStreamSourceType.WIDE_CAMERA
+        // ZOOM_CAMERA, not WIDE: the zoom stream is the only visible-light source this app
+        // uses — its 1x IS the wide framing. See onZoomTapped.
+        val target = if (irOn) CameraVideoStreamSourceType.ZOOM_CAMERA
                      else CameraVideoStreamSourceType.INFRARED_CAMERA
         val sourceKey = KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, MAIN_CAM)
         AppLog.i(TAG, "IR: switching stream source to $target")
@@ -2360,13 +2399,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                         irButton.isEnabled = true
                         // THE READ-BACK DECIDES, not the request.
                         irOn = nowSource == CameraVideoStreamSourceType.INFRARED_CAMERA
+                        teleLive = nowSource == CameraVideoStreamSourceType.ZOOM_CAMERA
                         com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
                         if (!irOn) {
-                            // Back on the wide lens: that IS the ladder's 1X rung.
-                            zoomRatio = 1.0
-                            zoomButton.text = ZoomLadder.label(1.0)
-                            TakBridgeHolder.setZoomFactor(1.0)
+                            // Leaving IR lands on the zoom camera at whatever ratio it held;
+                            // the follow listener and CameraFov pick it up from there.
+                            renderZoomPill()
                         }
+                        fpvView.setDigitalCrop(1.0)
+                        TakBridgeHolder.setDigitalCrop(1.0)
                         renderIrButtons()
                     }
                 }
@@ -2869,6 +2910,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         AppLog.v(TAG, "onResume")
         // BVLOS antenna aim (V37); no-op on a device without the rotation-vector sensor.
         com.dji.sdk.sample.tak.ControllerCompass.start(this)
+        // THE RIGHT DIAL BELONGS TO THE FIRMWARE — it drives the camera's zoom directly,
+        // like the hardware record button, and this app cannot and must not intercept it.
+        // The app FOLLOWS the camera instead: pill, crop and FOV track whatever ratio the
+        // dial (or anything else) puts the camera at. See CameraZoomFollow.
+        com.dji.sdk.sample.tak.CameraZoomFollow.arm { ratio -> onCameraZoomChanged(ratio) }
         mapView.onResume()
         handler.post(refresh)
     }
@@ -2876,6 +2922,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     override fun onPause() {
         AppLog.v(TAG, "onPause")
         com.dji.sdk.sample.tak.ControllerCompass.stop()
+        com.dji.sdk.sample.tak.CameraZoomFollow.disarm()
         handler.removeCallbacks(refresh)
         handler.removeCallbacks(hideNotice)
         mapView.onPause()
@@ -3114,6 +3161,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         private const val TAG = "TP2Flight"
         /** Camera capture operations specifically — recording and stills. */
         private const val REC_TAG = "TP2Record"
+
+        /** Wide-crop dial: below this normalised deflection the dial reads as centred. */
+        private const val DIAL_DEADZONE = 0.15f
+        private const val WIDE_DIAL_TICK_MS = 50L
 
         /** The three palettes the sibling offers, in its order. Kept short on purpose: a
          *  cycle button with ten entries is a button nobody can aim. */

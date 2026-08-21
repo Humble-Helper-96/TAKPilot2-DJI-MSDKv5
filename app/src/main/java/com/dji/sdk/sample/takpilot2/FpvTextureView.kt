@@ -154,6 +154,20 @@ class FpvTextureView @JvmOverloads constructor(
      * picture moves and the rectangle does not, a marker dropped at the crosshair no longer
      * lands under it.
      */
+    /**
+     * The display crop for the hybrid zoom, 1.0 = none. Set from the flight screen after a
+     * zoom read-back; the transform recomputes immediately.
+     */
+    @Volatile
+    private var digitalCrop = 1f
+
+    fun setDigitalCrop(crop: Double) {
+        val c = crop.toFloat().coerceIn(1f, 4f)
+        if (c == digitalCrop) return
+        digitalCrop = c
+        recomputeVideoRect()
+    }
+
     private fun recomputeVideoRect() {
         val vw = width.toFloat()
         val vh = height.toFloat()
@@ -183,8 +197,20 @@ class FpvTextureView @JvmOverloads constructor(
 
         // setTransform touches the view, thus it goes to the UI thread — this method also
         // runs from the stream listener, which does not.
+        //
+        // THE DIGITAL CROP composes here (operator, 2026-08-20): a centred scale about the
+        // rect's middle, on top of the letterbox translate. The camera only has gears
+        // 1/3/7/14/28, so the ladder's intermediate levels are this crop riding the nearest
+        // gear below. Centred about the RECT, not the view: the crosshair sits at the rect's
+        // centre, so a centred crop leaves the aiming point on the same pixel — a marker
+        // dropped at the crosshair lands where it did uncropped, and the screen-capture
+        // stream carries the same picture the pilot sees.
         post {
-            setTransform(Matrix().apply { if (dy > 0.5f) setTranslate(0f, dy) })
+            setTransform(Matrix().apply {
+                if (dy > 0.5f) setTranslate(0f, dy)
+                val c = digitalCrop
+                if (c > 1.001f) postScale(c, c, rect.centerX(), rect.centerY())
+            })
         }
 
         AppLog.d(TAG, "video rect: $rect (stream ${streamW}x$streamH in view ${width}x$height," +
