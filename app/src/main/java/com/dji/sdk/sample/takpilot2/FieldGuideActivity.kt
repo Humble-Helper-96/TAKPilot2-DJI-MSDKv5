@@ -415,8 +415,8 @@ class FieldGuideActivity : AppCompatActivity() {
             "Lights: the navigation lights and the beacon",
             "Touch to turn the navigation lights on or off. These are the red and green LEDs " +
                 "near each motor.\n\n" +
-                "Touch and hold to turn the beacon on or off. The small dot at the corner of " +
-                "the button shows the beacon: green is on, grey is off.\n\n" +
+                "Touch and hold to turn the beacon on or off. A message tells you if the " +
+                "beacon is on or off.\n\n" +
                 "The button shows what the AIRCRAFT does, not what you asked for. If the " +
                 "aircraft refuses, a message tells you and the button does not change.",
         )

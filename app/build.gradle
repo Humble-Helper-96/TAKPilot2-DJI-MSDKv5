@@ -79,7 +79,7 @@ android {
         // 27: the zoom ladder is the camera's own gears — 1, 3, 7, 14, 28.
         // 28: "Lock battery levels" locks the battery levels, and no longer the stick mode and
         //     the signal-loss behaviour as well.
-        versionCode 44
+        versionCode 45
         // Stays -dev until something has flown. NOTHING HAS FLOWN ON MSDKv5 YET, so the number
         // does not move: the channel work is ported from the Autel tree and proved on Autel
         // hardware, which says nothing about this airframe.

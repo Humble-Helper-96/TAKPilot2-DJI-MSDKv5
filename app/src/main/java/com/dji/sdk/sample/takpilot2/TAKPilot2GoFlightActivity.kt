@@ -106,9 +106,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private lateinit var zoomButton: TextView
     private lateinit var irButton: TextView
     private lateinit var irPaletteButton: TextView
-    private lateinit var lightsButton: android.widget.FrameLayout
-    private lateinit var lightsIcon: ImageView
-    private lateinit var beaconDot: ImageView
+    private lateinit var lightsButton: ImageButton
     /** True while the INFRARED camera is the live source. Mirrors the aircraft's answer:
      *  set from the stream-source read-back, never from what was asked. */
     private var irOn = false
@@ -513,8 +511,6 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         irPaletteButton.setOnClickListener { onIrPaletteTapped() }
 
         lightsButton = findViewById(R.id.flightLightsButton)
-        lightsIcon = findViewById(R.id.flightLightsIcon)
-        beaconDot = findViewById(R.id.flightBeaconDot)
 
         // TAP = NAVIGATION LIGHTS, TOUCH AND HOLD = BEACON (operator, 2026-08-20). They were
         // one combined toggle for a few hours; the two do different jobs in the air, so a
@@ -544,8 +540,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     lightsButton.isEnabled = true
                     renderLightsButton()
                     // ALWAYS ANNOUNCED, unlike the tap. The beacon is on the aircraft, not on
-                    // this screen, and the corner dot is small — a pilot who cannot see the
-                    // aircraft gets no other confirmation that a hidden gesture did anything.
+                    // this screen, and it has no readout here (operator, 2026-08-20: a state
+                    // dot on the pill was tried and rejected) — so this toast is the pilot's
+                    // only confirmation that a hidden gesture did anything.
                     Toast.makeText(this,
                         if (!confirmed) "The aircraft did not change the beacon."
                         else if (AircraftLights.beaconOn == true) "Beacon ON" else "Beacon OFF",
@@ -2323,23 +2320,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     /**
-     * Both light states, from the AIRCRAFT's answer. The icon is the navigation lights (what a
-     * tap works); the corner dot is the beacon (what a touch-and-hold works). Unknown keeps
-     * its own dimmed look and is never collapsed into "off".
+     * The icon is the NAVIGATION LIGHTS — what a tap works. Unknown keeps its own dimmed look
+     * and is never collapsed into "off".
+     *
+     * The beacon has no indicator here on purpose (operator, 2026-08-20): its state is
+     * reported by the toast on every touch-and-hold, and a second state light on a 46dp pill
+     * was rejected as clutter.
      */
     private fun renderLightsButton() {
         val nav = AircraftLights.navOn
-        lightsIcon.setImageResource(
+        lightsButton.setImageResource(
             if (nav == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
-        lightsIcon.alpha = if (nav == null) 0.5f else 1f
-
-        val beacon = AircraftLights.beaconOn
-        beaconDot.imageTintList = android.content.res.ColorStateList.valueOf(
-            ContextCompat.getColor(applicationContext, when (beacon) {
-                true -> R.color.tp_state_go
-                false -> R.color.tp_text_secondary
-                null -> R.color.tp_state_unknown
-            }))
+        lightsButton.alpha = if (nav == null) 0.5f else 1f
     }
 
     private fun refreshBatteryBands() {
