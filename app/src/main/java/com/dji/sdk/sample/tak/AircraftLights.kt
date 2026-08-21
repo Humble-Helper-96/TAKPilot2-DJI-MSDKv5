@@ -86,22 +86,55 @@ object AircraftLights {
     /**
      * Asks the aircraft what its lights are doing and updates both states.
      *
+     * ⚠ THE ASYNCHRONOUS getValue, NOT THE ONE-ARGUMENT ONE. The synchronous
+     * `getValue(key)` reads MSDK's LOCAL CACHE, and a key nothing has fetched or subscribed
+     * yet is simply absent from it — so on a fresh app start it returns null for ever and the
+     * pill sits grey. That is exactly what happened on the bench 2026-08-20, and what made it
+     * confusing is that the sync read WORKED once a write had populated the cache: the state
+     * only appeared after the pilot had already changed something. The two-argument form
+     * queries the aircraft.
+     *
      * Reading is free of the write rule — rule 3 forbids timed WRITES, not polling a state.
      */
     fun refresh(onDone: (() -> Unit)? = null) {
-        val leds = runCatching { KeyManager.getInstance().getValue(ledsKey) }.getOrNull()
-        val batt = runCatching { KeyManager.getInstance().getValue(batteryLedsKey) }.getOrNull()
-        if (leds != null) lastLeds = leds
-        if (batt != null) lastBatteryLed = batt.batteryLed
+        var ledsDone = false
+        var battDone = false
+        fun finish() {
+            if (!ledsDone || !battDone) return
+            val leds = lastLeds
+            val motors = listOfNotNull(
+                leds?.frontLEDsOn, leds?.rearLEDsOn, leds?.statusIndicatorLEDsOn,
+            )
+            motorLedsOn = if (motors.isEmpty()) null else motors.any { it }
+            beaconOn = leds?.navigationLEDsOn
+            AppLog.v(TAG, "lights read-back: motors=$motorLedsOn beacon=$beaconOn leds=$leds")
+            onDone?.invoke()
+        }
 
-        val motors = listOfNotNull(
-            leds?.frontLEDsOn, leds?.rearLEDsOn, leds?.statusIndicatorLEDsOn,
-        )
-        motorLedsOn = if (motors.isEmpty()) null else motors.any { it }
-        beaconOn = leds?.navigationLEDsOn
-        AppLog.v(TAG, "lights read-back: motors=$motorLedsOn beacon=$beaconOn " +
-            "leds=$leds batteryLeds=$batt")
-        onDone?.invoke()
+        KeyManager.getInstance().getValue(ledsKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<LEDsSettings> {
+                override fun onSuccess(value: LEDsSettings?) {
+                    if (value != null) lastLeds = value
+                    ledsDone = true; finish()
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    AppLog.v(TAG, "LEDs read failed: ${error.description()}")
+                    ledsDone = true; finish()
+                }
+            })
+
+        KeyManager.getInstance().getValue(batteryLedsKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<BatteryLedsInfo> {
+                override fun onSuccess(value: BatteryLedsInfo?) {
+                    if (value != null) lastBatteryLed = value.batteryLed
+                    battDone = true; finish()
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    battDone = true; finish()
+                }
+            })
     }
 
     /**
@@ -196,7 +229,10 @@ object AircraftLights {
      * pilot did not ask for, in the dark, on an aircraft they may be trying to hide.
      */
     private fun requireState(): LEDsSettings? {
-        refresh()
+        // The cached value from the last successful async read. Not a fresh fetch: the read
+        // is asynchronous, and the tick keeps asking until it lands, so by the time a pilot
+        // can press anything this is populated — or the aircraft is not answering at all, in
+        // which case refusing is the right outcome.
         val s = lastLeds
         if (s == null) AppLog.w(TAG, "lights: the aircraft has not reported its lights — " +
             "refusing the write rather than guessing the half being preserved")

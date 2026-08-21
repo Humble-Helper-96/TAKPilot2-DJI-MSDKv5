@@ -68,7 +68,13 @@ v4 tree and the V1 crib sheet are the places to look.
    and on an explicit button press only. Keystroke-burst writes crashed an aircraft on the
    Autel sibling on 2026-08-02.
 4. **Do not trust a success callback from the camera alone.** Verify with a read-back where
-   the result matters.
+   the result matters — and **read back with the TWO-ARGUMENT `getValue(key, callback)`**.
+   The one-argument `getValue(key)` reads MSDK's LOCAL CACHE, and a key nothing has fetched
+   or subscribed to yet is absent from it, so it answers null for ever. On 2026-08-20 that
+   put the flight screen in a state where the lights pill sat greyed all flight and the IR,
+   zoom and palette controls showed defaults while the aircraft was in thermal. It is a
+   deceptive bug: the sync read starts working once a WRITE has populated the cache, so the
+   state becomes readable only after the pilot has already changed something.
 5. **Correct a sign ONE time, at ingest, never in consumers.** When one value has the wrong
    sign, examine the others immediately.
 6. **`com.taklite.client.tak` must not import an SDK.** It is vendor-neutral by contract and
@@ -95,7 +101,11 @@ v4 tree and the V1 crib sheet are the places to look.
 - Documents are STE. New code comments are STE. Old comments become STE when a file is next
   touched for real work.
 - UI state must show what the AIRCRAFT holds, not what was requested. Unknown is its own
-  state (amber), never collapsed into off.
+  state (amber), never collapsed into off. **This includes SCREEN ENTRY: adopt the aircraft's
+  real state, never a local default.** The camera and the lights keep their settings across an
+  app restart and the fields here do not — on 2026-08-20 the screen opened claiming "visible
+  camera, 1X, white hot" while the aircraft was streaming thermal. If a control has a local
+  `var` holding its state, something must fetch that state from the aircraft.
 - Colours come from the tokens in `res/values/takpilot_colors.xml`. Do not add a new
   `Color.parseColor` call site. `res/values/colors.xml` belongs to the stock DJI sample —
   leave it alone.

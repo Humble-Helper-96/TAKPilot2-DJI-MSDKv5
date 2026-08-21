@@ -110,6 +110,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     /** True while the INFRARED camera is the live source. Mirrors the aircraft's answer:
      *  set from the stream-source read-back, never from what was asked. */
     private var irOn = false
+    /** False until the aircraft has told us which lens, zoom and palette it is actually on.
+     *  See [syncCameraFromAircraft] — the UI must not claim a state it has not been told. */
+    private var cameraStateSynced = false
     private var irPalette = 0
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
@@ -2224,6 +2227,91 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     /**
+     * Adopts the CAMERA'S OWN state — lens, zoom and palette — instead of assuming it.
+     *
+     * ⚠ THE SCREEN USED TO OPEN AT "WIDE, 1X, WHITE HOT" WHATEVER THE AIRCRAFT WAS DOING.
+     * Found on the bench 2026-08-20: the aircraft was left in thermal, the app was restarted,
+     * the picture came back thermal and every control said visible-camera. The camera keeps
+     * its state across an app restart; three local fields here did not, and nothing ever
+     * asked. Same defect the lights pill had the same afternoon, and the same rule broken —
+     * "UI state must show what the AIRCRAFT holds, not what was requested" (CLAUDE.md).
+     *
+     * Runs from the HUD tick until it gets an answer, because the aircraft link comes up
+     * after this screen does. Reads only, which rule 3 permits on a tick.
+     */
+    private fun syncCameraFromAircraft() {
+        // ⚠ THE ASYNCHRONOUS getValue. The one-argument form reads MSDK's LOCAL CACHE, and a
+        // key nothing has fetched yet is absent from it — so on a fresh start it answers null
+        // for ever and the controls keep their assumed defaults. Same trap the lights pill
+        // fell into the same afternoon.
+        val sourceKey = KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, MAIN_CAM)
+        KeyManager.getInstance().getValue(sourceKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                override fun onSuccess(value: CameraVideoStreamSourceType?) {
+                    if (value == null || value == CameraVideoStreamSourceType.UNKNOWN) return
+                    runOnUiThread { adoptCameraSource(value) }
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    AppLog.v(TAG, "camera source read failed: ${describeError(error)}")
+                }
+            })
+    }
+
+    /** Applies the lens the aircraft reported, then chases the zoom or palette that goes
+     *  with it. Split out so the async callbacks stay readable. */
+    private fun adoptCameraSource(source: CameraVideoStreamSourceType) {
+        cameraStateSynced = true
+        irOn = source == CameraVideoStreamSourceType.INFRARED_CAMERA
+        renderIrButtons()
+        AppLog.i(TAG, "camera state adopted from the aircraft: source=$source")
+
+        if (source == CameraVideoStreamSourceType.ZOOM_CAMERA) {
+            val zoomKey = KeyTools.createCameraKey(
+                CameraKey.KeyCameraZoomRatios, MAIN_CAM, CameraLensType.CAMERA_LENS_ZOOM)
+            KeyManager.getInstance().getValue(zoomKey,
+                object : CommonCallbacks.CompletionCallbackWithParam<Double> {
+                    override fun onSuccess(value: Double?) {
+                        if (value == null || value <= 0) return
+                        runOnUiThread {
+                            zoomRatio = value
+                            zoomButton.text = ZoomLadder.label(value)
+                            TakBridgeHolder.setZoomFactor(value)
+                            AppLog.i(TAG, "zoom adopted from the aircraft: ${'$'}value")
+                        }
+                    }
+
+                    override fun onFailure(error: IDJIError) {}
+                })
+        } else if (!irOn) {
+            // The wide camera IS the ladder's 1X rung.
+            zoomRatio = ZoomLadder.MIN
+            zoomButton.text = ZoomLadder.label(ZoomLadder.MIN)
+            TakBridgeHolder.setZoomFactor(ZoomLadder.MIN)
+        }
+
+        if (irOn) {
+            val paletteKey = KeyTools.createCameraKey(
+                CameraKey.KeyThermalPalette, MAIN_CAM, CameraLensType.CAMERA_LENS_THERMAL)
+            KeyManager.getInstance().getValue(paletteKey,
+                object : CommonCallbacks.CompletionCallbackWithParam<CameraThermalPalette> {
+                    override fun onSuccess(value: CameraThermalPalette?) {
+                        val i = IR_PALETTES.indexOfFirst { it.first == value }
+                        if (i < 0) return
+                        runOnUiThread {
+                            irPalette = i
+                            irPaletteButton.text = IR_PALETTES[i].second
+                            AppLog.i(TAG, "palette adopted from the aircraft: " +
+                                IR_PALETTES[i].second)
+                        }
+                    }
+
+                    override fun onFailure(error: IDJIError) {}
+                })
+        }
+    }
+
+    /**
      * THERMAL ON/OFF — the same stream-source key the zoom ladder drives, with INFRARED as a
      * third source (2026-08-20). The mechanism is the one the zoom work proved on this
      * aircraft: set [CameraKey.KeyCameraVideoStreamSource], then READ IT BACK and render from
@@ -2560,6 +2648,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         if (AircraftLights.motorLedsOn == null) {
             AircraftLights.refresh { renderLightsButton() }
         }
+        // Same reason, same shape: adopt the camera's real lens/zoom/palette once the
+        // aircraft is talking. See syncCameraFromAircraft.
+        if (!cameraStateSynced) syncCameraFromAircraft()
 
         // Show the real satellite count whenever telemetry exists, even below lock threshold —
         // "—" used to mean "no fix," but visually that's indistinguishable from "no telemetry
