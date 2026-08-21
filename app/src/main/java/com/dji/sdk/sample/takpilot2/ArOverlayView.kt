@@ -188,12 +188,30 @@ class ArOverlayView @JvmOverloads constructor(
         // back to a flat-ground assumption below — degraded, not disabled.
         val aircraftMsl = com.dji.sdk.sample.tak.TerrainAgl.reading(context, hud).mslMeters
         // Loud, because without it EVERY vertical angle silently degrades: reported altitudes
-        // can't be differenced against anything, and both pins and contacts fall back to a
-        // flat-plane assumption that puts everything at the pilot's own takeoff level. That
-        // failure looks like "AR works but heights are wrong" rather than like a missing input.
-        if (logThisPass && aircraftMsl == null) {
-            AppLog.w(TAG, "no aircraft MSL (no DTED takeoff reference) — pin and contact " +
-                "elevations are flat-plane estimates; air traffic will render at your level")
+        // cannot be differenced against anything, and both pins and contacts fall back to a
+        // flat-plane assumption. That failure looks like "AR works but heights are wrong"
+        // rather than like a missing input.
+        //
+        // ⚠ THIS MESSAGE USED TO SAY "air traffic will render at your level". That described
+        // the fallback as it was BEFORE dzAirBallpark replaced it, and it outlived the code —
+        // the operator caught it reading a flight log on 2026-08-20 and it had already been
+        // repeated back to them as fact. Air traffic uses its OWN reported altitude above the
+        // assumed ground; only ground pins and contacts sit at the takeoff plane. Correct
+        // this line whenever the fallbacks below change.
+        // ON THE TRANSITION, NOT EVERY PASS. A missing DTED reference is a CONDITION that
+        // lasts the whole flight, not an event: at one line per second it produced 492 of the
+        // 496 warnings in the 2026-08-20 first flight and rotated the log every two minutes,
+        // which is the same way ADS-B once destroyed the history it was meant to explain (see
+        // CotParser's retention note). Logged when it starts, and again when it clears.
+        if (aircraftMsl == null && !mslMissingLogged) {
+            mslMissingLogged = true
+            AppLog.w(TAG, "no aircraft MSL (no DTED takeoff reference) — pins and ground " +
+                "contacts assume flat ground at the takeoff elevation; air traffic uses its " +
+                "reported altitude above that same assumed ground. Both drift with the real " +
+                "terrain, and neither is trusted enough to label with a number.")
+        } else if (aircraftMsl != null && mslMissingLogged) {
+            mslMissingLogged = false
+            AppLog.i(TAG, "aircraft MSL available again — terrain-corrected elevations restored")
         }
 
         for (pin in pins) {
@@ -696,6 +714,8 @@ class ArOverlayView @JvmOverloads constructor(
     }
 
     private var lastDiagMs = 0L
+    /** Transition guard for the missing-MSL warning — see its use. */
+    private var mslMissingLogged = false
 
     private fun skipped(reason: String) {
         if (lastSkipReason != reason) {
