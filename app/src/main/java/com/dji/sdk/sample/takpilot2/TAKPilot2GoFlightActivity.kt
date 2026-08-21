@@ -1089,6 +1089,42 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     /**
+     * THE CONTROLLER'S L BUTTONS, mirroring the screen exactly (operator, 2026-08-20):
+     *
+     *   L1 — the quick (dynamic) marker: same function as touching the crosshair.
+     *   L2 — a static Unknown marker: same function as holding the crosshair.
+     *   L3 — thermal on/off: same function as the IR pill.
+     *
+     * Each button ends in the SAME function as its on-screen control — the Autel sibling's
+     * doctrine — so a pilot who has learned one route has learned the other, and the two can
+     * never drift apart. The buttons arrive as ordinary Android keycodes (F1/F2/F3 from
+     * gpio-keys, hardware doc §6.2, every mapping operator-verified), so this is plain
+     * onKeyDown — no SDK listener, no slot to collide with.
+     *
+     * repeatCount 0 only: a held button auto-repeats at the keyboard rate, and "held L2" must
+     * not scatter a line of markers.
+     */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (event.repeatCount == 0) {
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_F1 -> {
+                    AppLog.i(TAG, "controller button L1 — quick marker")
+                    onQuickDropTapped(); return true
+                }
+                android.view.KeyEvent.KEYCODE_F2 -> {
+                    AppLog.i(TAG, "controller button L2 — static marker")
+                    onUnknownMarkerAction(); return true
+                }
+                android.view.KeyEvent.KEYCODE_F3 -> {
+                    AppLog.i(TAG, "controller button L3 — IR toggle")
+                    if (irButton.isEnabled) onIrTapped(); return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    /**
      * THE ZOOM CAMERA IS THE ONLY VISIBLE-LIGHT SOURCE (operator, 2026-08-20). The bench
      * showed the tele stream at 1x is the same framing as the wide camera — DJI's ratio
      * scale is wide-referenced and the zoom stream covers 1x-28x continuously — so the wide

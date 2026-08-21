@@ -110,12 +110,11 @@ import com.taklite.util.AppLog
  * "not an approval" warning, the obstacle "no mark is not clear" warning, and the
  * "nothing in this build has flown" warning.
  *
- * ## One section the Autel sibling has and this build does not
+ * ## The controller buttons
  *
- * Absent because the FUNCTION is absent, not because the guide is behind:
- *  - **The controller buttons.** Nothing on the RC Plus is wired in this app — deferred by
- *    the operator 2026-08-20 (C1/C2 preferred, a future decision). Write that section when
- *    there is a listener.
+ * Wired 2026-08-20 (L1/L2/L3, the operator's mapping) and documented in the entry below.
+ * When a hardware mapping changes, that entry is the one place to change it, and
+ * `TAKPilot2GoFlightActivity.onKeyDown` is the ground truth to check it against.
  *
  * The aim calibration EXISTS since 2026-08-20 (V32) and is covered on the AR entry. Autel
  * gives it a whole guide section; this guide keeps it to the entry, because the 2026-08-20
@@ -523,6 +522,19 @@ class FieldGuideActivity : AppCompatActivity() {
                 "Use it when you cannot see the aircraft: turn your body until the marker is " +
                 "at the top. The antennas of the controller are directional, and a link is " +
                 "strongest when they face the aircraft.",
+        )
+
+        entry(
+            emptyList(),
+            "The controller buttons: L1, L2, L3",
+            "The three buttons on the front left of the controller do the same as the " +
+                "controls on the screen.\n\n" +
+                "L1 puts the quick marker where the crosshair points, the same as a touch " +
+                "on the crosshair.\n\n" +
+                "L2 puts a new static marker where the crosshair points, the same as a " +
+                "touch and hold on the crosshair. Each press makes a new marker.\n\n" +
+                "L3 changes between the usual camera and the thermal camera, the same as " +
+                "the IR button.",
         )
 
         sub("The readout: right side")
