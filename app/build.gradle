@@ -114,7 +114,9 @@ android {
         //     loop cannot be killed by an SDK throw, and the AR overlay stopped doing ~850
         //     haversines and a FontMetrics allocation per frame. Shared core: outbound CoT goes
         //     through one ordered writer, and UTF-8 is decoded across socket-chunk boundaries.
-        //     StreamTranscoder (348 dead lines) deleted. NOT FLIGHT-TESTED at time of build.
+        //     StreamTranscoder (348 dead lines) deleted. Flown 2026-08-21 — a short flight
+        //     covering the changes that alter what the pilot and the team see, not the whole
+        //     checklist.
         versionCode 86
         versionName "1.0.2"
         buildConfigField "String", "BUILD_TIME",
