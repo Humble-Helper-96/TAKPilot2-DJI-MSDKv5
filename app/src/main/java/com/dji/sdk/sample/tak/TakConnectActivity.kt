@@ -112,8 +112,12 @@ class TakConnectActivity : AppCompatActivity() {
         // connected but have saved certs, try again here too (covers the case where this
         // screen is opened before that first attempt lands, or after a manual disconnect).
         when {
-            TakManager.getInstance().isConnected ->
+            TakManager.getInstance().isConnected -> {
+                // Track it, so connectionListener can correct this line if the link later drops
+                // while the pilot is sitting on this screen (R24).
+                trackedCallsign = callsign.text.toString().trim().ifEmpty { "sUAS" }
                 setStatus("Connected. Drone PLI streaming.", ContextCompat.getColor(applicationContext, R.color.tp_state_go))
+            }
             prefs.getBoolean(KEY_LOGGED_OUT, false) ->
                 setStatus("Logged out. Enter host, username and password to sign in.", ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             hasSavedCerts(prefs) -> {
@@ -125,6 +129,16 @@ class TakConnectActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.takConnectButton).setOnClickListener {
             AppLog.v(TAG, "tap: Connect")
+            // R26: held down for the whole attempt, the same way Apply does it and for a
+            // stronger reason. Enrollment is seconds long (RSA-2048 keygen + three HTTPS round
+            // trips) and `isConnected` stays false throughout, so the guard below is no
+            // defence against a second tap. Two enrolments in flight write the SAME two files
+            // (tak_clientcert.p12, tak_truststore.p12) with no temp-and-rename, each with its
+            // own key pair, and then both call the non-reentrant TakManager.connect() — which
+            // can leave an orphaned second TakClient socket thread publishing PLI for the same
+            // uid, or load a half-written keystore and fail TLS in a way that looks nothing
+            // like "you tapped twice".
+            setConnectBusy(true)
             val h = host.text.toString().trim()
             val u = username.text.toString().trim()
             val p = password.text.toString()
@@ -134,6 +148,7 @@ class TakConnectActivity : AppCompatActivity() {
 
             if (TakManager.getInstance().isConnected) {
                 setStatus("Already connected.", ContextCompat.getColor(applicationContext, R.color.tp_state_go))
+                setConnectBusy(false)
                 return@setOnClickListener
             }
             prefs.edit()
@@ -152,6 +167,7 @@ class TakConnectActivity : AppCompatActivity() {
             if (h.isEmpty() || u.isEmpty() || p.isEmpty()) {
                 setStatus("Host, username and password are required for first enrollment.",
                     ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                setConnectBusy(false)
                 return@setOnClickListener
             }
             enrollAndConnect(h, ep, cp, u, p, cs)
@@ -667,9 +683,16 @@ class TakConnectActivity : AppCompatActivity() {
                 R.id.mapStyleCustom -> "custom"
                 else -> "hybrid"
             }
-            if (choice == "custom" && customUrl.text.toString().isBlank()) {
-                Toast.makeText(this, "Enter a custom tile URL first", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+            // R40: validated HERE, while the pilot is still looking at the field. An http:// URL
+            // or one without the {z}/{x}/{y} placeholders used to save happily and then show as
+            // a blank map on the flight screen, with nothing tying the dead map back to what was
+            // typed two screens earlier.
+            if (choice == "custom") {
+                val problem = MaplibreStyle.validateCustomUrl(customUrl.text.toString())
+                if (problem != null) {
+                    Toast.makeText(this, problem, Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
             }
             MaplibreStyle.saveStyleChoice(this, choice, customUrl.text.toString())
             Toast.makeText(this, "Map display saved", Toast.LENGTH_SHORT).show()
@@ -892,14 +915,24 @@ class TakConnectActivity : AppCompatActivity() {
         val uri: Uri = data?.data ?: return
         val name = queryDisplayName(uri) ?: "Region-${System.currentTimeMillis()}"
         val status = findViewById<TextView>(R.id.dtedStatus)
-        val result = DtedStore.import(this, uri, name)
-        status.text = when {
-            result.error != null && result.importedCount == 0 -> "Failed to import $name: ${result.error}"
-            result.error != null -> "Imported ${result.importedCount} tile(s) from $name (${result.error})"
-            else -> "Imported ${result.importedCount} tile(s) from $name."
+        val importButton = findViewById<Button>(R.id.dtedUploadButton)
+        // R25: off the main thread. A region zip is tens to hundreds of megabytes to decompress
+        // and write — an ANR every time, on a screen that also showed no sign of working.
+        importButton?.isEnabled = false
+        status.text = "Importing $name…"
+        DtedStore.importAsync(
+            this, uri, name,
+            onProgress = { tiles -> status.text = "Importing $name… $tiles tile(s)" },
+        ) { result ->
+            importButton?.isEnabled = true
+            status.text = when {
+                result.error != null && result.importedCount == 0 -> "Failed to import $name: ${result.error}"
+                result.error != null -> "Imported ${result.importedCount} tile(s) from $name (${result.error})"
+                else -> "Imported ${result.importedCount} tile(s) from $name."
+            }
+            if (result.importedCount == 0) Toast.makeText(this, status.text, Toast.LENGTH_SHORT).show()
+            renderDtedRegions()
         }
-        if (result.importedCount == 0) Toast.makeText(this, status.text, Toast.LENGTH_SHORT).show()
-        renderDtedRegions()
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -1185,6 +1218,7 @@ class TakConnectActivity : AppCompatActivity() {
             AppLog.w(TAG, "enroll aborted — no validated network")
             setStatus("No network connection. Connect to Wi-Fi or mobile data, then try again.",
                 ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+            setConnectBusy(false)
             return
         }
         setStatus("Enrolling with $host:$enrollPort …", ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
@@ -1210,12 +1244,27 @@ class TakConnectActivity : AppCompatActivity() {
                             .putBoolean(KEY_LOGGED_OUT, false)   // new enrollment → allow auto-reconnect again
                             .apply()
                         runOnUiThread { setStatus("Enrolled. Connecting …", ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)) }
-                        connectWithCerts(uid, username, droneUid, droneCallsign,
-                            host, cotPort, trustStorePath, clientCertPath)
+                        // R26: connectWithCerts re-enables the button on its way through, but
+                        // it can also throw (an unreadable keystore, a TakClient constructor
+                        // failure) — and this runs on a worker thread, where nothing would
+                        // catch it. Without this the button stays dead for the life of the
+                        // screen and the pilot cannot retry at all.
+                        runCatching {
+                            connectWithCerts(uid, username, droneUid, droneCallsign,
+                                host, cotPort, trustStorePath, clientCertPath)
+                        }.onFailure {
+                            AppLog.e(TAG, "connect after enrollment failed: ${it.message}", it)
+                            runOnUiThread {
+                                setStatus("Enrolled, but the connection failed: ${it.message}",
+                                    ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                            }
+                            setConnectBusy(false)
+                        }
                     }
 
                     override fun onError(error: String) {
                         runOnUiThread { setStatus("Error: $error", ContextCompat.getColor(applicationContext, R.color.tp_state_danger)) }
+                        setConnectBusy(false)
                     }
                 })
         }.start()
@@ -1227,17 +1276,38 @@ class TakConnectActivity : AppCompatActivity() {
         host: String, cotPort: Int, trustStorePath: String, clientCertPath: String,
     ) {
         val certPw = "atakatak"
+        trackedCallsign = droneCallsign
         TakManager.getInstance().connect(
             uid, droneCallsign, "Cyan", "Team Member",
             host, cotPort, trustStorePath, certPw, clientCertPath, certPw,
         )
         runOnUiThread {
-            setStatus("Connected. Streaming drone PLI as \"$droneCallsign\".",
-                ContextCompat.getColor(applicationContext, R.color.tp_state_go))
+            // R24: this used to paint a green "Connected." the instant connect() returned.
+            // connect() is fire-and-forget — it starts TakClient's socket thread and returns,
+            // so a dead server, a wrong port or a revoked cert all left the screen asserting a
+            // connection that never happened. Report the state we can actually vouch for
+            // (trying) and let connectionListener paint the answer when the socket reports it.
+            // "Unknown" is its own state here, per the standing rule — not a guess either way.
+            setStatus("Connecting to $host:$cotPort as \"$droneCallsign\"…",
+                ContextCompat.getColor(applicationContext, R.color.tp_state_unknown))
+            // Both async routes (fresh enrolment and saved-cert reconnect) end here, so this is
+            // the one place the Connect button comes back for a successful attempt (R26).
+            setConnectBusy(false)
+            // Started regardless of the outcome, deliberately: the bridge records the flight
+            // locally with no server and no network, and the service keeps the process alive
+            // for TakClient's reconnect loop. Only the STATUS was ever the lie here.
             TakBridgeHolder.start(droneUid, droneCallsign)
             TakForegroundService.start(applicationContext, droneCallsign)
         }
     }
+
+    /**
+     * The callsign whose connection this screen is following — set when it starts an attempt,
+     * or on open if a connection is already live. Non-null is also the signal that this screen
+     * has standing to report a failure: while it is null, an unrelated disconnect event must
+     * not paint a red failure over a screen the pilot has not connected from (R24).
+     */
+    @Volatile private var trackedCallsign: String? = null
 
     /** Reconnect using saved certs + saved server settings, no UI entry needed. */
     private fun reconnectFromSaved(prefs: android.content.SharedPreferences, droneCallsign: String) {
@@ -1253,9 +1323,23 @@ class TakConnectActivity : AppCompatActivity() {
         }
         if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) {
             setStatus("Saved enrollment incomplete — enroll again.", ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+            setConnectBusy(false)
             return
         }
-        Thread { connectWithCerts(uid, username, "$uid-DRONE", droneCallsign, host, cotPort, ts, cc) }.start()
+        // R26: same reasoning as the enrolment path — connectWithCerts frees the button itself,
+        // but it runs on this worker thread, so a throw here would otherwise strand it disabled.
+        Thread {
+            runCatching {
+                connectWithCerts(uid, username, "$uid-DRONE", droneCallsign, host, cotPort, ts, cc)
+            }.onFailure {
+                AppLog.e(TAG, "reconnect from saved enrollment failed: ${it.message}", it)
+                runOnUiThread {
+                    setStatus("Could not connect: ${it.message}",
+                        ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                }
+                setConnectBusy(false)
+            }
+        }.start()
     }
 
     /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean. */
@@ -1290,6 +1374,17 @@ class TakConnectActivity : AppCompatActivity() {
     private fun setStatus(text: String, color: Int) {
         status.text = text
         status.setTextColor(color)
+    }
+
+    /**
+     * Holds the Connect button down for the duration of an attempt (R26). Safe from any
+     * thread — both async routes finish on a worker — and safe to call after the screen has
+     * gone, since findViewById returns null then.
+     */
+    private fun setConnectBusy(busy: Boolean) {
+        runOnUiThread {
+            findViewById<Button>(R.id.takConnectButton)?.isEnabled = !busy
+        }
     }
 
     // ---- My Channels ----
@@ -1415,15 +1510,40 @@ class TakConnectActivity : AppCompatActivity() {
             "The server changed the channels. The list is up to date."
     }
 
-    /** Reads the channels again when TAK connects. Nothing else here needs contact events. */
+    /**
+     * Reads the channels again when TAK connects, and — R24 — is what actually paints the
+     * connection status. The false branch used to be empty, which is why a failed connect left
+     * a green "Connected." on the screen for ever: nothing ever corrected it.
+     *
+     * TakClient reports a failed connect as a disconnect (its run loop catches the TLS/socket
+     * exception, calls onDisconnected, sleeps ~5s and tries again), so this fires repeatedly
+     * while a bad host or a revoked cert keeps failing. Repainting the same line is harmless,
+     * and the retry wording stays honest for both cases — a first attempt that never landed and
+     * a live link that dropped are the same thing to the pilot: not connected, still trying.
+     */
     private val connectionListener = object : TakManager.TakUserListener {
         override fun onTakUserUpdated(user: com.taklite.client.tak.TakUser) {}
         override fun onTakUserRemoved(uid: String) {}
         override fun onTakUserDeleted(uid: String) {}
         override fun onTakConnectionChanged(connected: Boolean) {
-            if (connected) {
-                AppLog.i(TAG, "TAK connected — reading the channels")
-                refreshChannels()
+            val callsign = trackedCallsign
+            runOnUiThread {
+                if (connected) {
+                    AppLog.i(TAG, "TAK connected — reading the channels")
+                    setStatus(
+                        if (callsign != null) "Connected. Streaming drone PLI as \"$callsign\"."
+                        else "Connected.",
+                        ContextCompat.getColor(applicationContext, R.color.tp_state_go),
+                    )
+                    refreshChannels()
+                } else if (callsign != null) {
+                    // Only speak up once this screen has actually attempted a connection —
+                    // otherwise an unrelated disconnect event would paint a failure over a
+                    // screen the pilot has not asked to connect from yet.
+                    AppLog.w(TAG, "TAK not connected — retrying")
+                    setStatus("Not connected. Check the server and the certificates. Retrying…",
+                        ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                }
             }
         }
     }

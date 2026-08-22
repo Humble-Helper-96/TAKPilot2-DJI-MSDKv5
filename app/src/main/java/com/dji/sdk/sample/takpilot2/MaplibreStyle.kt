@@ -88,7 +88,7 @@ object MaplibreStyle {
   "sources": {
     "custom": {
       "type": "raster",
-      "tiles": ["$tileUrlTemplate"],
+      "tiles": ["${jsonEscape(tileUrlTemplate)}"],
       "tileSize": 256,
       "maxzoom": 19
     }
@@ -99,6 +99,51 @@ object MaplibreStyle {
   ]
 }
 """
+
+    /**
+     * Escapes a string for embedding in the style JSON.
+     *
+     * R40: the pilot's tile URL was interpolated raw. A single `"` or `\` in it — a typo, or a
+     * pasted URL with an escaped character — produced malformed JSON, MapLibre refused the whole
+     * style, and THE MAP WENT BLANK with nothing to say why. The pilot has no way to connect a
+     * dead map to a character they typed into a settings field two screens away.
+     */
+    private fun jsonEscape(s: String): String = buildString(s.length + 8) {
+        for (c in s) when {
+            c == '"' -> append("\\\"")
+            c == '\\' -> append("\\\\")
+            c == '\n' -> append("\\n")
+            c == '\r' -> append("\\r")
+            c == '\t' -> append("\\t")
+            c < ' ' -> append("\\u%04x".format(c.code))
+            else -> append(c)
+        }
+    }
+
+    /**
+     * Checks a pilot-entered tile URL, returning a plain-sentence problem or null if it is fine.
+     *
+     * R40: nothing validated this. Two failures both ended as a blank map with no explanation —
+     * an `http://` URL, which this app's own network policy blocks at request time (targetSdk 35
+     * disallows cleartext by default), and a URL missing the XYZ placeholders, which can never
+     * resolve to a tile. Both are caught here, at the moment the pilot can still fix them.
+     */
+    fun validateCustomUrl(raw: String): String? {
+        val url = raw.trim()
+        if (url.isEmpty()) return "Enter a tile URL."
+        if (url.startsWith("http://", ignoreCase = true)) {
+            return "Use https:// — this controller blocks plain http, and the map would stay blank."
+        }
+        if (!url.startsWith("https://", ignoreCase = true)) {
+            return "The tile URL must start with https://"
+        }
+        val missing = listOf("{z}", "{x}", "{y}").filterNot { url.contains(it, ignoreCase = true) }
+        if (missing.isNotEmpty()) {
+            return "The tile URL needs ${missing.joinToString(" and ")} in it, " +
+                "for example https://example.com/tiles/{z}/{x}/{y}.png"
+        }
+        return null
+    }
 
     private const val PREFS = "takpilot2_tak"
     private const val KEY_STYLE = "map_style"       // "street" | "hybrid" | "custom"

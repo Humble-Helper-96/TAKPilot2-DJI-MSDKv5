@@ -97,11 +97,16 @@ object AircraftLights {
      * Reading is free of the write rule — rule 3 forbids timed WRITES, not polling a state.
      */
     fun refresh(onDone: (() -> Unit)? = null) {
-        var ledsDone = false
-        var battDone = false
+        // R20 / safety rule 9: the two getters answer on SDK threads and this SDK fires some
+        // completions twice, so the join flags are atomic (plain `var`s had no cross-thread
+        // visibility guarantee) and `fired` makes the tail one-shot.
+        val ledsDone = java.util.concurrent.atomic.AtomicBoolean(false)
+        val battDone = java.util.concurrent.atomic.AtomicBoolean(false)
+        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         fun finish() {
-            if (!ledsDone || !battDone) return
+            if (!ledsDone.get() || !battDone.get()) return
+            if (!fired.compareAndSet(false, true)) return
             val leds = lastLeds
             val motors = listOfNotNull(
                 leds?.frontLEDsOn, leds?.rearLEDsOn, leds?.statusIndicatorLEDsOn,
@@ -120,12 +125,12 @@ object AircraftLights {
             object : CommonCallbacks.CompletionCallbackWithParam<LEDsSettings> {
                 override fun onSuccess(value: LEDsSettings?) {
                     if (value != null) lastLeds = value
-                    ledsDone = true; finish()
+                    ledsDone.set(true); finish()
                 }
 
                 override fun onFailure(error: IDJIError) {
                     AppLog.v(TAG, "LEDs read failed: ${error.description()}")
-                    ledsDone = true; finish()
+                    ledsDone.set(true); finish()
                 }
             })
 
@@ -133,11 +138,11 @@ object AircraftLights {
             object : CommonCallbacks.CompletionCallbackWithParam<BatteryLedsInfo> {
                 override fun onSuccess(value: BatteryLedsInfo?) {
                     if (value != null) lastBatteryLed = value.batteryLed
-                    battDone = true; finish()
+                    battDone.set(true); finish()
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    battDone = true; finish()
+                    battDone.set(true); finish()
                 }
             })
     }
@@ -183,10 +188,17 @@ object AircraftLights {
             navigationLEDsOn = on
         }
 
-        var ledsDone = false
-        var battDone = false
+        // R20 / safety rule 9: one-shot, for the same reason as refresh() above. A second fire
+        // here does not repeat the WRITES (they are already issued by the time finish runs),
+        // but it does run a second read-back and deliver a second onResult — and the caller
+        // turns onResult into a Toast, so a racing pair could show the pilot two contradictory
+        // answers about the beacon, which is worse than either answer alone.
+        val ledsDone = java.util.concurrent.atomic.AtomicBoolean(false)
+        val battDone = java.util.concurrent.atomic.AtomicBoolean(false)
+        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
         fun finish() {
-            if (!ledsDone || !battDone) return
+            if (!ledsDone.get() || !battDone.get()) return
+            if (!fired.compareAndSet(false, true)) return
             // The read-back is the answer, not the callbacks. Either write can be refused
             // while the other succeeds, which would leave the two halves disagreeing.
             refresh { onResult(beaconOn == on) }
@@ -196,12 +208,12 @@ object AircraftLights {
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "KeyLEDsSettings(beacon=$on): OK")
-                    ledsDone = true; finish()
+                    ledsDone.set(true); finish()
                 }
 
                 override fun onFailure(error: IDJIError) {
                     AppLog.w(TAG, "KeyLEDsSettings(beacon) refused: ${error.description()}")
-                    ledsDone = true; finish()
+                    ledsDone.set(true); finish()
                 }
             })
 
@@ -213,12 +225,12 @@ object AircraftLights {
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "KeyBatteryLEDsEnabled(aircraftLed=$on): OK")
-                    battDone = true; finish()
+                    battDone.set(true); finish()
                 }
 
                 override fun onFailure(error: IDJIError) {
                     AppLog.w(TAG, "KeyBatteryLEDsEnabled refused: ${error.description()}")
-                    battDone = true; finish()
+                    battDone.set(true); finish()
                 }
             })
     }

@@ -169,6 +169,22 @@ object TakMissionManager {
      * Pull the feed's CoT (<events>…) and feed each event through the same path inbound stream
      * CoT uses (TakManager.onCotReceived → CotParser → TakMapMarkers), so feed markers render
      * exactly like live ones (incl. 2525 icons + persistence).
+     *
+     * This re-sends EVERY marker in the feed every [POLL_MS], and that is deliberate: for a data
+     * feed the server is the source of truth, so a marker the server still holds belongs on the
+     * map. Two consequences follow from that and are BY DESIGN, not defects — do not "fix" them:
+     *  - A locally hidden feed marker comes back. Remove it from the feed on the server instead.
+     *  - The 72-hour eviction in TakMapMarkers never fires for a feed marker, because the feed
+     *    keeps proving it is current. (Operator decision, 2026-08-21.)
+     *
+     * ⚠ KNOWN GAP, deferred by the operator on 2026-08-21: only the ADD/UPDATE half of that
+     * model exists. This pushes what is PRESENT and keeps no record of the previous cycle, so a
+     * marker DELETED from the feed on the server is never removed here — and with eviction
+     * correctly not applying, nothing else will remove it either. It stays on this controller's
+     * map indefinitely. Fixing it means reconciling uids present now against the previous pull
+     * (or using TakMissionClient.getChanges, defined but unused), and must (a) touch only feed
+     * markers, never live stream CoT, and (b) treat a failed or empty pull as "no information",
+     * never as "everything was deleted".
      */
     private fun pullFeedNow(c: TakMissionClient, name: String) {
         val xml = c.getFeedCot(name) ?: return

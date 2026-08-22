@@ -496,17 +496,40 @@ object TakDropMarkers {
                 .getString(KEY_PINS, null) ?: return
             val arr = JSONArray(json)
             pins.clear()
+            var malformed = 0
             for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val aff = Affiliation.values().firstOrNull { it.id == o.getString("aff") }
-                    ?: Affiliation.FRIENDLY
-                val key = o.getString("key")
-                pins[key] = Pin(
-                    key, o.getDouble("lat"), o.getDouble("lon"), o.optDouble("alt", 0.0),
-                    aff, o.optString("name", "Marker"),
-                    o.optString("uid", "").takeIf { it.isNotEmpty() },
-                    o.optBoolean("quick", false),
-                )
+                // R32: PER-ENTRY, not one try around the whole loop. A single unreadable pin
+                // used to throw out of the loop, so every pin after it was lost — and the next
+                // save() then wrote that short list back over the good file.
+                try {
+                    val o = arr.getJSONObject(i)
+                    // R32: an unreadable affiliation resolves to UNKNOWN, not FRIENDLY. This is
+                    // a 2525 symbol: guessing "friendly" on a marker whose affiliation could not
+                    // be read asserts something about the thing on the ground that nobody
+                    // verified, and it is the one guess with real consequences. UNKNOWN (a-u-G)
+                    // exists for exactly this, and matches the standing rule that unknown is its
+                    // own state rather than a collapse to a default.
+                    val affId = o.optString("aff", "")
+                    val aff = Affiliation.values().firstOrNull { it.id == affId }
+                    if (aff == null) {
+                        AppLog.w(TAG, "pin #$i has an unreadable affiliation \"$affId\" — " +
+                            "loading it as Unknown")
+                    }
+                    val key = o.getString("key")
+                    pins[key] = Pin(
+                        key, o.getDouble("lat"), o.getDouble("lon"), o.optDouble("alt", 0.0),
+                        aff ?: Affiliation.UNKNOWN, o.optString("name", "Marker"),
+                        o.optString("uid", "").takeIf { it.isNotEmpty() },
+                        o.optBoolean("quick", false),
+                    )
+                } catch (e: Exception) {
+                    malformed++
+                    AppLog.w(TAG, "pin #$i is unreadable, skipping it: ${e.message}")
+                }
+            }
+            if (malformed > 0) {
+                AppLog.w(TAG, "$malformed unreadable pin(s) dropped; ${pins.size} of " +
+                    "${arr.length()} loaded")
             }
         } catch (e: Exception) { AppLog.w(TAG, "load failed: ${e.message}") }
     }

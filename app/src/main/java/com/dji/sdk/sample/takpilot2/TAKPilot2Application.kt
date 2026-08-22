@@ -7,6 +7,7 @@ import com.dji.sdk.sample.tak.FlightPathLogger
 import com.dji.sdk.sample.tak.TakBridgeHolder
 import com.dji.sdk.sample.tak.TakDropMarkers
 import com.dji.sdk.sample.tak.TakMissionManager
+import com.dji.sdk.sample.tak.UasfmIndex
 import com.taklite.util.AppLog
 
 class TAKPilot2Application : Application() {
@@ -33,5 +34,11 @@ class TAKPilot2Application : Application() {
         FlightPathLogger.sweepOrphans()
         TakDropMarkers.init(this)
         TakMissionManager.init(this)
+        // R42: same shape as the three above — preload() says "call once at app start" in its
+        // own doc and nothing ever did. Without it the FAA cell table (tens of thousands of
+        // rows for a statewide pull) is read on the first HUD tick instead, i.e. on the main
+        // thread, stalling the flight screen for the length of the read. It warms on its own
+        // worker and is safe when nothing has been downloaded.
+        UasfmIndex.preload(this)
     }
 }

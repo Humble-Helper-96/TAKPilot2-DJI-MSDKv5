@@ -99,8 +99,24 @@ android {
         //     applies on the M4TD's normal (non-fallback) path; DTED elevation lookups are
         //     cached in memory instead of reopening the tile file per contact per frame. Flown
         //     2026-08-21, clean log, full track recorded start to landing.
-        versionCode 85
-        versionName "1.0.1"
+        // 86: v1.0.2 — the whole of the v1.0.0 code review's Severity B list (R18-R47), worked
+        //     one item at a time. In-flight correctness: the mid-flight bridge restart keeps its
+        //     terrain reference; the aircraft CoT carries an ABSOLUTE altitude instead of height
+        //     above takeoff; five double-fire callback sites are one-shot, including the
+        //     flight-controller write chain; the look-point clamps at 10km instead of collapsing
+        //     to 300m. Video: a stale give-up can no longer kill a fresh stream, codec teardown
+        //     no longer races the drain thread, a dead-end profile no longer makes LIVE
+        //     unusable. Data: DTED import runs off the main thread and writes tiles atomically,
+        //     with path-traversal and zip-bomb bounds; one corrupt entry no longer destroys the
+        //     rest of a marker store; a truncated FAA pull is refused rather than saved as
+        //     complete. UI/robustness: USB attach can no longer tear down the flight screen,
+        //     TAK Setup no longer claims "Connected" without evidence, the home-screen refresh
+        //     loop cannot be killed by an SDK throw, and the AR overlay stopped doing ~850
+        //     haversines and a FontMetrics allocation per frame. Shared core: outbound CoT goes
+        //     through one ordered writer, and UTF-8 is decoded across socket-chunk boundaries.
+        //     StreamTranscoder (348 dead lines) deleted. NOT FLIGHT-TESTED at time of build.
+        versionCode 86
+        versionName "1.0.2"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey
@@ -132,6 +148,16 @@ android {
         release {
             minifyEnabled true
             shrinkResources false
+            // R44: stated explicitly. minifyEnabled was on with no proguardFiles line, so there
+            // was no project keep-rules file and nowhere to put a rule when one is needed. The
+            // build worked regardless (the DJI AAR ships consumer rules), which is what kept
+            // the gap invisible. proguard-rules.pro also pins SourceFile/LineNumberTable so a
+            // fielded crash trace maps back to a line, not just a method.
+            // Deliberately the NON-optimize default: that is what the build was already
+            // resolving to, so this states the existing configuration rather than quietly
+            // turning on extra optimization passes under a build that has already flown.
+            // Switching to proguard-android-optimize.txt is a separate, bench-tested decision.
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (keystoreFile.exists()) {
                 signingConfig signingConfigs.release
             }
@@ -223,4 +249,39 @@ dependencies {
     kapt 'androidx.room:room-compiler:2.6.1'
 
     testImplementation 'junit:junit:4.13.2'
+}
+
+/**
+ * R44: keep the R8 mapping FILE beside the APK it belongs to.
+ *
+ * `mapping.txt` was only ever written to `app/build/outputs/mapping/release/`, which a
+ * `./gradlew clean` deletes and which is gitignored. The moment that happened, every crash
+ * trace from the fielded build became unreadable — obfuscated frames with nothing to map them
+ * back with, for the one build actually flying. Copying it out at build time makes the mapping
+ * as durable as the APK, and names it after the version so mappings cannot be confused between
+ * releases (they are not interchangeable — a v1.0.1 trace needs the v1.0.1 mapping).
+ *
+ * ⚠ The name carries versionCODE as well as versionName, and that is load-bearing. Keying on
+ * the name alone means any rebuild at the same version silently overwrites the mapping of a
+ * build that is already on a controller — which happened while this very task was being added,
+ * destroying the fielded v1.0.1 mapping. versionCode must be bumped for every build that goes
+ * on a device (see the history above), so including it makes a shipped mapping unoverwritable.
+ */
+afterEvaluate {
+    def assembleRelease = tasks.findByName('assembleRelease')
+    if (assembleRelease != null) {
+        assembleRelease.doLast {
+            def mapping = file("${layout.buildDirectory.get().asFile}/outputs/mapping/release/mapping.txt")
+            if (!mapping.exists()) {
+                logger.warn("R44: no mapping.txt produced — release crash traces will not be readable")
+                return
+            }
+            def outDir = file("${rootDir}/../signedReleases")
+            outDir.mkdirs()
+            def dest = new File(outDir, "TAKPilot2-DJIv5-v${android.defaultConfig.versionName}" +
+                    "-vc${android.defaultConfig.versionCode}-mapping.txt")
+            dest.bytes = mapping.bytes
+            logger.lifecycle("R44: R8 mapping preserved -> ${dest}")
+        }
+    }
 }

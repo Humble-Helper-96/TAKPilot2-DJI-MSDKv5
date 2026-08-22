@@ -328,11 +328,33 @@ object TakMapMarkers {
         // ordinary inbound marker. That reappearance is intended (operator decision), which is
         // why there's no suppression set for deleted uids.
         if (TakDropMarkers.ownsUid(user.uid)) return false
-        if (shown.put(user.uid, user) == null) {
+        val prev = shown.put(user.uid, user)
+        if (prev == null) {
             AppLog.v(TAG, "new inbound marker: ${user.uid} (${user.callsign}) type=${user.type}")
+            return true
         }
-        return true
+        // R46: only redraw when the redraw would LOOK different. This used to return true for
+        // every delivery, and rebuild() is not cheap — it re-serialises the whole
+        // FeatureCollection and hands it to the native layer via setGeoJson, on the main
+        // thread. With a joined Data-Sync feed the poll re-sends every marker in the feed
+        // every 10 s BY DESIGN (see TakMissionManager), so a store of N markers meant N full
+        // map rebuilds every 10 s, for ever, none of which changed a pixel.
+        return renderDiffers(prev, user)
     }
+
+    /**
+     * Would these two renderings of the same uid differ on the map?
+     *
+     * Deliberately the exact set of fields [rebuild] reads — position, the callsign it labels
+     * with, and the icon key (which is where type, team, staleness and course already fold in).
+     * If rebuild starts reading something else, it belongs here too, or the map will hold a
+     * stale copy of whatever that is.
+     */
+    private fun renderDiffers(a: TakUser, b: TakUser): Boolean =
+        a.lat != b.lat ||
+            a.lon != b.lon ||
+            a.callsign != b.callsign ||
+            iconKeyFor(a) != iconKeyFor(b)
 
     /**
      * Persists what the PARSER judged persistent, not a second opinion about the icon.
@@ -361,7 +383,8 @@ object TakMapMarkers {
             user.type ?: "", user.callsign ?: user.uid, user.team ?: "Cyan",
             System.currentTimeMillis())
         evictOldMarkers()
-        saveSavedMarkers()
+        // R46: coalesced, not immediate — this is the once-per-inbound-event path.
+        scheduleSaveSavedMarkers()
     }
 
     private fun remove(uid: String) {
@@ -522,6 +545,38 @@ object TakMapMarkers {
     // ---- Persistence of received 2525 markers (+ locally-hidden uids) across restarts ----
     private const val PREFS = "takpilot2_recv_markers"
 
+    /**
+     * Coalesced save, for the high-frequency path only (R46).
+     *
+     * [saveSavedMarkers] re-serialises the ENTIRE store — up to 1000 objects — into JSON and
+     * writes SharedPreferences. `persistIfMarker` called it once per persistent inbound event,
+     * which under a joined feed is every marker in the feed every 10 s, continuously, on the
+     * main thread.
+     *
+     * A "has anything changed?" test cannot help here the way it can in [stage]: `lastSeen` is
+     * genuinely new on every delivery, so every event is a real change. But it is a change
+     * nothing needs on disk promptly — its only reader is the 72-hour eviction, for which
+     * seconds of precision are meaningless. So the write is coalesced instead: many events
+     * collapse into one save. Discrete pilot and network actions (hide, clear, forget, a
+     * re-share) keep calling [saveSavedMarkers] directly and still persist at once.
+     */
+    private var saveScheduled = false
+    private val saveRunnable = Runnable {
+        saveScheduled = false
+        saveSavedMarkers()
+    }
+
+    private fun scheduleSaveSavedMarkers() {
+        if (saveScheduled) return
+        saveScheduled = true
+        main.postDelayed(saveRunnable, SAVE_COALESCE_MS)
+    }
+
+    /** Long enough that a 10 s feed poll collapses several markers into one write, short enough
+     *  that little is lost if the process dies — and what would be lost is only `lastSeen`
+     *  freshness, which feeds a 72-hour timer. */
+    private const val SAVE_COALESCE_MS = 8_000L
+
     private fun saveSavedMarkers() {
         val ctx = appContext ?: return
         try {
@@ -557,7 +612,15 @@ object TakMapMarkers {
                 savedMarkers.clear()
                 val onDisk = arr.length()
                 val now = System.currentTimeMillis()
+                var malformed = 0
                 for (i in 0 until arr.length()) {
+                    // R32: PER-ENTRY. The whole loop used to sit inside the method's single
+                    // try, so one unreadable entry threw straight out of it and every entry
+                    // AFTER it was never loaded. The in-memory store was then silently short,
+                    // and the next save — triggered by the next inbound marker — wrote that
+                    // truncated store back over the good file. One corrupt record cost the
+                    // pilot every marker behind it, with a single log line to show for it.
+                    try {
                     val o = arr.getJSONObject(i)
                     val uid = o.getString("uid")
                     if (hidden.contains(uid)) continue
@@ -577,6 +640,14 @@ object TakMapMarkers {
                         // now rather than as 1970, so the 72-hour clock starts here instead of
                         // evicting the whole legacy store on first load.
                         o.optLong("seen", now))
+                    } catch (e: Exception) {
+                        malformed++
+                        AppLog.w(TAG, "saved marker #$i is unreadable, skipping it: ${e.message}")
+                    }
+                }
+                if (malformed > 0) {
+                    AppLog.w(TAG, "$malformed unreadable saved marker(s) dropped; " +
+                        "${savedMarkers.size} of $onDisk loaded")
                 }
                 evictOldMarkers()
                 // Rewrite when the load changed anything (a legacy entry rejected, an eviction, a

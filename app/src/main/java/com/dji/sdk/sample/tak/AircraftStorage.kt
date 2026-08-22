@@ -57,13 +57,20 @@ object AircraftStorage {
             location == CameraStorageLocation.INTERNAL_SSD
 
     fun refresh(onDone: (() -> Unit)? = null) {
-        var left = 3
+        // R20 / safety rule 9: this SDK fires some completion callbacks twice, and the three
+        // getters below answer on SDK threads. The old counter was a plain `var` tested with
+        // `== 0`, which failed in BOTH directions: a lost update across threads, or a spurious
+        // early decrement, stepped straight past 0 and `onDone` was then never called at all —
+        // leaving the Pre-Flight storage row stuck on amber "STORAGE: —", which is precisely
+        // the "you will get no recording" blind spot this object exists to prevent. Atomic
+        // count, `<= 0`, and a one-shot gate so an extra fire can neither skip it nor repeat it.
+        val outstanding = java.util.concurrent.atomic.AtomicInteger(3)
+        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
         fun step() {
-            left--
-            if (left == 0) {
-                AppLog.v(TAG, "storage read-back: location=$location sd=$sdState free=$sdFreeMb")
-                onDone?.invoke()
-            }
+            if (outstanding.decrementAndGet() > 0) return
+            if (!fired.compareAndSet(false, true)) return
+            AppLog.v(TAG, "storage read-back: location=$location sd=$sdState free=$sdFreeMb")
+            onDone?.invoke()
         }
 
         KeyManager.getInstance().getValue(

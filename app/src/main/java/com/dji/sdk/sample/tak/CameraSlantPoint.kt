@@ -122,7 +122,19 @@ object CameraSlantPoint {
         val horizontalRange: Double = if (aglMeters > 0.0 && depression > 1.0) {
             // tan gives the ground (horizontal) distance directly.
             val d = aglMeters / tan(depression * DEG)
-            if (d.isFinite() && d in 0.0..MAX_RANGE_M) d else FALLBACK_RANGE_M
+            when {
+                // R29: a range past MAX_RANGE_M is CLAMPED, not thrown away. This used to
+                // substitute FALLBACK_RANGE_M, so shallowing the gimbal one degree across the
+                // threshold snapped the look-point from ~10 km to 300 m in a single tick — on
+                // the crosshair readout, the SPI, and every TAK client's map. A far solution is
+                // imprecise, not invalid; the fallback is for geometry that has no solution at
+                // all. This also puts the function back in agreement with its own doc above and
+                // with cornerRange(), which already clamps.
+                !d.isFinite() -> FALLBACK_RANGE_M
+                d > MAX_RANGE_M -> MAX_RANGE_M
+                d < 0.0 -> FALLBACK_RANGE_M
+                else -> d
+            }
         } else {
             FALLBACK_RANGE_M
         }

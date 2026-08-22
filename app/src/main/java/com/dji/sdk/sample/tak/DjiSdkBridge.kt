@@ -93,8 +93,40 @@ object DjiSdkBridge {
     var isProductConnected: Boolean = false
         private set
 
+    /**
+     * The permissions from [REQUIRED_PERMISSIONS] that this APK actually declares.
+     *
+     * R43: the doc above explains why an undeclared permission in the gate is fatal and silent —
+     * `checkSelfPermission` reports it denied for ever, `requestPermissions` cannot grant it,
+     * so the gate never opens and the SDK never registers. That has already happened once
+     * (VIBRATE, 2026-08-19) and was one dependency change away from happening again, because
+     * two of the entries below were only in the merged manifest by courtesy of the DJI AAR.
+     *
+     * Declaring them (see AndroidManifest) fixes today's instance. This makes the CLASS of bug
+     * impossible: a permission this APK does not declare is dropped from the gate and logged
+     * loudly, so the worst case becomes "registered, with a capability possibly missing and a
+     * warning in the log" instead of "never registered, in silence".
+     */
+    private fun declaredRequiredPermissions(context: Context): List<String> {
+        val declared = runCatching {
+            context.packageManager
+                .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+                .requestedPermissions?.toSet()
+        }.getOrNull()
+        // Could not read our own package info — assume the list is right rather than
+        // suppressing the gate entirely on a lookup failure.
+        if (declared == null) return REQUIRED_PERMISSIONS.toList()
+        val (present, absent) = REQUIRED_PERMISSIONS.partition { it in declared }
+        if (absent.isNotEmpty()) {
+            AppLog.e(TAG, "PERMISSION GATE MISMATCH — requested but NOT DECLARED in the " +
+                "manifest: ${absent.joinToString()}. Dropping them from the gate so " +
+                "registration can still proceed; declare them in AndroidManifest.xml.")
+        }
+        return present
+    }
+
     fun missingPermissions(context: Context): Array<String> =
-        REQUIRED_PERMISSIONS.filter {
+        declaredRequiredPermissions(context).filter {
             ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
 

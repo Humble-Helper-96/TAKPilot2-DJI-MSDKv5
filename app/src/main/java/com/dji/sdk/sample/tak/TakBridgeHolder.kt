@@ -68,14 +68,18 @@ object TakBridgeHolder {
     }
 
     fun start(droneUid: String, droneCallsign: String) {
-        // finalizeFlight=false: this is a RESTART, and the flight is the same flight. The
-        // replacement bridge continues the open GPX session instead of splitting it (V33).
+        // A bridge already here means this is a RESTART, and the flight is the same flight —
+        // an identity change (enroll, logout-then-reconnect) does not end a flight. The
+        // replacement bridge continues the open GPX session instead of splitting it (V33),
+        // and keeps the latched takeoff-terrain reference that feeds that session's MSL
+        // altitudes rather than resetting it to NaN mid-track (R18).
+        val sameFlight = bridge != null
         bridge?.stop(finalizeFlight = false)
         bridge = DroneTakBridge(appContext, droneUid, droneCallsign).also {
             it.videoUrl = videoUrl
             it.cameraPointEnabled = cameraPointEnabled
             it.zoomFactor = zoomFactor
-            it.start()
+            it.start(sameFlight = sameFlight)
         }
     }
 

@@ -92,6 +92,10 @@ class DroneTakBridge(
     @Volatile private var lastGpsLevel: GPSSignalLevel? = null
     @Volatile private var lastHomeLocation: LocationCoordinate2D? = null
     @Volatile private var lastHomeSet = false
+    /** Absolute (AMSL) altitude of the TAKEOFF POINT, from KeyTakeoffLocationAltitude. Null
+     *  until the aircraft reports it. Added to the takeoff-relative height to get a real
+     *  geodetic altitude for the CoT — see [absoluteAlt]. */
+    @Volatile private var lastTakeoffAltMsl: Double? = null
     @Volatile private var lastFlightTimeSec = 0
     @Volatile private var lastWind: WindWarning? = null
     @Volatile private var lastBatteryPct = 0
@@ -148,13 +152,22 @@ class DroneTakBridge(
         }
     }
 
-    fun start() {
+    /**
+     * @param sameFlight true when [TakBridgeHolder] is replacing the bridge mid-flight (an
+     * identity change — enroll, logout-then-reconnect) rather than starting a genuinely new
+     * flight. R18: [TerrainAgl.reset] used to run unconditionally here, which wiped the
+     * latched takeoff-terrain reference on a V33 restart too — the replacement bridge kept
+     * the GPX session open (V33's fix), but every trackpoint until the reference re-latched
+     * got MSL=NaN, splicing a gap into what was supposed to stay one continuous track.
+     */
+    fun start(sameFlight: Boolean = false) {
         if (running) return
         running = true
 
-        // New session = new flight = a new takeoff point, so the latched terrain reference from
-        // the last one must not carry over (see TerrainAgl).
-        TerrainAgl.reset()
+        // A genuinely new flight has a new takeoff point, so the latched terrain reference
+        // from the last one must not carry over (see TerrainAgl). A same-flight restart keeps
+        // it — the takeoff point has not moved.
+        if (!sameFlight) TerrainAgl.reset()
 
         armSessionListens()
         armSignalListensOnce()
@@ -213,6 +226,12 @@ class DroneTakBridge(
         FlightControllerKey.KeyAreMotorsOn.create().listen(h) { lastMotorsOn = it == true }
         FlightControllerKey.KeyGPSSatelliteCount.create().listen(h) { lastSatCount = it ?: 0 }
         FlightControllerKey.KeyGPSSignalLevel.create().listen(h) { lastGpsLevel = it }
+        // R19: the absolute altitude of the takeoff point. DJI's own UX SDK builds its "AMSL"
+        // readout as KeyAltitude + this, and KeyAircraftLocation3D.altitude IS KeyAltitude —
+        // height above the takeoff point, NOT a geodetic altitude. See absoluteAlt().
+        FlightControllerKey.KeyTakeoffLocationAltitude.create().listen(h) {
+            lastTakeoffAltMsl = it
+        }
         FlightControllerKey.KeyHomeLocation.create().listen(h) { lastHomeLocation = it }
         FlightControllerKey.KeyIsHomeLocationSet.create().listen(h) { lastHomeSet = it == true }
         FlightControllerKey.KeyFlightTimeInSeconds.create().listen(h) { lastFlightTimeSec = it ?: 0 }
@@ -353,6 +372,7 @@ class DroneTakBridge(
         lastGpsLevel = null
         lastHomeLocation = null
         lastHomeSet = false
+        lastTakeoffAltMsl = null
         lastFlightTimeSec = 0
         lastWind = null
         lastGimbalAttitude = null
@@ -426,7 +446,10 @@ class DroneTakBridge(
             AppLog.d(TAG, "tick: no valid GPS fix yet (lat=$lat lon=$lon)")
             return
         }
-        val hae = loc.altitude
+        // ⚠ NOT a geodetic altitude, despite KeyAircraftLocation3D reusing a field named
+        // `altitude`: DJI reports height above the TAKEOFF POINT. Named for what it holds, so
+        // the R19 datum mix cannot return via someone trusting an older, wronger name.
+        val relAlt = loc.altitude
 
         // Horizontal ground speed from NED velocity components, m/s.
         val vel = lastVelocity
@@ -441,18 +464,17 @@ class DroneTakBridge(
 
         // Flight record. FED from the caches, never its own subscription. Deliberately before
         // the TAK publish and outside its connected-check: the record must be written with no
-        // server and no network. `hae` is DJI's height above the TAKEOFF point; MSL is passed
-        // as NaN until the terrain reference latches so the GPX falls back rather than
-        // inventing a datum.
+        // server and no network. MSL is passed as NaN until the terrain reference latches so
+        // the GPX falls back rather than inventing a datum.
         FlightPathLogger.onTelemetry(
             lat, lon,
-            aircraftMsl(hae) ?: Double.NaN, hae,
+            aircraftMsl(relAlt) ?: Double.NaN, relAlt,
             speed, heading, battery, lastSatCount,
         )
 
         // Warning policy, fed from the same caches for the same reason: the banner and the
         // PLI must never disagree about whether the aircraft was flying.
-        FlightWarnings.onState(warningsFrame(), isFlying, hae, homeDistanceMeters(lat, lon))
+        FlightWarnings.onState(warningsFrame(), isFlying, relAlt, homeDistanceMeters(lat, lon))
 
         val gimbalPitch = lastGimbalAttitude?.pitch ?: 0.0
         val gimbalYaw = lastGimbalAttitude?.yaw ?: 0.0
@@ -460,13 +482,15 @@ class DroneTakBridge(
         // Compute the camera look-point + sensor FOV BEFORE the PLI, so the PLI can carry
         // the <sensor> element (ATAK/taklite draw the FOV cone from it).
         if (cameraPointEnabled) {
-            pushCameraPoint(lat, lon, hae, heading)
+            pushCameraPoint(lat, lon, relAlt, heading)
         } else {
             sensorFov = -1.0; sensorVfov = -1.0; sensorAzimuth = -1.0
             sensorElevation = 0.0; sensorRange = -1.0
         }
 
-        AppLog.d(TAG, "tick: lat=$lat lon=$lon hae=$hae hdg=${"%.0f".format(heading)} " +
+        val absAlt = absoluteAlt(relAlt)
+        AppLog.d(TAG, "tick: lat=$lat lon=$lon relAlt=$relAlt absAlt=$absAlt " +
+            "hdg=${"%.0f".format(heading)} " +
             "spd=${"%.1f".format(speed)} batt=$battery% flying=$isFlying tak.connected=${tak.isConnected}")
 
         // north reference = 0: the <sensor azimuth> is an ABSOLUTE true-north bearing.
@@ -482,7 +506,8 @@ class DroneTakBridge(
         // the aircraft has no GPS fix and this message is not being sent at all — the stream
         // is a screen capture of the controller and keeps running when the aircraft is down.
         // Two markers advertising one stream is the point, not a duplication bug.
-        tak.sendDronePLI(droneUid, droneCallsign, lat, lon, hae, heading, speed, battery,
+        // R19: the CoT hae slot takes an ABSOLUTE altitude — never relAlt. See absoluteAlt().
+        tak.sendDronePLI(droneUid, droneCallsign, lat, lon, absAlt, heading, speed, battery,
             videoUrl, spiUid,
             sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, 0.0,
             0.0, gimbalPitch, gimbalYaw,
@@ -728,11 +753,11 @@ class DroneTakBridge(
         if (!isValidLat(loc.latitude) || !isValidLon(loc.longitude)) return null
         val pitchAdj = gimbal.pitch + TakBridgeHolder.currentPitchOffset
         if (pitchAdj > -1.0) return null
-        val hae = loc.altitude
+        val relAlt = loc.altitude
         val heading = (((lastHeading ?: 0.0) % 360.0) + 360.0) % 360.0
         val gp = CameraSlantPoint.compute(
-            loc.latitude, loc.longitude, hae, cameraBearing(gimbal.yaw, heading), pitchAdj,
-            ::elevationLookup, aircraftMsl(hae),
+            loc.latitude, loc.longitude, relAlt, cameraBearing(gimbal.yaw, heading), pitchAdj,
+            ::elevationLookup, aircraftMsl(relAlt),
         )
         return gp.rangeMeters
     }
@@ -741,12 +766,12 @@ class DroneTakBridge(
         val gimbal = lastGimbalAttitude ?: return null
         val loc = lastLocation ?: return null
         if (!isValidLat(loc.latitude) || !isValidLon(loc.longitude)) return null
-        val hae = loc.altitude
+        val relAlt = loc.altitude
         val heading = (((lastHeading ?: 0.0) % 360.0) + 360.0) % 360.0
         val bearing = cameraBearing(gimbal.yaw, heading)
         val gp = CameraSlantPoint.compute(
-            loc.latitude, loc.longitude, hae, bearing, gimbal.pitch + TakBridgeHolder.currentPitchOffset,
-            ::elevationLookup, aircraftMsl(hae),
+            loc.latitude, loc.longitude, relAlt, bearing, gimbal.pitch + TakBridgeHolder.currentPitchOffset,
+            ::elevationLookup, aircraftMsl(relAlt),
         )
         return Triple(gp.lat, gp.lon, gp.elevationMeters)
     }
@@ -770,6 +795,47 @@ class DroneTakBridge(
      *  latches. */
     private fun aircraftMsl(heightAboveTakeoff: Double): Double? =
         TerrainAgl.takeoffTerrainElevMsl?.plus(heightAboveTakeoff)
+
+    /**
+     * The aircraft's ABSOLUTE altitude for the CoT `<point hae>`, in metres.
+     *
+     * R19: this used to publish [heightAboveTakeoff] straight into the `hae` slot, which
+     * `CotBuilder` documents as "height above ellipsoid". Every aircraft marker was therefore
+     * low by the elevation of the launch site, while the OPERATOR marker beside it published a
+     * true geodetic altitude from Android's `Location.getAltitude()` — on a 500 m site the
+     * aircraft rendered ~500 m below the pilot standing under it. The Autel sibling never had
+     * this: it keeps the absolute and takeoff-relative altitudes in separate fields on purpose.
+     *
+     * Preference order, best datum first:
+     *  1. `KeyTakeoffLocationAltitude` + the relative height. This is DJI's OWN "AMSL" formula
+     *     — their UX SDK's altitude widget computes it exactly this way — and it works on every
+     *     airframe here without terrain data.
+     *  2. The DTED-derived [aircraftMsl], for the window before the aircraft reports its
+     *     takeoff altitude.
+     *  3. The relative height, unchanged, as the last resort. Wrong datum, but it is what
+     *     shipped and it beats publishing a zero for a flying aircraft. Logged once so the
+     *     degraded case is visible rather than silent.
+     *
+     * ⚠ Both real paths give MSL (DJI applies an EGM96 geoid), not strict WGS84 ellipsoid
+     * height. The residual geoid offset is tens of metres, against the hundreds this fixes;
+     * TerrainAgl already records that offset as a known open item for the whole app.
+     */
+    private fun absoluteAlt(heightAboveTakeoff: Double): Double {
+        val takeoffAlt = lastTakeoffAltMsl
+        if (takeoffAlt != null && takeoffAlt.isFinite() && takeoffAlt != 0.0) {
+            return takeoffAlt + heightAboveTakeoff
+        }
+        aircraftMsl(heightAboveTakeoff)?.let { if (it.isFinite()) return it }
+        if (!absoluteAltFallbackLogged) {
+            absoluteAltFallbackLogged = true
+            AppLog.w(TAG, "no absolute altitude yet (takeoffAlt=$takeoffAlt, no DTED reference) " +
+                "— publishing height above takeoff in the CoT hae for now")
+        }
+        return heightAboveTakeoff
+    }
+
+    /** So the [absoluteAlt] degraded-path warning is logged once per session, not per tick. */
+    @Volatile private var absoluteAltFallbackLogged = false
 
     /** DTED-backed elevation lookup for [CameraSlantPoint], or null if no tile covers the
      *  point. */

@@ -11,9 +11,10 @@ import com.taklite.util.AppLog
  * Configures the outbound RTSP push encoder — H.264 or H.265, the pilot's Pre-Flight choice
  * (see [VideoCodec]) — dropping optional format keys until one combination is accepted.
  *
- * Shared by [ScreenCaptureEncoder] and [StreamTranscoder] so the two cannot drift: both feed the
- * same media server and the same viewers, and a stream that plays from one path and not the
- * other would be a miserable thing to diagnose.
+ * Written to be shared by every encode path so they cannot drift: they feed the same media
+ * server and the same viewers, and a stream that plays from one path and not the other would be
+ * a miserable thing to diagnose. Today [ScreenCaptureEncoder] is the only caller — the v4
+ * decode-transcode path was deleted with StreamTranscoder (R47).
  *
  * ## The bitrate mode is chosen BY THE CALLER, and the two callers disagree
  *

@@ -173,8 +173,17 @@ object UasfmStore {
         var effMax: Int? = null
         var offset = 0
         var pages = 0
+        // R41: the loop condition used to be `pages < MAX_PAGES`, so running out of pages looked
+        // exactly like reaching the end of the data — and the partial result was then written
+        // with replaceAll() and a meta row saying it was a complete area. See the refusal below
+        // for why that is the one outcome this must never produce.
+        var hitPageLimit = false
 
-        while (pages < MAX_PAGES) {
+        while (true) {
+            if (pages >= MAX_PAGES) {
+                hitPageLimit = true
+                break
+            }
             val json = httpGetJson(buildUrl(bbox, countOnly = false, offset = offset))
             json.optJSONObject("error")?.let {
                 return DownloadResult(null, "FAA service error: ${it.optString("message", "unknown")}")
@@ -225,6 +234,20 @@ object UasfmStore {
             if (!more) break
         }
 
+        // R41: REFUSED, not stored with a warning — unlike the off-grid count below, which is
+        // reported and kept. The difference is which way each one fails. A missing UASFM cell
+        // does not read as "unknown" to the pilot: the area simply has no ceiling, which reads
+        // as unrestricted, i.e. Part 107's 400 ft. So a truncated pull produces an advisory that
+        // is CONFIDENTLY WRONG exactly where the data ran out, and the error is in the
+        // permissive direction. No data at all is honest — the screen shows no coverage and the
+        // pilot knows to check elsewhere. Partial data pretending to be whole is not.
+        if (hitPageLimit) {
+            AppLog.e(TAG, "UASFM paging hit MAX_PAGES ($MAX_PAGES) with ${byCell.size} cell(s) — " +
+                "the area was NOT fully retrieved, refusing to store a partial advisory")
+            return DownloadResult(null,
+                "Could not download the whole area (stopped after $MAX_PAGES pages). " +
+                    "Nothing was saved. Try a smaller radius.")
+        }
         if (offGrid > 0) {
             AppLog.w(TAG, "$offGrid feature(s) were off the 1/120 degree grid and were SKIPPED " +
                 "— if this is non-zero the FAA grid assumption in UasfmIndex needs revisiting")

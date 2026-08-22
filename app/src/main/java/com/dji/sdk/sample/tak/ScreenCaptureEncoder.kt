@@ -16,15 +16,15 @@ import com.taklite.util.AppLog
 import java.nio.ByteBuffer
 
 /**
- * Screen-capture H.264 encoder for the outbound RTSP push (Phase 5, replacing the decode→
- * scale→encode [StreamTranscoder] for transcode profiles).
+ * Screen-capture H.264 encoder for the outbound RTSP push (Phase 5). It replaced v4's
+ * decode -> scale -> encode transcoder, which was deleted as dead code (R47).
  *
  * MediaProjection mirrors the whole flight screen (FPV + HUD + map + toolbar, per operator's
  * spec) into a [VirtualDisplay] sized to the profile's target resolution, straight into an
  * H.264 encoder's input Surface. Compared to the decode-transcoder this:
  *  - has NO second decoder (it captures FPV's already-decoded, clean pixels), and
  *  - does the scaling on the GPU (VirtualDisplay), not the CPU (the software downsample that
- *    was the bottleneck / artifacting source — see StreamTranscoder's field history),
+ *    was the bottleneck / artifacting source in the old transcoder),
  * so it's cheaper AND structurally can't hit the NAL-drop / keyframe-starvation artifacting
  * class: there is no source NAL stream to drop from, only clean composited pixels.
  *
@@ -37,7 +37,7 @@ import java.nio.ByteBuffer
 class ScreenCaptureEncoder(
     context: Context,
     private val mediaProjection: MediaProjection,
-    private val profile: StreamTranscoder.TranscodeProfile,
+    private val profile: StreamProfile,
     private val codec: VideoCodec,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
     private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) -> Unit,
@@ -144,13 +144,60 @@ class ScreenCaptureEncoder(
         }.onFailure { AppLog.w(TAG, "requestSyncFrame failed: ${it.message}") }
     }
 
+    /**
+     * R23: tearing the codec down used to race the drain thread. `join(500)` is a TIMEOUT, not
+     * a guarantee — and [onEncoded] pushes each frame to the RTSP client, i.e. it does network
+     * I/O, so overrunning 500 ms is ordinary rather than exotic. When the join timed out,
+     * `encoder.stop()`/`release()` ran WHILE [drainLoop] was still inside
+     * `dequeueOutputBuffer`/`releaseOutputBuffer` on the same MediaCodec. That is undefined
+     * behaviour, and it was invisible twice over: `runCatching` swallowed the exception here,
+     * and the loop's own catch stays quiet because `running` is already false.
+     *
+     * So the codec is never released out from under a live drain thread. If the thread has not
+     * stopped by the deadline, teardown is HANDED TO IT — [releaseCodec] is one-shot, so
+     * whichever side gets there first does it exactly once.
+     */
     fun release() {
         running = false
         runCatching { mediaProjection.unregisterCallback(projectionCallback) }
+        // Released first on purpose: it cuts off the codec's input, so the loop runs dry and
+        // reaches its exit check instead of being handed more work while we wait for it.
         runCatching { virtualDisplay?.release() }; virtualDisplay = null
-        drainThread?.let { runCatching { it.join(500) } }; drainThread = null
-        runCatching { encoder?.stop() }; runCatching { encoder?.release() }; encoder = null
-        runCatching { inputSurface?.release() }; inputSurface = null
+
+        val t = drainThread
+        drainThread = null
+        if (t != null && t !== Thread.currentThread()) {
+            // Armed BEFORE the join, not after. If the thread finishes anywhere in the join
+            // window, its finally block has to see the flag already set — arming it afterwards
+            // leaves a gap where the loop reads `false` on its way out and this side then
+            // returns believing the loop will do it, so the codec is released by NOBODY.
+            releaseCodecOnDrainExit = true
+            runCatching { t.join(DRAIN_JOIN_TIMEOUT_MS) }
+            if (t.isAlive) {
+                AppLog.w(TAG, "drain thread still running after ${DRAIN_JOIN_TIMEOUT_MS}ms — " +
+                    "handing codec teardown to it rather than racing it")
+                return
+            }
+        }
+        // The thread is gone (or there never was one, or we ARE it): safe to do it here. If the
+        // loop's finally already ran, releaseCodec is one-shot and this is a no-op.
+        releaseCodec()
+    }
+
+    /** Set when [release] gave up waiting; [drainLoop] then owns the teardown on its way out. */
+    @Volatile private var releaseCodecOnDrainExit = false
+    private val codecLock = Any()
+    private var codecReleased = false
+
+    /** One-shot codec/surface teardown. Safe to call from either the caller of [release] or
+     *  the drain thread; only the first call does the work. */
+    private fun releaseCodec() {
+        synchronized(codecLock) {
+            if (codecReleased) return
+            codecReleased = true
+            runCatching { encoder?.stop() }; runCatching { encoder?.release() }; encoder = null
+            runCatching { inputSurface?.release() }; inputSurface = null
+        }
     }
 
     private fun drainLoop() {
@@ -189,6 +236,14 @@ class ScreenCaptureEncoder(
                 AppLog.w(TAG, "drain loop error: ${t.message}")
                 notifyGone("drain loop error: ${t.message}")
             }
+        } finally {
+            // R23: if release() stopped waiting for this thread, it deliberately left the codec
+            // alone rather than tearing it down underneath us. Nothing else is touching the
+            // codec now that this loop is finished, so the teardown is ours to complete.
+            if (releaseCodecOnDrainExit) {
+                AppLog.i(TAG, "drain thread exiting — completing the deferred codec release")
+                releaseCodec()
+            }
         }
     }
 
@@ -205,5 +260,13 @@ class ScreenCaptureEncoder(
     companion object {
         private const val TAG = "ScreenCaptureEncoder"
         private const val I_FRAME_INTERVAL_S = 2
+
+        /**
+         * How long [release] waits for the drain thread before handing it the codec teardown.
+         * Kept short because release() can run on the main thread (a give-up lands there), and
+         * blocking the UI is worse than deferring the teardown by a few frames — the handoff
+         * makes overrunning safe rather than merely unlikely.
+         */
+        private const val DRAIN_JOIN_TIMEOUT_MS = 500L
     }
 }

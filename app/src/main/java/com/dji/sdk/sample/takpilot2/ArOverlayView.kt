@@ -134,6 +134,11 @@ class ArOverlayView @JvmOverloads constructor(
     private val d get() = resources.displayMetrics.density
 
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+
+    /** R45: filled in place per label. The `Paint.fontMetrics` PROPERTY allocates a fresh object
+     *  on every read, and drawLabel reads it once per label per frame — the same trap
+     *  ObstacleEdgeView documents and avoids. */
+    private val fontMetrics = Paint.FontMetrics()
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         typeface = Typeface.DEFAULT_BOLD
@@ -288,15 +293,23 @@ class ArOverlayView @JvmOverloads constructor(
     ) {
         // Nearest first, so when the label budget runs out it's the distant contacts that lose
         // their plate rather than whichever happened to arrive first.
+        //
+        // R45: the distance is measured ONCE per contact and carried. `sortedBy { }` builds a
+        // comparator that re-runs its selector on EVERY comparison, so this was a haversine per
+        // comparison — order n log n of them, roughly 850 per frame at 70 contacts, 10 times a
+        // second — and then the loop below computed the very same distance again per contact.
+        // Now it is n haversines, and `groundDist` is the value the sort already used, so the
+        // range gate cannot disagree with the ordering either.
         val users = runCatching { TakManager.getInstance().takUsers }.getOrNull()
-            ?.sortedBy { CameraSlantPoint.distanceMeters(hud.lat, hud.lon, it.lat, it.lon) }
+            ?.map { it to CameraSlantPoint.distanceMeters(hud.lat, hud.lon, it.lat, it.lon) }
+            ?.sortedBy { it.second }
             ?: return
         var drawn = 0
         var offFrame = 0
         var skipped = 0
         var detailed = 0
 
-        for (u in users) {
+        for ((u, groundDist) in users) {
             val lat = u.lat
             val lon = u.lon
             if (lat == 0.0 && lon == 0.0) { skipped++; continue }
@@ -312,7 +325,6 @@ class ArOverlayView @JvmOverloads constructor(
             // Shared with the map so both views show the same picture (V27).
             if (ArSettings.isAboveAirTrafficCeiling(u.type, u.alt)) { skipped++; continue }
 
-            val groundDist = CameraSlantPoint.distanceMeters(hud.lat, hud.lon, lat, lon)
             if (groundDist > ArSettings.rangeMeters(context, category)) { skipped++; continue }
 
             // Height of the contact relative to the aircraft. Two independent ways to get it,
@@ -475,7 +487,9 @@ class ArOverlayView @JvmOverloads constructor(
         canvas.drawPath(arrowPath, dotPaint)
         canvas.drawPath(arrowPath, dotRing)
         if (!withLabel) return
-        val callsign = u.callsign ?: u.uid
+        // R37: bounded HERE, before the altitude is appended, so a long callsign is what gets
+        // clipped and the "+2400 ft" a pilot is actually reading survives intact.
+        val callsign = labelSafe(u.callsign ?: u.uid, MAX_CALLSIGN_CHARS)
         // RELATIVE height, signed — "+2400 ft" is the question a pilot is actually asking of
         // another aircraft, and unlike its MSL altitude it is self-checking: a track labelled
         // +2400 ft that renders near the horizon is visibly wrong, where "2900 ft" looks
@@ -509,7 +523,7 @@ class ArOverlayView @JvmOverloads constructor(
         canvas: Canvas, x: Float, y: Float, u: TakUser, category: ArSettings.Category,
         dzMeters: Double, dzIsTrusted: Boolean, withLabel: Boolean,
     ) {
-        val label = u.callsign ?: u.uid
+        val label = labelSafe(u.callsign ?: u.uid, MAX_CALLSIGN_CHARS)
         if (category == ArSettings.Category.AIRCRAFT) {
             drawAircraft(canvas, x, y, u, dzMeters, dzIsTrusted, withLabel)
             return
@@ -605,6 +619,23 @@ class ArOverlayView @JvmOverloads constructor(
         return (tan(Math.toRadians(angleDeg)) / half).coerceIn(-1.0, 1.0)
     }
 
+    /**
+     * [coerceIn] that cannot throw when the chrome insets leave no room between the bounds.
+     *
+     * R36: the edge-arrow clamps were plain `coerceIn(lo, hi)`, and `coerceIn` throws
+     * IllegalArgumentException when `lo > hi`. That happens the moment an inset grows past the
+     * band it is trimming — a HUD column wider than the video rect less its two margins, or a
+     * narrow video rect on some future layout. It is an UNGUARDED throw inside `onDraw`, on the
+     * flight screen's 10 Hz draw path, so it would not be a cosmetic glitch: it takes the
+     * overlay down mid-flight. Today's layout never inverts the range, which is exactly why
+     * this needs a guard rather than a comment — nothing enforces that it stays true.
+     *
+     * An inverted band means there is no legal position, so the midpoint of the two bounds is
+     * used: still on-screen, still between the constraints, and the arrow keeps drawing.
+     */
+    private fun clampOrCentre(v: Float, lo: Float, hi: Float): Float =
+        if (lo > hi) (lo + hi) / 2f else v.coerceIn(lo, hi)
+
     private fun drawEdgeArrow(canvas: Canvas, dBearingDeg: Double, dElevDeg: Double, color: Int) {
         // Normalised direction; clamped because a target directly behind produces a huge value
         // that would otherwise dominate the angle.
@@ -625,10 +656,12 @@ class ArOverlayView @JvmOverloads constructor(
         // invisible. Reported from the field 2026-07-27: air traffic directly overhead produced
         // an above-frame arrow the pilot could never see, which is the one case the indicator
         // matters most.
-        val x = (cx + nx.toFloat() * (videoRect.width() / 2f - margin))
-            .coerceIn(videoRect.left + margin, videoRect.right - chromeInsetRight - margin)
-        val y = (cy + ny.toFloat() * (videoRect.height() / 2f - margin))
-            .coerceIn(videoRect.top + chromeInsetTop + margin, videoRect.bottom - margin)
+        val x = clampOrCentre(
+            cx + nx.toFloat() * (videoRect.width() / 2f - margin),
+            videoRect.left + margin, videoRect.right - chromeInsetRight - margin)
+        val y = clampOrCentre(
+            cy + ny.toFloat() * (videoRect.height() / 2f - margin),
+            videoRect.top + chromeInsetTop + margin, videoRect.bottom - margin)
 
         val angle = atan2((y - cy).toDouble(), (x - cx).toDouble())
         val r = 7f * d
@@ -661,11 +694,29 @@ class ArOverlayView @JvmOverloads constructor(
      * and starts hiding the video. Range is still available on the mini-map and, for our own
      * pins, in the markers list.
      */
+    /**
+     * Trims network-sourced text to something drawable (R37).
+     *
+     * Two hazards, both from the same untrusted source: length, which makes the label span past
+     * the video and cover the FPV while costing a `measureText` over the whole string every
+     * frame; and control characters, which have no business in a label and can disturb layout.
+     * Truncation is marked with an ellipsis so a clipped callsign is visibly clipped rather than
+     * silently wrong — a pilot must not read a truncated callsign as the whole one.
+     */
+    private fun labelSafe(raw: String, max: Int): String {
+        val cleaned = if (raw.any { it < ' ' }) {
+            buildString(raw.length) { for (c in raw) append(if (c < ' ') ' ' else c) }
+        } else raw
+        return if (cleaned.length <= max) cleaned else cleaned.take(max - 1) + "…"
+    }
+
     private fun drawLabel(canvas: Canvas, x: Float, symbolBottom: Float, name: String) {
         labelPaint.textSize = LABEL_SP * d
-        val text = name
+        // Backstop: every label path funnels through here, so a future caller cannot reintroduce
+        // an unbounded string by forgetting the sanitiser at its own source.
+        val text = labelSafe(name, MAX_LABEL_CHARS)
         val tw = labelPaint.measureText(text)
-        val fm = labelPaint.fontMetrics
+        val fm = fontMetrics.also { labelPaint.getFontMetrics(it) }
         val top = symbolBottom + 4 * d
         canvas.drawRoundRect(
             x - tw / 2 - 5 * d, top, x + tw / 2 + 5 * d, top + (fm.descent - fm.ascent) + 3 * d,
@@ -759,6 +810,21 @@ class ArOverlayView @JvmOverloads constructor(
         private const val CONTACT_DETAIL_LIMIT = 3
         /** On-screen contacts that get a name+range plate; the rest keep just their icon. */
         private const val MAX_LABELS = 6
+
+        /**
+         * Longest CALLSIGN drawn on the overlay. R37: callsign and uid come straight off the
+         * wire from whatever else is on the TAK network, and nothing bounded them. A hostile or
+         * simply broken peer with a kilobyte-long callsign got that string `measureText`'d and
+         * plated EVERY FRAME on the flight screen's hottest path, and the label's background
+         * ran far past the video edges — covering the FPV the pilot is flying on. Real
+         * callsigns are a handful of characters; this is generous.
+         */
+        private const val MAX_CALLSIGN_CHARS = 24
+
+        /** Backstop for anything reaching [drawLabel], including composed text and future
+         *  callers. Wider than [MAX_CALLSIGN_CHARS] so a bounded callsign plus its altitude
+         *  suffix still fits without being clipped. */
+        private const val MAX_LABEL_CHARS = 40
         /** Edge arrows for our own pins use the app's marker-drop accent, not a team colour. */
     }
 }

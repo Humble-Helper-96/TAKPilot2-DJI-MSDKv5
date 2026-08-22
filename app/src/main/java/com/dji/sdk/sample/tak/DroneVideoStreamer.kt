@@ -19,7 +19,7 @@ import java.nio.ByteBuffer
  * pilot-facing LIVE flow has been the screen-capture path since Phase 5 shipped.
  *
  * The [VideoConfig.profile] quality ladder ("low"/"standard"/"high") still selects the
- * encoder's resolution/fps/bitrate via [StreamTranscoder.TranscodeProfile]. "original"
+ * encoder's resolution/fps/bitrate via [StreamProfile]. "original"
  * (passthrough) no longer exists; a saved "original" profile encodes at "standard".
  */
 class DroneVideoStreamer(
@@ -101,7 +101,14 @@ class DroneVideoStreamer(
 
     val isStreaming: Boolean get() = streaming
 
-    fun start() {
+    /**
+     * @return true when screen capture actually began. R22: this used to return Unit, so
+     * [VideoStreamerHolder] retained a streamer that had failed at the first line and reported
+     * `isActive = true` for it — which the flight screen reads as "already streaming, so this
+     * LIVE tap means STOP". The pilot then alternated between a permission toast and a
+     * "stopped" toast and could never start the stream at all.
+     */
+    fun start(): Boolean {
         stopped = false
         paramsSet = false
         startNs = System.nanoTime()
@@ -120,14 +127,14 @@ class DroneVideoStreamer(
         if (projection == null) {
             // The v5 port streams the screen only; there is no aircraft-feed fallback.
             onStatus(false, "Screen-capture permission required — start LIVE from the flight screen")
-            return
+            return false
         }
         // Screen-capture: the encoder produces frames from the composited screen
         // immediately; params-ready connects, and the encoder's own sync frame arms the
         // packetizer.
         val enc = ScreenCaptureEncoder(
             context, projection,
-            StreamTranscoder.TranscodeProfile.fromPref(config.profile),
+            StreamProfile.fromPref(config.profile),
             VideoCodec.fromPref(config.codec),
             onEncoded = { buf, info -> onEncodedFrame(buf, info) },
             onParamsReady = { s, p, v -> onEncoderParamsReady(s, p, v) },
@@ -139,11 +146,12 @@ class DroneVideoStreamer(
         )
         if (!enc.start()) {
             onStatus(false, "Screen capture failed to start")
-            return
+            return false
         }
         screenEncoder = enc
         AppLog.i(TAG, "start [${config.profile}, ${config.codec}, screen] push=${config.pushUrl()}")
         onStatus(true, "Capturing screen → ${config.urlSafe()}")
+        return true
     }
 
     fun stop() {
@@ -303,6 +311,18 @@ object VideoStreamerHolder {
         android.os.Handler(android.os.Looper.getMainLooper()).post { onStateChanged?.run() }
     }
 
+    /**
+     * R22: "original" (passthrough of the aircraft feed) was a v4-era profile. This port
+     * streams the SCREEN and has no passthrough path, so a saved "original" — which no current
+     * UI can write, but which survives untouched through Pre-Flight migration — used to route
+     * the pilot into a dead start with no projection. It is treated as "standard", which is
+     * what [StreamProfile.fromPref] already resolves it to; normalising
+     * here as well keeps `isTranscode` (and with it the "-Low" publish path) in agreement,
+     * instead of silently publishing a legacy install to a different URL.
+     */
+    private fun normalizeProfile(saved: String?): String =
+        if (saved.isNullOrEmpty() || saved == "original") "standard" else saved
+
     private fun buildConfig(context: Context): DroneVideoStreamer.VideoConfig? {
         val p = context.getSharedPreferences("takpilot2_tak", Context.MODE_PRIVATE)
         val host = p.getString("video_host", "") ?: ""
@@ -315,7 +335,7 @@ object VideoStreamerHolder {
             password = p.getString("video_pass", "") ?: "",
             streamId = streamId,
             tcp = p.getBoolean("video_tcp", true),
-            profile = p.getString("video_profile", "standard") ?: "standard",
+            profile = normalizeProfile(p.getString("video_profile", "standard")),
             codec = p.getString("video_codec", VideoCodec.H264.prefValue)
                 ?: VideoCodec.H264.prefValue,
         )
@@ -331,13 +351,27 @@ object VideoStreamerHolder {
     ) {
         appContext = context.applicationContext
         streamer?.stop()
-        streamer = DroneVideoStreamer(
+        // R21: `self` is this streamer's identity, and every callback below checks it against
+        // the field before touching shared state. Both callbacks reach us through a
+        // main-looper post, so an OLD streamer's message can be sitting in the queue when a
+        // restart (long-press LIVE -> pick a tier -> ACTION_RESTART) installs a NEW one. Then
+        // the stale message runs and, with no identity check, nulls the live streamer AND
+        // calls ScreenCaptureService.stop() -> projection.stop(): the fresh stream dies and
+        // the pilot has to grant screen capture again. The R14 encoder-death path widened this
+        // (it adds a second queue hop, and it fires exactly during a restart, when the shared
+        // MediaProjection's display is being released), so the guard matters more now.
+        lateinit var self: DroneVideoStreamer
+        self = DroneVideoStreamer(
             context.applicationContext, config, projection,
             onGiveUp = {
                 // Reconnect window expired — DroneVideoStreamer already released its own
                 // encoder/transcoder/client; our job is to drop the reference and tear down
                 // the foreground service + projection it doesn't own.
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    if (streamer !== self) {
+                        AppLog.i("VideoStreamerHolder", "stale give-up from a replaced streamer — ignoring")
+                        return@post
+                    }
                     AppLog.w("VideoStreamerHolder", "reconnect window expired — stopping capture")
                     streamer = null
                     TakBridgeHolder.setVideoUrl(null)
@@ -346,18 +380,32 @@ object VideoStreamerHolder {
                 }
             },
         ) { ok, msg ->
-            if (ok) TakBridgeHolder.setVideoUrl(config.advertiseUrl())
-            notifyState()
-            onStatus(ok, msg)
-        }.also { it.start() }
+            // Same identity gate: a stale success must not re-advertise a dead stream's URL
+            // over the live one's, and a stale failure must not report over it either.
+            if (streamer !== self) {
+                AppLog.i("VideoStreamerHolder", "stale status from a replaced streamer — ignoring: $msg")
+            } else {
+                if (ok) TakBridgeHolder.setVideoUrl(config.advertiseUrl())
+                notifyState()
+                onStatus(ok, msg)
+            }
+        }
+        // Assigned BEFORE start() so the identity gate above passes for the status callbacks
+        // start() raises synchronously. If capture never began, drop it again rather than
+        // leave a dead streamer behind reporting isActive = true (R22).
+        streamer = self
+        if (!self.start() && streamer === self) {
+            AppLog.w("VideoStreamerHolder", "capture did not start — not retaining the streamer")
+            streamer = null
+        }
         notifyState()
     }
 
-    fun start(
-        context: Context,
-        config: DroneVideoStreamer.VideoConfig,
-        onStatus: (Boolean, String) -> Unit,
-    ) = launch(context, config, null, onStatus)
+    // R22: `start(context, config, onStatus)` and `startFromPrefs(context, onStatus)` used to
+    // live here. Both called launch() with projection = null, which this port cannot stream
+    // from — they were the trap the legacy "original" profile fell into. start() had no call
+    // sites at all; startFromPrefs had exactly one, the dead branch now removed from the
+    // flight screen. Screen capture is the only way in: use startScreenCapture below.
 
     fun stop() {
         streamer?.stop()
@@ -383,16 +431,6 @@ object VideoStreamerHolder {
     ): Boolean {
         val cfg = buildConfig(context) ?: return false
         launch(context, cfg, projection, onStatus)
-        return true
-    }
-
-    /**
-     * Start streaming using saved settings, no projection (passthrough, or the decode-transcode
-     * fallback). Returns false if no stream is configured.
-     */
-    fun startFromPrefs(context: Context, onStatus: (Boolean, String) -> Unit): Boolean {
-        val cfg = buildConfig(context) ?: return false
-        launch(context, cfg, null, onStatus)
         return true
     }
 }

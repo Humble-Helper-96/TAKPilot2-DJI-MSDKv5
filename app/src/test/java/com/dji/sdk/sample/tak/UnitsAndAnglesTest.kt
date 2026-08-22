@@ -45,4 +45,34 @@ class UnitsAndAnglesTest {
         val eastM = CameraSlantPoint.distanceMeters(lat, lon, lat, lon + 0.1)
         assertEquals(5_368.0, eastM, 60.0)
     }
+
+    /**
+     * R29. A look-point beyond the 10 km cap is CLAMPED to the cap, never replaced by the 300 m
+     * "no solution" fallback. The old code substituted the fallback, so shallowing the gimbal
+     * by one degree across the threshold snapped the point from ~10 km to 300 m in one tick.
+     * Flat-ground path only (no elevation lookup), which is what exercises computeFlat.
+     */
+    @Test
+    fun slantRangeClampsAtMaxInsteadOfCollapsingToTheFallback() {
+        val lat = 61.14
+        val lon = -149.93
+
+        // 1000 m up at 2 deg below the horizon solves to ~28.6 km — well past the 10 km cap.
+        val veryShallow = CameraSlantPoint.compute(lat, lon, 1_000.0, 0.0, -2.0)
+        assertEquals(10_000.0, veryShallow.rangeMeters, 1.0)
+
+        // Just inside the cap stays exact, so the clamp does not truncate ordinary geometry.
+        val inRange = CameraSlantPoint.compute(lat, lon, 1_000.0, 0.0, -45.0)
+        assertEquals(1_000.0, inRange.rangeMeters, 1.0)
+
+        // Crossing the threshold must not jump: a hair either side stays near the cap rather
+        // than collapsing to 300 m, which is the actual defect this pins.
+        val justOver = CameraSlantPoint.compute(lat, lon, 1_000.0, 0.0, -5.71).rangeMeters
+        val justUnder = CameraSlantPoint.compute(lat, lon, 1_000.0, 0.0, -5.72).rangeMeters
+        assertEquals(justUnder, justOver, 50.0)
+
+        // Geometry with no solution at all (camera level or above) still uses the fallback.
+        val level = CameraSlantPoint.compute(lat, lon, 1_000.0, 0.0, 0.0)
+        assertEquals(300.0, level.rangeMeters, 1e-9)
+    }
 }

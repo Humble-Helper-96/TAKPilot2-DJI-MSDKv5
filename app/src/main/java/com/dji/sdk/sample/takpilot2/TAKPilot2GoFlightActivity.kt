@@ -649,21 +649,21 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
     }
 
-    /** The in-flight video-quality picker — the Autel sibling's, with the enum living inside
-     *  [com.dji.sdk.sample.tak.StreamTranscoder] in this tree. Selecting a tier saves it and,
+    /** The in-flight video-quality picker — the Autel sibling's, over
+     *  [com.dji.sdk.sample.tak.StreamProfile]. Selecting a tier saves it and,
      *  when the stream is live, restarts the push at the new profile with no permission
      *  dialog (the service reuses its projection — see the Android-14 note there). */
     private fun onVideoQualityTapped() {
         AppLog.v(TAG, "long-press: video quality")
         val prefs = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
-        val current = com.dji.sdk.sample.tak.StreamTranscoder.TranscodeProfile
+        val current = com.dji.sdk.sample.tak.StreamProfile
             .fromPref(prefs.getString("video_profile", null))
 
         val view = layoutInflater.inflate(R.layout.dialog_video_quality, null)
         val group = view.findViewById<android.widget.RadioGroup>(R.id.videoQualityGroup)
 
         // Built from the enum, not from XML — same reason as the AR category rows.
-        val ids = com.dji.sdk.sample.tak.StreamTranscoder.TranscodeProfile.values()
+        val ids = com.dji.sdk.sample.tak.StreamProfile.values()
             .associateWith { profile ->
                 val button = layoutInflater.inflate(R.layout.row_video_quality, group, false)
                     as android.widget.RadioButton
@@ -711,15 +711,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             Toast.makeText(this, "Set up the video server in Pre-Flight Setup first", Toast.LENGTH_SHORT).show()
             return
         }
+        // R22: a saved "original" (v4-era passthrough) used to branch to a projection-less
+        // start here. This port has no passthrough path, so that branch could only ever fail,
+        // and it left the holder "active" — the next tap then read as STOP and the pilot was
+        // stuck alternating two toasts, never streaming. Every profile now takes the
+        // screen-capture route; VideoStreamerHolder maps the legacy value onto "standard".
         val profile = p.getString("video_profile", "standard") ?: "standard"
-        if (profile == "original") {
-            // Passthrough — no screen capture, no permission needed.
-            AppLog.i(TAG, "tap: LIVE — starting passthrough stream (profile=original)")
-            VideoStreamerHolder.startFromPrefs(applicationContext) { _, msg ->
-                runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
-            }
-            return
-        }
         // Transcode profile → screen-capture stream: request the one-time MediaProjection
         // permission. onActivityResult starts the foreground service, which starts the stream.
         AppLog.i(TAG, "tap: LIVE — requesting screen-capture permission (profile=$profile)")

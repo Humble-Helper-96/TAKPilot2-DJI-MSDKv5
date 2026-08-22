@@ -4,7 +4,6 @@ import androidx.core.content.ContextCompat
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
-import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -192,11 +191,15 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // v5 handles USB accessory attach internally once the SDK is initialized; the v4
-        // relay broadcast (DJISDKManager.USB_ACCESSORY_ATTACHED) has no v5 equivalent.
-        if (UsbManager.ACTION_USB_ACCESSORY_ATTACHED == intent.action) {
-            AppLog.d(TAG, "USB accessory attached")
-        }
+        // Keep getIntent() in step with what actually arrived. Nothing reads it today, so this
+        // changes no behaviour — it removes the trap where the next person to add intent
+        // handling here reads the original launch intent and cannot see why.
+        setIntent(intent)
+        // R34: USB accessory attach no longer arrives here. It goes to UsbAttachActivity, which
+        // shows nothing and finishes, because reaching THIS activity meant destroying the
+        // flight screen (Home is singleTask) and taking the TAK feed and the video with it.
+        // v5 handles the accessory internally once the SDK is initialized anyway; the v4 relay
+        // broadcast (DJISDKManager.USB_ACCESSORY_ATTACHED) has no v5 equivalent.
     }
 
     override fun onRequestPermissionsResult(
@@ -301,11 +304,24 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
             private set
     }
 
-    /** Paints the storage row from what the CAMERA reported. Unknown is amber and is never
-     *  collapsed into "fine" — a blank or dashed row must not read as a working card. */
+    /**
+     * Paints the storage row from what the CAMERA reported. Unknown is amber and is never
+     * collapsed into "fine" — a blank or dashed row must not read as a working card.
+     *
+     * R35: this, [refreshBatteryRow] and [renderReadiness] each read the connection with a BARE
+     * `KeyManager.getValue(KeyConnection, false)`, while [updateStatus] wrapped its own SDK read
+     * in `runCatching` — so the guarded call was protected and the three unguarded ones, on the
+     * same 1.5s tick, could throw and kill the refresh loop outright. The whole readiness card
+     * would then freeze on stale values with nothing to say it had stopped.
+     *
+     * All three now use [DjiSdkBridge.isProductConnected], which is the safer answer rather than
+     * three more try/catches: it is a @Volatile flag pushed by the SDK's own connect/disconnect
+     * callbacks, so it cannot throw AND it is not subject to the CLAUDE.md rule 4 cache trap the
+     * synchronous getValue sits on. It is also what updateStatus already gates on, so the card's
+     * rows can no longer disagree with each other about whether an aircraft is attached.
+     */
     private fun renderStorage() {
-        val connected = KeyManager.getInstance().getValue(
-            KeyTools.createKey(ProductKey.KeyConnection), false) == true
+        val connected = DjiSdkBridge.isProductConnected
         storage.text = if (!connected) "" else AircraftStorage.label()
         storage.setTextColor(ContextCompat.getColor(applicationContext, when {
             !connected -> R.color.tp_text_secondary
@@ -377,8 +393,7 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     private fun refreshBatteryRow() {
         val warn = warnPctHere ?: FlightLimitsController.aircraftWarningPct
         val crit = critPctHere ?: FlightLimitsController.aircraftCriticalPct
-        val connected = KeyManager.getInstance().getValue(
-            KeyTools.createKey(ProductKey.KeyConnection), false) == true
+        val connected = DjiSdkBridge.isProductConnected
         batteryLevels.text = when {
             !connected -> ""
             warn != null && crit != null -> "BATTERY: WARN $warn% \u00b7 CRIT $crit%"
@@ -412,8 +427,7 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
      * lands.
      */
     private fun renderReadiness() {
-        val connected = KeyManager.getInstance().getValue(
-            KeyTools.createKey(ProductKey.KeyConnection), false) == true
+        val connected = DjiSdkBridge.isProductConnected
         val unknown = ContextCompat.getColor(applicationContext, R.color.tp_state_unknown)
         val info = ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)
 

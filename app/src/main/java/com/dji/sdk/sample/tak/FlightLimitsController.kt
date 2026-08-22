@@ -192,11 +192,28 @@ object FlightLimitsController {
         onResult: (IDJIError?) -> Unit = {},
         next: () -> Unit = {},
     ) {
+        // R20 / safety rule 9: THIS SDK FIRES SOME COMPLETION CALLBACKS TWICE (observed on the
+        // MSDKv4 sibling, Gimbal.setControllerMaxSpeed). `next` is the only thing advancing the
+        // write chain, so a second fire does not merely repeat one step — it FORKS the chain,
+        // and each fork can fork again, turning an ordered sequence of flight-controller writes
+        // (height limit, distance limit, go-home height, failsafe, both battery thresholds,
+        // stick mode) into an interleaved burst. That is the exact shape of write that crashed
+        // an aircraft on the Autel sibling (safety rule 3), so the guard belongs here, in the
+        // one place every chain step passes through, rather than at each call site.
+        val answered = java.util.concurrent.atomic.AtomicBoolean(false)
         KeyManager.getInstance().setValue(
             KeyTools.createKey(keyInfo), value,
             object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() { AppLog.i(TAG, "$label: OK"); onResult(null); next() }
+                override fun onSuccess() {
+                    if (!answered.compareAndSet(false, true)) {
+                        AppLog.w(TAG, "$label: duplicate completion (success) ignored"); return
+                    }
+                    AppLog.i(TAG, "$label: OK"); onResult(null); next()
+                }
                 override fun onFailure(error: IDJIError) {
+                    if (!answered.compareAndSet(false, true)) {
+                        AppLog.w(TAG, "$label: duplicate completion (failure) ignored"); return
+                    }
                     AppLog.i(TAG, "$label: ${error.description()}"); onResult(error); next()
                 }
             },
@@ -371,18 +388,25 @@ object FlightLimitsController {
         val outstanding = java.util.concurrent.atomic.AtomicInteger(6)
         val fired = java.util.concurrent.atomic.AtomicBoolean(false)
         val main = android.os.Handler(android.os.Looper.getMainLooper())
+        // Named so it can be REMOVED once the barrier fires — an already-spent watchdog that
+        // stays queued holds this callback (and its Activity) alive to the timeout for nothing.
+        // The Autel sibling does this; this copy did not (R20).
+        var watchdog: Runnable? = null
         fun complete() {
-            if (fired.compareAndSet(false, true)) main.post { done() }
+            if (!fired.compareAndSet(false, true)) return
+            watchdog?.let { main.removeCallbacks(it) }
+            main.post { done() }
         }
         fun oneDown() {
             if (outstanding.decrementAndGet() <= 0) complete()
         }
-        main.postDelayed({
+        watchdog = Runnable {
             if (!fired.get()) {
                 AppLog.w(TAG, "read-back timed out with ${outstanding.get()} getter(s) unanswered")
                 complete()
             }
-        }, READ_BACK_TIMEOUT_MS)
+        }
+        main.postDelayed(watchdog!!, READ_BACK_TIMEOUT_MS)
 
         /** Every getter has the same shape: store it, log it, count it down. */
         fun <T> read(keyInfo: DJIKeyInfo<T>, name: String, store: (T?) -> Unit) = runCatching {

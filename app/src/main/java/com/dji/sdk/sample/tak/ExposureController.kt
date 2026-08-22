@@ -119,17 +119,29 @@ object ExposureController {
     ) {
         AppLog.i(TAG, "applyDefaults: VIDEO mode -> CENTER metering, PROGRAM (full auto), " +
             "ev=${savedEv(context)}")
+        // R20 / safety rule 9: a second fire would run the whole three-write exposure chain
+        // (metering, exposure mode, EV) again, interleaved with the first pass — and would
+        // deliver onVideoMode twice, which at the photo-sequence caller means a duplicate
+        // endPhotoSequence(), or a spurious retry ladder writing camera modes the camera has
+        // already left. A success-then-failure pair would do both.
+        val answered = java.util.concurrent.atomic.AtomicBoolean(false)
         KeyManager.getInstance().setValue(
             KeyTools.createKey(CameraKey.KeyCameraMode),
             CameraMode.VIDEO_NORMAL,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
+                    if (!answered.compareAndSet(false, true)) {
+                        AppLog.w(TAG, "set VIDEO mode: duplicate completion (success) ignored"); return
+                    }
                     AppLog.i(TAG, "set VIDEO mode: OK")
                     applyExposureSettings(context)
                     onVideoMode(null)
                 }
 
                 override fun onFailure(error: IDJIError) {
+                    if (!answered.compareAndSet(false, true)) {
+                        AppLog.w(TAG, "set VIDEO mode: duplicate completion (failure) ignored"); return
+                    }
                     // Only chase exposure if the mode switch landed — otherwise every call
                     // fails too and buries the ONE line that mattered.
                     AppLog.i(TAG, "set VIDEO mode: ${error.description()}")

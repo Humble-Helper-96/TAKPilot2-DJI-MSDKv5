@@ -65,8 +65,14 @@ object TakAutoConnect {
             return
         }
         AppLog.i(TAG, "TAK icon tap — reconnecting")
-        reconnect(context.applicationContext)
-        onResult(true, "Reconnecting to TAK…")
+        // R33: report what actually happened. This used to claim "Reconnecting to TAK…" even
+        // when reconnect() had refused the request, so a pilot tapping a second time was told
+        // it was working while nothing new had started.
+        if (reconnect(context.applicationContext)) {
+            onResult(true, "Reconnecting to TAK…")
+        } else {
+            onResult(false, "Already reconnecting to TAK…")
+        }
     }
 
     fun hasSavedCerts(prefs: android.content.SharedPreferences): Boolean {
@@ -75,8 +81,23 @@ object TakAutoConnect {
         return ts.isNotEmpty() && cc.isNotEmpty() && File(ts).exists() && File(cc).exists()
     }
 
-    /** Connect using saved certs + saved server settings, then auto-pull channels. */
-    fun reconnect(context: Context) {
+    /**
+     * True while a connect attempt is on its worker thread. R33: without this a second TAK-icon
+     * tap spawned a PARALLEL connect, and TakManager.connect() is not reentrant — it disconnects
+     * and reassigns its client field with no lock, so two racing calls can orphan a live
+     * TakClient socket thread that keeps publishing PLI for the same uid with nothing left
+     * holding a reference to stop it.
+     */
+    @Volatile private var connecting = false
+
+    /**
+     * Connect using saved certs + saved server settings.
+     *
+     * @return true if an attempt was actually started. False means nothing is in flight —
+     * either the enrollment is unusable or an attempt is already running — which the caller
+     * needs in order to tell the pilot something true.
+     */
+    fun reconnect(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val host = prefs.getString(KEY_HOST, "") ?: ""
         val username = prefs.getString(KEY_USERNAME, "") ?: ""
@@ -91,20 +112,41 @@ object TakAutoConnect {
         }
         if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) {
             AppLog.w(TAG, "reconnect requested but saved enrollment is incomplete")
-            return
+            return false
         }
+        if (connecting) {
+            AppLog.i(TAG, "reconnect already in flight — ignoring this request")
+            return false
+        }
+        connecting = true
         val droneUid = "$uid-DRONE"
         Thread {
-            TakManager.getInstance().connect(
-                uid, callsign, "Cyan", "Team Member",
-                host, cotPort, ts, "atakatak", cc, "atakatak",
-            )
-            TakBridgeHolder.start(droneUid, callsign)
-            TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
-            TakForegroundService.start(context, callsign)
-            AppLog.i(TAG, "connected to $host:$cotPort as $callsign")
-            // The channel auto-pull is gone with channel selection (2026-08-15): the feature
-            // silently destroyed markers. See TakManager.
+            // R33: the body used to be bare. An exception on a plain Thread reaches Android's
+            // default uncaught handler, which KILLS THE PROCESS — so a bad cert file or an
+            // unreachable host could take the whole flight screen down mid-flight, from a
+            // background thread, for a failure that only ever needed a log line.
+            try {
+                TakManager.getInstance().connect(
+                    uid, callsign, "Cyan", "Team Member",
+                    host, cotPort, ts, "atakatak", cc, "atakatak",
+                )
+                TakBridgeHolder.start(droneUid, callsign)
+                TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
+                TakForegroundService.start(context, callsign)
+                // R24: this line used to read "connected to …". connect() is fire-and-forget —
+                // it only starts TakClient's socket thread — so the log asserted a connection
+                // that may never have happened, which is misleading in exactly the log someone
+                // reads to find out why TAK is not working. The flight screen's TAK dot polls
+                // the real state.
+                AppLog.i(TAG, "connecting to $host:$cotPort as $callsign (socket result follows)")
+                // The channel auto-pull is gone with channel selection (2026-08-15): the feature
+                // silently destroyed markers. See TakManager.
+            } catch (t: Throwable) {
+                AppLog.e(TAG, "TAK reconnect failed: ${t.message}", t)
+            } finally {
+                connecting = false
+            }
         }.start()
+        return true
     }
 }
