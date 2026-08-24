@@ -269,9 +269,27 @@ def parse(src, consts, full=None):
     return items
 
 
+def strip_leading(src):
+    """Strip leading whitespace AND leading `//`/`/* */` comments — repeatedly, since a
+    comment can be followed by more whitespace and another comment."""
+    i = 0
+    while True:
+        while i < len(src) and src[i].isspace():
+            i += 1
+        j = skip_comment(src, i)
+        if j == i:
+            return src[i:]
+        i = j
+
+
 def _strip_list(arg):
     """`listOf( ... )` -> its contents; `emptyList()` -> empty."""
-    arg = arg.strip()
+    # strip_leading(), not arg.strip() — an explanatory `// comment` placed before `listOf(`
+    # inside the entry() call (this file's own doc style, used liberally elsewhere) used to
+    # defeat this regex silently: it's anchored at the start of the string, a leading comment
+    # is not whitespace, so `listOf` never matched and the icon list vanished with no error.
+    # Found via a field report of a Field Guide entry rendering with no icon at all.
+    arg = strip_leading(arg).rstrip()
     if arg.startswith("emptyList"):
         return ""
     m = re.match(r"listOf\s*\(", arg)

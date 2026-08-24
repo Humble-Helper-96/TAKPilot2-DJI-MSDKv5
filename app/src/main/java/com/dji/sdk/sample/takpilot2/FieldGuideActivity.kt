@@ -396,20 +396,26 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(image(R.drawable.ic_resync) to "Re-sync"),
+            // No icon: this is a HIDDEN GESTURE, not a button. Re-sync moved off the action bar
+            // on 2026-08-20 (see the flight activity's comment above fpvView.setOnLongClickListener)
+            // and became a long-press on the image itself — ic_resync was never a real on-screen
+            // icon anywhere in this app, and the body used to say "touch this button", describing
+            // a control that does not exist. Field Guide rule: document the invisible, don't draw
+            // a control the screen never shows.
+            emptyList(),
             "Video re-sync",
-            "Corrects the video image. If blocks or marks occur in the image, touch this " +
-                "button and the image becomes correct in a few seconds. It changes your image " +
-                "only.",
+            "Corrects the video image. If blocks or marks occur in the image, touch and hold " +
+                "anywhere on the video image and it becomes correct in a few seconds. It " +
+                "changes your image only.",
         )
 
         entry(
-            // §3 Field Guide content bug: this entry used to show the LIVE pill's icon states
-            // (Off / Video on / Connects again) — a copy-paste into the wrong entry, since the
-            // IR button isn't a LiveToggleView at all, it's a plain pill that goes green (see
-            // the body text below, which was already correct). Empty here, same as Lights
-            // right below — the body text is what actually describes this button's states.
-            emptyList(),
+            // §3 Field Guide content bug (first pass): this entry used to show the LIVE pill's
+            // icon states (Off / Video on / Connects again) — a copy-paste into the wrong entry,
+            // since the IR button isn't a LiveToggleView. That pass over-corrected to emptyList()
+            // (a field report: "IR is missing its icon graphic"). The real fix is irPill() —
+            // the IR button's ACTUAL drawables/tints, same idea as the AR entry below.
+            listOf(irPill(on = false) to "Off", irPill(on = true) to "On"),
             "IR: the thermal camera",
             "Touch to change between the usual camera and the thermal camera. The button is " +
                 "green when the thermal camera is on.\n\n" +
@@ -420,7 +426,9 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            emptyList(),
+            // Was emptyList() from before this pass — a field report ("Lights is missing its
+            // icon graphic") caught it. ledIcon() is renderLightsButton()'s own drawables.
+            listOf(ledIcon(false) to "Off", ledIcon(true) to "On", ledIcon(null) to "Unknown"),
             "Lights: the motor lights and the beacon",
             "Touch to turn the lights at the motors on or off. This includes the red and " +
                 "green lights that show the status of the aircraft.\n\n" +
@@ -936,6 +944,29 @@ class FieldGuideActivity : AppCompatActivity() {
         textSize = 12f
         setTypeface(null, android.graphics.Typeface.BOLD)
         layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
+    }
+
+    /** The IR pill in either state, built from the same drawables and tints the flight screen's
+     *  renderIrButtons() uses (same shape as arPill, no alpha dimming — renderIrButtons()
+     *  doesn't dim the off state, unlike the AR pill). This entry used to show ZERO icon, which
+     *  is what the field report "IR is missing its icon graphic" was pointing at. */
+    private fun irPill(on: Boolean): View = TextView(this).apply {
+        text = "IR"
+        gravity = Gravity.CENTER
+        setBackgroundResource(if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        setTextColor(if (on) connectedGreen else Color.WHITE)
+        textSize = 12f
+        setTypeface(null, android.graphics.Typeface.BOLD)
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
+    }
+
+    /** The motor-LEDs icon in each state, the same drawables and dimming
+     *  renderLightsButton() uses. `on == null` (unknown) renders as the "on" icon at half
+     *  alpha, matching renderLightsButton() exactly — there is no separate "unknown" drawable. */
+    private fun ledIcon(on: Boolean?): View = ImageView(this).apply {
+        setImageResource(if (on == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
+        alpha = if (on == null) 0.5f else 1f
+        layoutParams = iconParams()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

@@ -134,8 +134,21 @@ android {
         //     hysteresis wrap at ±180° are all guarded. Shared core: an inbound CoT is now
         //     redacted before it's truncated into the log, and the XML parser is built once and
         //     reused instead of per message. Not yet flown.
-        versionCode 87
-        versionName "1.0.3"
+        // 88: v1.0.4 — field report on v1.0.3 (device testing, same day): the Field Guide's
+        //     "Video re-sync" entry described a button that does not exist (re-sync moved to a
+        //     long-press on the video image itself back on 2026-08-20) and showed an icon
+        //     nowhere used on any real screen; fixed to describe the actual gesture, icon
+        //     removed. IR and Lights showed no icon at all — new irPill()/ledIcon() render the
+        //     real on-screen drawables, the way arPill() already does for AR. Root cause of all
+        //     three: generate_field_guide_md.py's _strip_list() anchored its listOf() match at
+        //     the very start of the argument, so an explanatory `//` comment placed before
+        //     listOf(...) inside an entry() call — this file's own comment style — silently
+        //     erased the icon list with no error. Fixed generally (strip_leading() skips
+        //     comments, not just whitespace), which also recovered a third, not-yet-reported
+        //     instance: the LIVE entry's icons, moved there in v1.0.3, were silently blank too.
+        //     Not yet flown.
+        versionCode 88
+        versionName "1.0.4"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey
