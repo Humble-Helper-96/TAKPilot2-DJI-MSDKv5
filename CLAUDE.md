@@ -222,8 +222,23 @@ was written after the bench session ended.
 
 Two things the panel is NOT, both deliberate: it does not upload audio to the speaker, and it
 has no toolbar pill, so **the ◀ ACC hint chip is the only sign it exists**. Do not hide that
-chip. A FILE PICKER IS NOT POSSIBLE: `SpeakerKey.KeyAudioFileList` is refused and the payload
-reports a single slot named `megaphone_file`, so there is nothing to choose between.
+chip.
+
+**A FILE PICKER IS NOT POSSIBLE, and that is now MEASURED rather than assumed.**
+`SpeakerKey.KeyAudioFileList` is refused at ALL TEN component indexes (LEFT_OR_MAIN, RIGHT, UP,
+UP_TYPE_C, UP_TYPE_C_EXT_ONE, INDEX_3, AGGREGATION, PORT_1-3) with the AS1 fitted and working,
+and `PayloadKey.KeyMegaphoneFileName` answers with one slot named `megaphone_file`. ⚠ The first
+version of this claim came from a SINGLE UN-INDEXED CALL and was written into the commit message
+and the release notes as fact — the same error the light had already cost a build over, since a
+key refused at the default index says nothing about the key. Walk the indexes before you call
+anything impossible.
+
+⚠ **THE AS1 DECLARES TTS AND VOICE-FILE UPLOAD: `port UP speakerWidget: tts=true voice=true`.**
+Neither is built, and TTS was turned down by the operator when offered — but the hardware
+supports it, so "the speaker can only play what it holds" is a statement about this application
+and not about the payload. This only appeared once EVERY connected port was pulled for widgets
+instead of the light alone; the speaker's own widget list had never been requested, and its
+absence from the log had been read as an answer.
 
 **Open, and NOT from this work: the zoom pill can open stale.** On a cold start with the camera
 left zoomed, the pill showed 1.5x while the camera was at its widest (24mm f35). The write of

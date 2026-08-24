@@ -247,8 +247,13 @@ object AircraftAccessories {
                             AppLog.i(TAG, "the light is on port $index " +
                                 "('${info.payloadProductName}')")
                         }
-                        pullWidgets(index)
                     }
+                    // ⚠ ASK EVERY CONNECTED PORT, NOT JUST THE LIGHT. The widget LISTENER was
+                    // attached to all of them, but only the light was ever PULLED — so the
+                    // speaker's widget list was never requested and the log showed nothing for
+                    // it. That absence read as "the speaker advertises no widgets", which was
+                    // never measured. A listener with nothing to listen to is not evidence.
+                    pullWidgets(index)
                 }
                 mgr.addPayloadWidgetInfoListener { wi ->
                     if (index == lightPort) {
@@ -357,8 +362,13 @@ object AircraftAccessories {
             config.joinToString { "${it.widgetName}=${it.widgetValue}" } +
             "|tts=${sp?.isTTSEnabled}/voice=${sp?.isVoiceEnabled}"
         if (otherPortStamps.put(index.name, stamp) == stamp) return
-        AppLog.i(TAG, "port $index speakerWidget: tts=${sp?.isTTSEnabled} " +
-            "voice=${sp?.isVoiceEnabled}")
+        // ⚠ THIS IS THE PAYLOAD DECLARING WHAT IT CAN DO. On 2026-08-23 the AS1 on port UP
+        // answered tts=true voice=true — TEXT-TO-SPEECH AND VOICE-FILE UPLOAD ARE SUPPORTED by
+        // this speaker. It only appeared once EVERY port was pulled instead of the light alone.
+        if (sp != null) {
+            AppLog.i(TAG, "port $index speakerWidget: tts=${sp.isTTSEnabled} " +
+                "voice=${sp.isVoiceEnabled}")
+        }
         for (w in main) {
             AppLog.i(TAG, "port $index MAIN widget: type=${w.widgetType} " +
                 "name='${w.widgetName}' idx=${w.widgetIndex} value=${w.widgetValue} " +
@@ -380,35 +390,118 @@ object AircraftAccessories {
      * aircraft, so neither is assumed — this asks and logs, and the picker gets built on
      * whichever answers.
      */
+    /**
+     * True once the file-list walk has run in this process.
+     *
+     * ⚠ THE WALK IS TEN KEY READS AND IT IS SETTLED — see [tryAudioFileListAt]. It stays in the
+     * code because it is the only thing that would notice a DIFFERENT speaker on a different
+     * airframe, but it must not run on every panel open: that is ten reads to the payload bus
+     * every time a pilot presses L2, to re-learn an answer that has not changed.
+     */
+    @Volatile
+    private var audioFileWalkDone = false
+
     private fun probeAudioFiles() {
+        // The payload bus's single current-file name. It answered 'megaphone_file' on the bench,
+        // which is a slot and not a list — kept because a CHANGE in it would be the first sign
+        // that the speaker holds more than one sound after all.
+        speakerPort?.let { port ->
+            KeyManager.getInstance().getValue(
+                KeyTools.createKey(dji.sdk.keyvalue.key.PayloadKey.KeyMegaphoneFileName, port),
+                object : CommonCallbacks.CompletionCallbackWithParam<String> {
+                    override fun onSuccess(value: String?) {
+                        AppLog.i(TAG, "CURRENT AUDIO FILE (PayloadKey @$port) = '$value'")
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.i(TAG, "current audio file @$port refused: ${error.description()}")
+                    }
+                })
+        }
+        if (!audioFileWalkDone) {
+            audioFileWalkDone = true
+            tryAudioFileListAt(candidateIndexes, 0)
+        }
+    }
+
+    /**
+     * Walks the component indexes asking each for the speaker's audio file list.
+     *
+     * ⚠ THE FIRST ATTEMPT USED NO INDEX AT ALL and came back `refused: null`, which was read as
+     * "this aircraft has no file list". That was the same mistake the light walk had already
+     * cost a build over: a key that is refused at the DEFAULT index says nothing about the key,
+     * only about that index. The light lives on `EXTERNAL` and was invisible until the walk
+     * reached it, so the file list gets the same treatment before it is called impossible.
+     *
+     * Sequential, like the light walk, and for the same reason — these are reads to a payload
+     * bus and firing ten at once to find which index exists is the burst shape safety rule 3
+     * exists to stop.
+     *
+     * ⚠ MEASURED ON 2026-08-23: REFUSED AT ALL TEN INDEXES on a Matrice 4TD with the AS1 fitted
+     * and working. `PayloadKey.KeyMegaphoneFileName` answers with one slot named
+     * 'megaphone_file'. So THIS AIRCRAFT HOLDS ONE SOUND and there is nothing to pick between —
+     * that is now evidence, and not the assumption it was when it came from a single un-indexed
+     * call. Runs once per process; see [audioFileWalkDone].
+     */
+    private fun tryAudioFileListAt(all: List<ComponentIndexType>, i: Int) {
+        if (i >= all.size) {
+            AppLog.i(TAG, "AUDIO FILE LIST: no index answered out of $all")
+            return
+        }
+        val index = all[i]
         KeyManager.getInstance().getValue(
-            KeyTools.createKey(dji.sdk.keyvalue.key.SpeakerKey.KeyAudioFileList),
+            KeyTools.createKey(dji.sdk.keyvalue.key.SpeakerKey.KeyAudioFileList, index),
             object : CommonCallbacks.CompletionCallbackWithParam<
                 List<dji.sdk.keyvalue.value.accessory.SpeakerAudioFileInfo>> {
                 override fun onSuccess(
                     value: List<dji.sdk.keyvalue.value.accessory.SpeakerAudioFileInfo>?,
                 ) {
-                    AppLog.i(TAG, "AUDIO FILE LIST (SpeakerKey) = " +
-                        value?.joinToString { "${it.fileIndex}:'${it.fileName}'" })
+                    if (value.isNullOrEmpty()) {
+                        AppLog.i(TAG, "audio file list @$index: answered with an EMPTY list")
+                        tryAudioFileListAt(all, i + 1)
+                        return
+                    }
+                    audioFiles = value
+                    AppLog.i(TAG, "AUDIO FILE LIST FOUND @$index (${value.size}): " +
+                        value.joinToString { "${it.fileIndex}:'${it.fileName}' " +
+                            "${it.fileSize}B ${it.storageLocation}" })
+                    notifyChanged()
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(TAG, "audio file list (SpeakerKey) refused: ${error.description()}")
-                }
-            })
-        val port = speakerPort ?: return
-        KeyManager.getInstance().getValue(
-            KeyTools.createKey(dji.sdk.keyvalue.key.PayloadKey.KeyMegaphoneFileName, port),
-            object : CommonCallbacks.CompletionCallbackWithParam<String> {
-                override fun onSuccess(value: String?) {
-                    AppLog.i(TAG, "CURRENT AUDIO FILE (PayloadKey) = '$value'")
-                }
-
-                override fun onFailure(error: IDJIError) {
-                    AppLog.i(TAG, "current audio file refused: ${error.description()}")
+                    AppLog.v(TAG, "audio file list @$index refused: ${error.description()}")
+                    tryAudioFileListAt(all, i + 1)
                 }
             })
     }
+
+    /**
+     * The component indexes a payload key is asked at, in order.
+     *
+     * The three named mounts a Matrice 4 series aircraft has, then the type-C variants, then the
+     * numbered PSDK ports. The AL1 turned out to be on `EXTERNAL`, which no earlier guess
+     * included — that is the whole reason anything is walked here rather than assumed.
+     */
+    private val candidateIndexes = listOf(
+        ComponentIndexType.LEFT_OR_MAIN,
+        ComponentIndexType.RIGHT,
+        ComponentIndexType.UP,
+        ComponentIndexType.UP_TYPE_C,
+        ComponentIndexType.UP_TYPE_C_EXT_ONE,
+        ComponentIndexType.INDEX_3,
+        ComponentIndexType.AGGREGATION,
+        ComponentIndexType.PORT_1,
+        ComponentIndexType.PORT_2,
+        ComponentIndexType.PORT_3,
+    )
+
+    /**
+     * The sounds the speaker holds, if any index ever answers. Empty means either that the
+     * speaker holds one unnamed slot or that no index answered — the log says which.
+     */
+    @Volatile
+    var audioFiles: List<dji.sdk.keyvalue.value.accessory.SpeakerAudioFileInfo> = emptyList()
+        private set
 
     /** The payload port the aircraft names as a speaker, for the key-based probes. */
     @Volatile
