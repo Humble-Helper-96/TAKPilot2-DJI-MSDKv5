@@ -45,6 +45,10 @@ class BatteryGaugeView @JvmOverloads constructor(
     private val arcRect = RectF()
 
     fun setPercent(pct: Int?) {
+        // No-op when nothing moved — same guard as setBands below. Called from the 2 Hz HUD
+        // tick, so without this an unchanged/no-telemetry percent invalidated the view twice
+        // a second for the life of the flight screen.
+        if (pct == percent) return
         percent = pct
         invalidate()
     }

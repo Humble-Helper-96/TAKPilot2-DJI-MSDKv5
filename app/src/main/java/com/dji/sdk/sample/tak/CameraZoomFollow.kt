@@ -34,6 +34,12 @@ object CameraZoomFollow {
     private const val TAG = "CameraZoomFollow"
     private val listenHolder = Any()
 
+    // ONE Handler, not one per event. The dial can fire this listener many times a second
+    // while it's being turned, and a fresh Handler(Looper) per event was an allocation (plus
+    // its own Looper lookup) on every single tick of a continuous zoom sweep for no reason —
+    // the main Looper does not change.
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     /** Called on the MAIN thread with the camera's current ratio whenever it changes. */
     fun arm(onZoom: (Double) -> Unit) {
         val key = KeyTools.createCameraKey(
@@ -42,7 +48,7 @@ object CameraZoomFollow {
         KeyManager.getInstance().listen(key, listenHolder,
             CommonCallbacks.KeyListener<Double> { _, value ->
                 if (value != null && value > 0) {
-                    android.os.Handler(android.os.Looper.getMainLooper()).post { onZoom(value) }
+                    mainHandler.post { onZoom(value) }
                 }
             })
         AppLog.i(TAG, "following the camera's zoom ratio")

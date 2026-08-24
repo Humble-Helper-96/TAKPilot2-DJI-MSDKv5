@@ -119,7 +119,14 @@ object CameraSlantPoint {
         bearingDeg: Double, pitchDeg: Double,
     ): GroundPoint {
         val depression = -pitchDeg // angle below horizon
-        val horizontalRange: Double = if (aglMeters > 0.0 && depression > 1.0) {
+        // §3 geometry edge case: a gimbal cannot physically pitch past straight down
+        // (depression > 90°), but corrupted/uninitialized SDK data isn't bound by physics —
+        // and tan() is periodic, so e.g. depression=200° gives tan(20°), a perfectly ordinary-
+        // looking POSITIVE, finite, in-range result for an angle that doesn't correspond to any
+        // real camera orientation. Bounding depression to (1, 90] is what the doc above already
+        // assumes ("looking down=negative", i.e. pitch in roughly [-90,0]); past that, this has
+        // no physical geometry to solve and falls back like every other no-solution case.
+        val horizontalRange: Double = if (aglMeters > 0.0 && depression > 1.0 && depression <= 90.0) {
             // tan gives the ground (horizontal) distance directly.
             val d = aglMeters / tan(depression * DEG)
             when {
@@ -168,7 +175,14 @@ object CameraSlantPoint {
         val dLon = (lon2 - lon1) * DEG
         val a = sin(dLat / 2).let { it * it } +
             cos(lat1 * DEG) * cos(lat2 * DEG) * sin(dLon / 2).let { it * it }
-        return EARTH_RADIUS_M * 2 * atan2(sqrt(a), sqrt(1 - a))
+        // §3 geometry edge case: near-antipodal inputs can push `a` a hair past 1.0 on pure
+        // floating-point rounding (the squared-sine terms sum to slightly >1), which sends a
+        // negative value into sqrt() and NaN out the far end — a corrupted/stale GPS pair is
+        // exactly the kind of input that can land here. Clamped into the only range the math
+        // is actually valid for; a legitimate `a` never leaves [0,1] anyway, so this changes
+        // nothing for every normal input, only the ones that were already NaN.
+        val aClamped = a.coerceIn(0.0, 1.0)
+        return EARTH_RADIUS_M * 2 * atan2(sqrt(aClamped), sqrt(1 - aClamped))
     }
 
     /** True (not magnetic) initial bearing from point 1 to point 2, degrees 0..360. */
@@ -215,7 +229,10 @@ object CameraSlantPoint {
     /** Horizontal ground range for one frustum corner ray, with sane fallbacks. */
     private fun cornerRange(aglMeters: Double, cornerPitchDeg: Double): Double {
         val depression = -cornerPitchDeg
-        if (aglMeters <= 0.0 || depression <= 1.0) return FALLBACK_RANGE_M
+        // Same bound as computeFlat, same reason: past 90° there is no physical camera
+        // orientation this corresponds to, and tan()'s periodicity would otherwise hand back
+        // a plausible-looking finite range for a nonsensical angle.
+        if (aglMeters <= 0.0 || depression <= 1.0 || depression > 90.0) return FALLBACK_RANGE_M
         val d = aglMeters / tan(depression * DEG)
         return if (d.isFinite() && d in 0.0..MAX_RANGE_M) d else MAX_RANGE_M
     }

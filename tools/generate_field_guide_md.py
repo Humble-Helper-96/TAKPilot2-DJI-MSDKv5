@@ -45,6 +45,10 @@ def extract_fun(src, name):
     open_brace = src.index("{", balanced(src, src.index("(", m.start())) - 1)
     depth, i = 0, open_brace
     while i < len(src):
+        j = skip_comment(src, i)
+        if j != i:
+            i = j
+            continue
         c = src[i]
         if c == '"':
             i = skip_string(src, i)
@@ -71,6 +75,27 @@ def scan_constants():
     return consts
 
 
+def skip_comment(src, i):
+    """If src[i:] starts a `//` or `/* */` comment, the index just past it; else `i` unchanged.
+
+    Every scanning loop below used to check only for `"` — a `"` inside a `// comment` (this
+    file is full of prose-heavy inline comments, and a quoted word or example string in one is
+    natural writing) was read as the start of a real string literal. The scanner then hunted
+    for a closing `"` wherever the next one happened to be, silently corrupting brace/paren
+    depth tracking and literal extraction for everything after it. Comments must be skipped
+    BEFORE the string check, not treated as ordinary source text.
+    """
+    if src[i:i + 2] == "//":
+        end = src.find("\n", i)
+        return len(src) if end == -1 else end + 1
+    if src[i:i + 2] == "/*":
+        end = src.find("*/", i + 2)
+        if end == -1:
+            raise ValueError("unterminated block comment")
+        return end + 2
+    return i
+
+
 def skip_string(src, i):
     """Index just past the string literal starting at src[i] == '"'."""
     i += 1
@@ -89,6 +114,10 @@ def balanced(src, open_idx):
     depth = 0
     i = open_idx
     while i < len(src):
+        j = skip_comment(src, i)
+        if j != i:
+            i = j
+            continue
         c = src[i]
         if c == '"':
             i = skip_string(src, i)
@@ -107,6 +136,10 @@ def split_args(src):
     """Split an argument list on top-level commas, respecting strings and nesting."""
     args, depth, start, i = [], 0, 0, 0
     while i < len(src):
+        j = skip_comment(src, i)
+        if j != i:
+            i = j
+            continue
         c = src[i]
         if c == '"':
             i = skip_string(src, i)
@@ -129,6 +162,10 @@ def literals(src):
     """Every string literal in source order, unescaped."""
     out, i = [], 0
     while i < len(src):
+        j = skip_comment(src, i)
+        if j != i:
+            i = j
+            continue
         if src[i] == '"':
             end = skip_string(src, i)
             out.append(src[i + 1:end - 1])
@@ -152,6 +189,32 @@ def unescape(text, consts):
 def joined(arg, consts):
     """A Kotlin "a" + "b" concatenation, flattened."""
     return unescape("".join(literals(arg)), consts)
+
+
+def caption_side(pair_src):
+    """The right-hand side of a top-level `icon(...) to "Caption"` infix pair — respecting
+    strings/comments/nesting, so a string literal inside the icon-constructor call's own
+    arguments (e.g. `zoomPill("1X") to "Normal"`) is never mistaken for part of the caption.
+    Falls back to the whole expression if no top-level ` to ` is found (defensive; every entry
+    icon list is a `to` pair in practice)."""
+    depth, i = 0, 0
+    while i < len(pair_src):
+        j = skip_comment(pair_src, i)
+        if j != i:
+            i = j
+            continue
+        c = pair_src[i]
+        if c == '"':
+            i = skip_string(pair_src, i)
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0 and pair_src[i:i + 4] == " to ":
+            return pair_src[i + 4:]
+        i += 1
+    return pair_src
 
 
 def parse(src, consts, full=None):
@@ -181,10 +244,21 @@ def parse(src, consts, full=None):
             args = split_args(inner)
             if len(args) < 3:
                 raise ValueError("entry() with %d args near: %s" % (len(args), inner[:60]))
-            captions = [literals(a)[-1] for a in split_args(_strip_list(args[0])) if literals(a)]
+            # Only the RHS of the `icon(...) to "Caption"` pair — literals(a)[-1] used to grab
+            # just the last string literal in the WHOLE pair expression, which happened to work
+            # when the icon constructor took no string args, but silently dropped an earlier
+            # piece of a genuinely concatenated caption (e.g. "Off (" + SOME_CONST + ")"). Using
+            # joined() on the raw pair (not shown) would have gone too far the other way and
+            # pulled in string args from the icon constructor itself (e.g. `zoomPill("1X")`).
+            # caption_side() isolates just the caption half first.
+            captions = [
+                joined(caption_side(a), consts)
+                for a in split_args(_strip_list(args[0]))
+                if literals(caption_side(a))
+            ]
             caveats = [joined(a, consts) for a in split_args(_strip_list(args[3]))] if len(args) > 3 else []
             items.append((kind, {
-                "captions": [unescape(c, consts) for c in captions],
+                "captions": captions,   # already unescaped by joined() above
                 "name": joined(args[1], consts),
                 "what": joined(args[2], consts),
                 "caveats": [c for c in caveats if c],

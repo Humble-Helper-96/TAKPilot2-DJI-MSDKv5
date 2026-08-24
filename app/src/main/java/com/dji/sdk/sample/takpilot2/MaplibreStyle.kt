@@ -33,26 +33,6 @@ object MaplibreStyle {
 }
 """
 
-    // Satellite: Esri World Imagery (free, no key).
-    const val SATELLITE = """
-{
-  "version": 8,
-  "sources": {
-    "sat": {
-      "type": "raster",
-      "tiles": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-      "tileSize": 256,
-      "attribution": "© Esri",
-      "maxzoom": 19
-    }
-  },
-  "layers": [
-    { "id": "background", "type": "background", "paint": { "background-color": "#000000" } },
-    { "id": "sat", "type": "raster", "source": "sat" }
-  ]
-}
-"""
-
     // Satellite + streets: Esri imagery with a translucent OSM road/label overlay.
     const val SATELLITE_STREETS = """
 {

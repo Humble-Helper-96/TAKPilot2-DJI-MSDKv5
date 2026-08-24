@@ -1,5 +1,6 @@
 package com.dji.sdk.sample.takpilot2
 
+import java.util.Locale
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.Bitmap
@@ -495,7 +496,7 @@ class ArOverlayView @JvmOverloads constructor(
         // +2400 ft that renders near the horizon is visibly wrong, where "2900 ft" looks
         // plausible whatever the icon does.
         val text = if (dzIsTrusted) {
-            "%s  %s%s".format(callsign, if (dzMeters >= 0) "+" else "-", Units.feet(abs(dzMeters)))
+            "%s  %s%s".format(Locale.US, callsign, if (dzMeters >= 0) "+" else "-", Units.feet(abs(dzMeters)))
         } else {
             callsign
         }

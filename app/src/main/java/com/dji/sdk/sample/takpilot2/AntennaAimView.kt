@@ -45,10 +45,25 @@ class AntennaAimView @JvmOverloads constructor(
         if (relDeg == null && shownRelDeg == null) return
         // Sub-degree jitter from the rotation vector is invisible on a ~40dp arc; skip
         // the redraw unless the marker would actually move.
-        if (relDeg != null && shownRelDeg != null && abs(relDeg - shownRelDeg!!) < 0.5) return
+        //
+        // §3 geometry edge case: a RAW signed difference doesn't wrap at ±180°. An aircraft
+        // sitting directly behind the pilot can jitter between e.g. +179.7° and -179.8° — a
+        // true angular change of ~0.5°, invisible on the arc — but `179.7 - (-179.8)` is
+        // ~359.5, which reads as a huge jump and defeats this exact filter right at the one
+        // spot (behind the pilot) where sub-degree jitter is most likely to show up as churn.
+        if (relDeg != null && shownRelDeg != null && abs(angularDiff(relDeg, shownRelDeg!!)) < 0.5) return
         shownRelDeg = relDeg
         visibility = if (relDeg == null) GONE else VISIBLE
         invalidate()
+    }
+
+    /** Signed angular difference a-b, wrapped into -180..+180 — the shortest way around the
+     *  circle, not the raw arithmetic difference. */
+    private fun angularDiff(a: Double, b: Double): Double {
+        var d = (a - b) % 360.0
+        if (d > 180.0) d -= 360.0
+        if (d < -180.0) d += 360.0
+        return d
     }
 
     private var shownRelDeg: Double? = null
@@ -125,8 +140,5 @@ class AntennaAimView @JvmOverloads constructor(
         markerPath.close()
         canvas.drawPath(markerPath, markerHalo)
         canvas.drawPath(markerPath, if (behind) markerStroke else markerFill)
-    }
-
-    private companion object {
     }
 }

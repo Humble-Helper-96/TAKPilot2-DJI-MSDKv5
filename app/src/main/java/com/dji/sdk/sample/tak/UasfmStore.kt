@@ -1,5 +1,6 @@
 package com.dji.sdk.sample.tak
 
+import java.util.Locale
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -353,5 +354,5 @@ object UasfmStore {
     }
 
     private fun prettyDate(d: Int): String =
-        "%d/%d/%04d".format((d / 100) % 100, d % 100, d / 10000)
+        "%d/%d/%04d".format(Locale.US, (d / 100) % 100, d % 100, d / 10000)
 }

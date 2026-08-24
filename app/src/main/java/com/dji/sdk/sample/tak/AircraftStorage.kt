@@ -1,5 +1,6 @@
 package com.dji.sdk.sample.tak
 
+import java.util.Locale
 import dji.sdk.keyvalue.key.CameraKey
 import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.value.camera.CameraSDCardState
@@ -95,6 +96,17 @@ object AircraftStorage {
             })
     }
 
+    /**
+     * Clears every value read back from the aircraft. Call on disconnect — without this, a
+     * swapped-in aircraft with no card at all still shows the PREVIOUS aircraft's green "SD
+     * CARD" verdict, exactly the silent-recording-loss case this object exists to prevent.
+     */
+    fun resetOnDisconnect() {
+        location = null
+        sdState = null
+        sdFreeMb = null
+    }
+
     /** The pilot-facing line. Short, because it sits on a card row. */
     fun label(): String = when {
         recordingToInternal ->
@@ -108,6 +120,6 @@ object AircraftStorage {
 
     private fun freeLabel(): String? {
         val mb = sdFreeMb ?: return null
-        return if (mb >= 1024) "%.1f GB".format(mb / 1024.0) else "$mb MB"
+        return if (mb >= 1024) "%.1f GB".format(Locale.US, mb / 1024.0) else "$mb MB"
     }
 }

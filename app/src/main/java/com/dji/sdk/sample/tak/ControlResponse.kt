@@ -99,6 +99,14 @@ object ControlResponse {
         }
     }
 
+    /**
+     * Clears the value read back from the aircraft. Call on disconnect — the Pre-Flight line
+     * must not go on reporting the PREVIOUS aircraft's gimbal speed as this one's answer.
+     */
+    fun resetOnDisconnect() {
+        aircraftPitchSpeed = null
+    }
+
     /** The answer, not the request. Safety rule 4: a success callback is not proof. */
     private fun readBack(onDone: (() -> Unit)?) {
         val key = KeyTools.createKey(GimbalKey.KeyPitchControlMaxSpeed, ComponentIndexType.LEFT_OR_MAIN)

@@ -127,19 +127,43 @@ class DebugActivity : AppCompatActivity() {
             AppLog.v(TAG, "export tapped")
             exportLog()
         }
+        // §3 cleanup: these were the only unconfirmed permanent delete in the app — every other
+        // destructive action (marker delete, Clear All Markers, reset home point) confirms with
+        // TakDialogTheme_Destructive first. A stray tap here previously destroyed the active log
+        // (Clear) or every rotated log file (Delete All) with no way back, and Delete All in
+        // particular takes files export can't reach — exportLog() only ever offers the active
+        // one, so a rotated session's log has no other way off the device once deleted.
         findViewById<android.widget.Button>(R.id.debugClearButton).setOnClickListener {
-            AppLog.clearActive()
-            lastRenderedLength = -1
-            pinnedToBottom = true
-            refreshLogView()
-            toast("Log cleared")
+            androidx.appcompat.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+                .setTitle("Clear Log")
+                .setMessage("Erase the active log? This cannot be undone.")
+                .setPositiveButton("Clear") { _, _ ->
+                    AppLog.i(TAG, "debug: clear active log confirmed")
+                    AppLog.clearActive()
+                    lastRenderedLength = -1
+                    pinnedToBottom = true
+                    refreshLogView()
+                    toast("Log cleared")
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
         findViewById<android.widget.Button>(R.id.debugDeleteButton).setOnClickListener {
-            AppLog.deleteAll()
-            lastRenderedLength = -1
-            pinnedToBottom = true
-            refreshLogView()
-            toast("All logs deleted")
+            androidx.appcompat.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+                .setTitle("Delete All Logs")
+                .setMessage("Delete every log file on this device, including rotated logs from " +
+                    "earlier sessions? Only the active log can be exported — anything else " +
+                    "deleted here has no other way off the device. This cannot be undone.")
+                .setPositiveButton("Delete All") { _, _ ->
+                    AppLog.i(TAG, "debug: delete all logs confirmed")
+                    AppLog.deleteAll()
+                    lastRenderedLength = -1
+                    pinnedToBottom = true
+                    refreshLogView()
+                    toast("All logs deleted")
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 

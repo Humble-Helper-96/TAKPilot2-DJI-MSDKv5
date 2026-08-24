@@ -1,5 +1,6 @@
 package com.dji.sdk.sample.tak
 
+import java.util.Locale
 import androidx.core.content.ContextCompat
 import android.content.Intent
 import android.graphics.Color
@@ -760,8 +761,8 @@ class TakConnectActivity : AppCompatActivity() {
                 Toast.makeText(this, "No phone GPS fix available", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            latField.setText("%.4f".format(loc.first))
-            lonField.setText("%.4f".format(loc.second))
+            latField.setText("%.4f".format(Locale.US, loc.first))
+            lonField.setText("%.4f".format(Locale.US, loc.second))
         }
 
         checkBtn.setOnClickListener {
@@ -887,7 +888,8 @@ class TakConnectActivity : AppCompatActivity() {
             })
             info.addView(TextView(this).apply {
                 val mb = region.totalBytes / 1024.0 / 1024.0
-                val sizeStr = if (mb >= 1024) "%.1f GB".format(mb / 1024.0) else "%.0f MB".format(mb)
+                val sizeStr = if (mb >= 1024) "%.1f GB".format(Locale.US, mb / 1024.0)
+                    else "%.0f MB".format(Locale.US, mb)
                 text = "Imported ${dtedDateFormat.format(java.util.Date(region.importedAtMs))} · " +
                     "${region.fileCount} file(s) · $sizeStr"
                 setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_tertiary))

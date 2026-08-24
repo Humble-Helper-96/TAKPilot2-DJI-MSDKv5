@@ -449,6 +449,21 @@ object FlightLimitsController {
     }
 
     /**
+     * Clears every value read back from the aircraft. Call on disconnect — a swapped-in
+     * aircraft's Pre-Flight screen must not go on showing the PREVIOUS aircraft's limits (or
+     * its refused-battery-write lock) while the new one has not yet answered a single getter.
+     */
+    fun resetOnDisconnect() {
+        aircraftWarningPct = null
+        aircraftCriticalPct = null
+        aircraftMaxAltM = null
+        aircraftMaxRadiusM = null
+        aircraftRthAltM = null
+        aircraftFailsafe = null
+        batteryThresholdsRefused = false
+    }
+
+    /**
      * Parses a feet string to a rounded meters int, or null if blank/unparseable.
      *
      * Internal rather than private so [FlightWarnings] can convert the SAME stored strings this

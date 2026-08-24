@@ -256,6 +256,19 @@ object AircraftLights {
         return s
     }
 
+    /**
+     * Clears every value read back from the aircraft. Call on disconnect — otherwise the lights
+     * pill keeps showing the PREVIOUS aircraft's on/off state (and [requireState] keeps handing
+     * out its stale [LEDsSettings] to preserve on the next write) until this one happens to
+     * answer a refresh.
+     */
+    fun resetOnDisconnect() {
+        motorLedsOn = null
+        beaconOn = null
+        lastLeds = null
+        lastBatteryLed = null
+    }
+
     /** One write path for the LEDs key, so the read-back rule is applied the same way twice. */
     private fun writeLeds(settings: LEDsSettings, what: String, verify: () -> Unit) {
         KeyManager.getInstance().setValue(ledsKey, settings,

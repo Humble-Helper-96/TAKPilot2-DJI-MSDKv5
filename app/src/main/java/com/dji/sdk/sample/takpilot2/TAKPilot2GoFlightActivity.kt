@@ -181,6 +181,25 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     // tick while it's already set), and only once per bridge session.
     private var lastHomeSet = false
 
+    // §3 "per-tick allocation" cleanup: the mini-map camera, the home marker and the
+    // home->aircraft line were rebuilt every 500ms HUD tick even when nothing had moved
+    // (parked on the ground, or between fix updates). These remember what was last drawn so
+    // the tick can skip the GeoJSON/CameraPosition allocation when it would be a no-op.
+    private var lastMapLat: Double? = null
+    private var lastMapLon: Double? = null
+    private var lastMapZoom: Double? = null
+    private var lastHomeLat: Double? = null
+    private var lastHomeLon: Double? = null
+    private var lastHomeLineAircraftLat: Double? = null
+    private var lastHomeLineAircraftLon: Double? = null
+    // Deliberately separate from lastHomeLat/lastHomeLon above (the marker's cache): the
+    // marker block runs first each tick and syncs that pair to the current home position
+    // BEFORE this line's guard would get a chance to compare against it, which would make a
+    // real home-point move invisible to the line. Two independent caches, no shared state.
+    private var lastHomeLineHomeLat: Double? = null
+    private var lastHomeLineHomeLon: Double? = null
+    private var lastOverlayText: String? = null
+
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable {
         override fun run() {
@@ -828,10 +847,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(TAG, "$successMsg -> ${error.description()}")
+                    AppLog.i(TAG, "$successMsg -> ${describeError(error)}")
                     runOnUiThread {
                         Toast.makeText(this@TAKPilot2GoFlightActivity,
-                            "$failurePrefix: ${error.description()}", Toast.LENGTH_SHORT).show()
+                            "$failurePrefix: ${describeError(error)}", Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -846,10 +865,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             }
 
             override fun onFailure(error: IDJIError) {
-                AppLog.i(TAG, "$successMsg -> ${error.description()}")
+                AppLog.i(TAG, "$successMsg -> ${describeError(error)}")
                 runOnUiThread {
                     Toast.makeText(this@TAKPilot2GoFlightActivity,
-                        "$failurePrefix: ${error.description()}", Toast.LENGTH_SHORT).show()
+                        "$failurePrefix: ${describeError(error)}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -876,7 +895,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
         AppLog.i(REC_TAG, "starting recording — switching to VIDEO_NORMAL first")
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyCameraMode),
+            KeyTools.createKey(CameraKey.KeyCameraMode, MAIN_CAM),
             CameraMode.VIDEO_NORMAL,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
@@ -885,10 +904,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(REC_TAG, "set video mode result: ${error.description()}")
+                    AppLog.i(REC_TAG, "set video mode result: ${describeError(error)}")
                     runOnUiThread {
                         Toast.makeText(this@TAKPilot2GoFlightActivity,
-                            "Couldn't switch to video mode: ${error.description()}", Toast.LENGTH_SHORT).show()
+                            "Couldn't switch to video mode: ${describeError(error)}", Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -1184,7 +1203,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         zoomButton.setBackgroundResource(
             if (zoomRatio > 1.05) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
         zoomButton.text = if (zoomRatio == Math.floor(zoomRatio)) ZoomLadder.label(zoomRatio)
-                          else "%.1fX".format(zoomRatio)
+                          else "%.1fX".format(java.util.Locale.US, zoomRatio)
     }
 
     private fun onCameraZoomChanged(ratio: Double) {
@@ -1309,7 +1328,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             TakBridgeHolder.lookRangeMeters()?.let { range ->
                 val brg = TakBridgeHolder.cameraPose()?.bearingDeg
                 if (brg == null) Units.distance(range)
-                else "%s  %03.0f°T".format(Units.distance(range), brg)
+                else "%s  %03.0f°T".format(java.util.Locale.US, Units.distance(range), brg)
             })
         if (pitch == null) {
             fpvGimbalPitch.text = "GIMBAL —"
@@ -1447,7 +1466,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 gravity = android.view.Gravity.CENTER
                 setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_accent))
             }
-            fun show() { value.text = "%+.2f°".format(get()) }
+            fun show() { value.text = "%+.2f°".format(java.util.Locale.US, get()) }
             show()
             fun button(text: String, delta: Double) = android.widget.Button(this).apply {
                 this.text = text
@@ -1511,13 +1530,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             com.dji.sdk.sample.tak.ArSettings.saveFov(this, h)
             h = TakBridgeHolder.currentHFovBase
             v = TakBridgeHolder.currentVFovBase   // derived, shown read-only
-            hValue.text = "%.1f°".format(h)
-            vValue.text = "%.1f°".format(v)
+            hValue.text = "%.1f°".format(java.util.Locale.US, h)
+            vValue.text = "%.1f°".format(java.util.Locale.US, v)
             hint.text = if (TakBridgeHolder.hasCameraFov) {
                 ("THE CAMERA NOW REPORTS ITS OWN FIELD OF VIEW (%.1f° × %.1f° right now), " +
                     "and the app uses that answer. This manual value is only the fallback " +
                     "for a camera that has not reported.")
                     .format(
+                        java.util.Locale.US,
                         com.dji.sdk.sample.tak.DroneTakBridge.hFovDeg(),
                         com.dji.sdk.sample.tak.DroneTakBridge.vFovDeg())
             } else if (TakBridgeHolder.currentZoomFactor > 1.0) {
@@ -1751,7 +1771,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.dropPinLocation).text =
             // Display only — the elevation sent in the CoT stays in metres (CotBuilder's
             // contract), this is just what the pilot reads before confirming the drop.
-            "%.5f, %.5f  ·  %s elev".format(lat, lon, Units.feet(elev))
+            "%.5f, %.5f  ·  %s elev".format(java.util.Locale.US, lat, lon, Units.feet(elev))
 
         // The affiliation icons themselves are the picker (no radio dot) — tapping one outlines
         // it via bg_marker_type_selected and clears the others. Defaults to Unknown: an
@@ -2206,7 +2226,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         setShutterBusy(true)
         AppLog.i(REC_TAG, "photo: switching to PHOTO_NORMAL")
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyCameraMode),
+            KeyTools.createKey(CameraKey.KeyCameraMode, MAIN_CAM),
             CameraMode.PHOTO_NORMAL,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
@@ -2217,7 +2237,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     // match what the live feed showed.
                     ExposureController.applyExposureSettings(applicationContext) {
                         KeyManager.getInstance().performAction(
-                            KeyTools.createKey(CameraKey.KeyStartShootPhoto),
+                            KeyTools.createKey(CameraKey.KeyStartShootPhoto, MAIN_CAM),
                             object : CommonCallbacks.CompletionCallbackWithParam<EmptyMsg> {
                                 override fun onSuccess(t: EmptyMsg?) {
                                     AppLog.i(REC_TAG, "shoot photo result: OK")
@@ -2399,7 +2419,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                             zoomRatio = value
                             zoomButton.text = ZoomLadder.label(value)
                             TakBridgeHolder.setZoomFactor(value)
-                            AppLog.i(TAG, "zoom adopted from the aircraft: ${'$'}value")
+                            AppLog.i(TAG, "zoom adopted from the aircraft: $value")
                         }
                     }
 
@@ -2498,11 +2518,28 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         KeyManager.getInstance().setValue(key, palette,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
-                    runOnUiThread {
-                        irPalette = next
-                        irPaletteButton.text = label
-                        AppLog.i(TAG, "IR palette now $label")
-                    }
+                    // Safety rule 4: a success callback is not proof — read back what the
+                    // camera actually holds, same shape as the screen-entry adoption above,
+                    // rather than painting the pill from the request we just sent.
+                    KeyManager.getInstance().getValue(key,
+                        object : CommonCallbacks.CompletionCallbackWithParam<CameraThermalPalette> {
+                            override fun onSuccess(value: CameraThermalPalette?) {
+                                val i = IR_PALETTES.indexOfFirst { it.first == value }
+                                if (i < 0) {
+                                    AppLog.w(TAG, "IR palette read-back $value not in known list")
+                                    return
+                                }
+                                runOnUiThread {
+                                    irPalette = i
+                                    irPaletteButton.text = IR_PALETTES[i].second
+                                    AppLog.i(TAG, "IR palette now ${IR_PALETTES[i].second} (read back)")
+                                }
+                            }
+
+                            override fun onFailure(error: IDJIError) {
+                                AppLog.w(TAG, "IR palette read-back failed: ${describeError(error)}")
+                            }
+                        })
                 }
 
                 override fun onFailure(error: IDJIError) {
@@ -2670,7 +2707,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         op: String,
     ) {
         KeyManager.getInstance().performAction(
-            KeyTools.createKey(keyInfo),
+            KeyTools.createKey(keyInfo, MAIN_CAM),
             object : CommonCallbacks.CompletionCallbackWithParam<EmptyMsg> {
                 override fun onSuccess(t: EmptyMsg?) {
                     AppLog.i(REC_TAG, "$op result: OK")
@@ -2680,10 +2717,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    AppLog.i(REC_TAG, "$op result: ${error.description()}")
+                    AppLog.i(REC_TAG, "$op result: ${describeError(error)}")
                     runOnUiThread {
                         Toast.makeText(this@TAKPilot2GoFlightActivity,
-                            "$failurePrefix: ${error.description()}", Toast.LENGTH_SHORT).show()
+                            "$failurePrefix: ${describeError(error)}", Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -2814,10 +2851,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         val homeSet = hud?.homeSet == true
         rthButton.setImageResource(if (homeSet) R.drawable.ic_rth_home_set else R.drawable.ic_rth)
         if (homeSet) {
-            homeSource?.setGeoJson(Feature.fromGeometry(Point.fromLngLat(hud!!.homeLon, hud.homeLat)))
+            // The home point does not move once set — rebuilding its GeoJSON every 500ms tick
+            // was pure allocation for a value that changes once per connect.
+            if (hud!!.homeLat != lastHomeLat || hud.homeLon != lastHomeLon) {
+                homeSource?.setGeoJson(Feature.fromGeometry(Point.fromLngLat(hud.homeLon, hud.homeLat)))
+                lastHomeLat = hud.homeLat
+                lastHomeLon = hud.homeLon
+            }
             homeLayer?.setProperties(visibility(Property.VISIBLE))
         } else {
             homeLayer?.setProperties(visibility(Property.NONE))
+            lastHomeLat = null
+            lastHomeLon = null
         }
         if (homeSet && !lastHomeSet) showNotice("Home Point Set")
         lastHomeSet = homeSet
@@ -2855,7 +2900,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // That is 5dp and 12dp of slack. The weighted spacer absorbs nothing at this point, and
         // overflow CLIPS THE MAP SILENTLY — no warning, no log. If a line has to be added here,
         // take the height from @dimen/flight_map_size first.
-        fpvOverlayText.text = buildString {
+        val overlayText = buildString {
             // LINE ORDER IS DELIBERATE, and matches the Autel sibling so a pilot reads the same
             // block in the same order on either aircraft (operator, 2026-08-02):
             //   1 callsign + speed   2 height   3 lat/lon   4 home
@@ -2892,7 +2937,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
             append('\n')
             if (hud != null && hud.hasFix) {
-                append("%.4f, %.4f".format(hud.lat, hud.lon))
+                append("%.4f, %.4f".format(java.util.Locale.US, hud.lat, hud.lon))
             } else {
                 append("—, —")
             }
@@ -2905,27 +2950,57 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             // already cover more directly. The values stay in the Hud object and the flight
             // record; only the HUD line is gone.
         }
+        // The String.format calls above still run every tick (the values are cheap to check
+        // only by building the string first), but skipping the TextView assignment when the
+        // result is byte-for-byte the same as last tick avoids an invalidate/relayout for
+        // static telemetry — landed, hovering dead-still, or between fix updates.
+        if (overlayText != lastOverlayText) {
+            fpvOverlayText.text = overlayText
+            lastOverlayText = overlayText
+        }
 
         if (hud == null || !hud.hasFix) return
 
         aircraftSource?.setGeoJson(Feature.fromGeometry(Point.fromLngLat(hud.lon, hud.lat)))
         aircraftLayer?.setProperties(iconRotate(hud.headingDeg.toFloat()))
-        map?.cameraPosition = CameraPosition.Builder()
-            .target(LatLng(hud.lat, hud.lon))
-            .zoom(currentMapZoom())
-            .build()
+        // Skip the CameraPosition rebuild when nothing that feeds it has moved — parked on the
+        // ground (or between fix updates) this ran the Builder/allocation twice a second for an
+        // identical camera position.
+        val mapZoom = currentMapZoom()
+        if (hud.lat != lastMapLat || hud.lon != lastMapLon || mapZoom != lastMapZoom) {
+            map?.cameraPosition = CameraPosition.Builder()
+                .target(LatLng(hud.lat, hud.lon))
+                .zoom(mapZoom)
+                .build()
+            lastMapLat = hud.lat
+            lastMapLon = hud.lon
+            lastMapZoom = mapZoom
+        }
 
         // Home->aircraft line: the pilot's "which way back" reference on a map that otherwise
-        // can't be panned to look around. Only meaningful once a home point exists.
+        // can't be panned to look around. Only meaningful once a home point exists. Guarded the
+        // same way — the line only needs rebuilding when an endpoint (aircraft or home) moved.
         if (homeSet) {
-            homeLineSource?.setGeoJson(
-                LineString.fromLngLats(listOf(
-                    Point.fromLngLat(hud.homeLon, hud.homeLat),
-                    Point.fromLngLat(hud.lon, hud.lat),
-                ))
-            )
+            if (hud.lat != lastHomeLineAircraftLat || hud.lon != lastHomeLineAircraftLon ||
+                hud.homeLat != lastHomeLineHomeLat || hud.homeLon != lastHomeLineHomeLon
+            ) {
+                homeLineSource?.setGeoJson(
+                    LineString.fromLngLats(listOf(
+                        Point.fromLngLat(hud.homeLon, hud.homeLat),
+                        Point.fromLngLat(hud.lon, hud.lat),
+                    ))
+                )
+                lastHomeLineAircraftLat = hud.lat
+                lastHomeLineAircraftLon = hud.lon
+                lastHomeLineHomeLat = hud.homeLat
+                lastHomeLineHomeLon = hud.homeLon
+            }
             homeLineLayer?.setProperties(visibility(Property.VISIBLE))
         } else {
+            lastHomeLineAircraftLat = null
+            lastHomeLineAircraftLon = null
+            lastHomeLineHomeLat = null
+            lastHomeLineHomeLon = null
             homeLineLayer?.setProperties(visibility(Property.NONE))
         }
     }

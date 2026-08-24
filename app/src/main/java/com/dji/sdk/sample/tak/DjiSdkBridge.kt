@@ -15,7 +15,6 @@ import dji.v5.manager.diagnostic.DJIDeviceHealthInfo
 import dji.v5.manager.diagnostic.DJIDeviceHealthInfoChangeListener
 import dji.v5.manager.diagnostic.DeviceHealthManager
 import dji.v5.manager.interfaces.SDKManagerCallback
-import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -81,7 +80,6 @@ object DjiSdkBridge {
         }
 
     private val isRegistrationStarted = AtomicBoolean(false)
-    private var activityRef: WeakReference<Activity>? = null
 
     /** True after onRegisterSuccess. The home screen polls this. */
     @Volatile
@@ -145,8 +143,6 @@ object DjiSdkBridge {
      * the first call for the lifetime of the process does anything.
      */
     fun registerAndConnect(activity: Activity) {
-        activityRef = WeakReference(activity)
-
         if (hasMissingPermissions(activity)) {
             AppLog.w(TAG, "registerAndConnect: permissions not yet granted, deferring")
             return
@@ -189,6 +185,14 @@ object DjiSdkBridge {
                 // Same reasoning, and more urgent: a stale obstacle distance reads as a live
                 // clearance measurement. It must go the instant the aircraft does.
                 DjiObstacleState.onProductDisconnected()
+                // §3 "stale reads" cleanup: these four hold read-back-from-the-aircraft state
+                // with no prior reset path — a swapped-in aircraft's screens went on showing
+                // the PREVIOUS aircraft's limits, lights, storage verdict and gimbal speed
+                // until (if ever) a fresh read-back happened to land.
+                FlightLimitsController.resetOnDisconnect()
+                AircraftLights.resetOnDisconnect()
+                AircraftStorage.resetOnDisconnect()
+                ControlResponse.resetOnDisconnect()
             }
 
             override fun onProductChanged(productId: Int) {

@@ -1,5 +1,6 @@
 package com.dji.sdk.sample.takpilot2
 
+import java.util.Locale
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -200,7 +201,7 @@ class ObstacleEdgeView @JvmOverloads constructor(
 
     /** Distance in feet on a filled pill, matching Explorer's readout. */
     private fun drawLabel(canvas: Canvas, cx: Float, cy: Float, meters: Float, caption: String = "") {
-        val text = caption + "%.0fft".format(meters * FEET_PER_METRE)
+        val text = caption + "%.0fft".format(Locale.US, meters * FEET_PER_METRE)
         textPaint.textSize = dp(15f)
         val tw = textPaint.measureText(text)
         val padH = dp(8f); val padV = dp(5f)

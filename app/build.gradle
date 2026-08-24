@@ -117,8 +117,25 @@ android {
         //     StreamTranscoder (348 dead lines) deleted. Flown 2026-08-21 — a short flight
         //     covering the changes that alter what the pilot and the team see, not the whole
         //     checklist.
-        versionCode 86
-        versionName "1.0.2"
+        // 87: v1.0.3 — the v1.0.0 code review's Severity C list, all 15 groups worked one at a
+        //     time. Cleanup, not new function: three unused files deleted plus five smaller dead
+        //     items; four objects now clear their read-back-from-the-aircraft state on
+        //     disconnect instead of showing the previous aircraft's values; the IR palette write
+        //     and the EV slider now read back what the camera actually holds instead of trusting
+        //     the write's own success; every pilot-facing error toast routes through
+        //     describeError() (this aircraft returns null descriptions); every camera key is
+        //     explicitly targeted at the main camera; the mini-map, home marker/line, HUD text
+        //     and three custom views skip their redraw when nothing changed, GeomagneticField
+        //     is cached instead of rebuilt every 500ms, and the zoom-follow listener stopped
+        //     allocating a Handler per event; the IR entry's mislabeled icons and a forbidden
+        //     Mini-2 example are fixed in the Field Guide, and its three colors now come from
+        //     the token file; Clear/Delete All on the Debug screen now confirm before acting;
+        //     a haversine near-antipode NaN, an out-of-range gimbal pitch and the antenna-aim
+        //     hysteresis wrap at ±180° are all guarded. Shared core: an inbound CoT is now
+        //     redacted before it's truncated into the log, and the XML parser is built once and
+        //     reused instead of per message. Not yet flown.
+        versionCode 87
+        versionName "1.0.3"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

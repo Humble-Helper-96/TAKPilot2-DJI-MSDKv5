@@ -8,6 +8,7 @@ import dji.sdk.keyvalue.value.camera.CameraExposureCompensation
 import dji.sdk.keyvalue.value.camera.CameraExposureMode
 import dji.sdk.keyvalue.value.camera.CameraMeteringMode
 import dji.sdk.keyvalue.value.camera.CameraMode
+import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
 import dji.v5.manager.KeyManager
@@ -29,6 +30,11 @@ object ExposureController {
     private const val TAG = "TP2Exposure"
     private const val PREFS = "takpilot2_tak"
     private const val KEY_EV = "exposure_ev"
+
+    /** Same convention as the flight activity's `MAIN_CAM` — every camera key this object
+     *  writes/reads is explicitly targeted at the main camera, never left to whatever the
+     *  SDK defaults an untargeted key to. */
+    private val MAIN_CAM = ComponentIndexType.LEFT_OR_MAIN
 
     private val EV_ZERO = CameraExposureCompensation.NEG_0EV
 
@@ -56,6 +62,14 @@ object ExposureController {
     private fun biased(nominal: CameraExposureCompensation): CameraExposureCompensation {
         val i = EV_ALL.indexOf(nominal)
         return EV_ALL[(i + HIDDEN_BIAS_STEPS).coerceIn(0, EV_ALL.size - 1)]
+    }
+
+    /** Inverse of [biased] — used only to turn a READ-BACK (the camera's own value, which
+     *  carries the hidden bias) back into the nominal figure the slider/label show the pilot. */
+    private fun unbiased(actual: CameraExposureCompensation): CameraExposureCompensation {
+        val i = EV_ALL.indexOf(actual)
+        if (i < 0) return actual
+        return EV_ALL[(i - HIDDEN_BIAS_STEPS).coerceIn(0, EV_ALL.size - 1)]
     }
 
     /** Stored EV, clamped into the slider range. */
@@ -126,7 +140,7 @@ object ExposureController {
         // already left. A success-then-failure pair would do both.
         val answered = java.util.concurrent.atomic.AtomicBoolean(false)
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyCameraMode),
+            KeyTools.createKey(CameraKey.KeyCameraMode, MAIN_CAM),
             CameraMode.VIDEO_NORMAL,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
@@ -156,7 +170,7 @@ object ExposureController {
      *  exposure either way. CENTER metering + PROGRAM auto — see the v4 field-note history. */
     fun applyExposureSettings(context: Context, onDone: () -> Unit = {}) {
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyCameraMeteringMode),
+            KeyTools.createKey(CameraKey.KeyCameraMeteringMode, MAIN_CAM),
             CameraMeteringMode.CENTER,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() = afterMetering(context, "OK", onDone)
@@ -175,14 +189,14 @@ object ExposureController {
     private fun afterMetering(context: Context, meteringResult: String, onDone: () -> Unit) {
         AppLog.i(TAG, "setMeteringMode(CENTER): $meteringResult")
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyExposureMode),
+            KeyTools.createKey(CameraKey.KeyExposureMode, MAIN_CAM),
             CameraExposureMode.PROGRAM,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "setExposureMode(PROGRAM): OK")
                     val ev = biased(savedEv(context))
                     KeyManager.getInstance().setValue(
-                        KeyTools.createKey(CameraKey.KeyExposureCompensation),
+                        KeyTools.createKey(CameraKey.KeyExposureCompensation, MAIN_CAM),
                         ev,
                         object : CommonCallbacks.CompletionCallback {
                             override fun onSuccess() {
@@ -219,7 +233,7 @@ object ExposureController {
 
     private fun <T> readback(keyInfo: dji.sdk.keyvalue.key.DJIKeyInfo<T>, label: String) {
         KeyManager.getInstance().getValue(
-            KeyTools.createKey(keyInfo),
+            KeyTools.createKey(keyInfo, MAIN_CAM),
             object : CommonCallbacks.CompletionCallbackWithParam<T> {
                 override fun onSuccess(v: T?) { AppLog.i(TAG, "readback $label=$v") }
                 override fun onFailure(error: IDJIError) {
@@ -234,14 +248,36 @@ object ExposureController {
     fun setEvAt(context: Context, index: Int, onDone: (String) -> Unit) {
         val nominal = EV_SLIDER[index.coerceIn(0, sliderMax)]
         val ev = biased(nominal)
+        val key = KeyTools.createKey(CameraKey.KeyExposureCompensation, MAIN_CAM)
         KeyManager.getInstance().setValue(
-            KeyTools.createKey(CameraKey.KeyExposureCompensation),
+            key,
             ev,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(TAG, "setExposureCompensation($ev) [biased from $nominal]: OK")
-                    saveEv(context, nominal)
-                    onDone(evLabel(nominal))
+                    // Safety rule 4: a success callback is not proof. Read back what the
+                    // camera actually holds before persisting/labeling — the label the pilot
+                    // sees, and the value the next screen entry adopts, must be the aircraft's
+                    // answer, not the request we just sent.
+                    KeyManager.getInstance().getValue(key,
+                        object : CommonCallbacks.CompletionCallbackWithParam<CameraExposureCompensation> {
+                            override fun onSuccess(v: CameraExposureCompensation?) {
+                                val readNominal = v?.let { unbiased(it) } ?: nominal
+                                AppLog.i(TAG, "exposure compensation read back: $v -> $readNominal")
+                                saveEv(context, readNominal)
+                                onDone(evLabel(readNominal))
+                            }
+
+                            override fun onFailure(error: IDJIError) {
+                                AppLog.w(TAG, "exposure compensation read-back failed: " +
+                                    error.description())
+                                // The write's own onSuccess already fired, so trust the request
+                                // as the least-bad answer rather than leaving the pilot's slider
+                                // unresponsive because the read-back alone timed out.
+                                saveEv(context, nominal)
+                                onDone(evLabel(nominal))
+                            }
+                        })
                 }
 
                 override fun onFailure(error: IDJIError) {

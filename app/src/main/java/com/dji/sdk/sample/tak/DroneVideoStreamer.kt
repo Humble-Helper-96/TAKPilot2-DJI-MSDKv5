@@ -85,7 +85,6 @@ class DroneVideoStreamer(
     @Volatile private var streaming = false
     @Volatile private var paramsSet = false
     @Volatile private var stopped = false
-    private var startNs = 0L
     private var frameCount = 0
     private var frameBytesSinceLog = 0L
 
@@ -111,7 +110,6 @@ class DroneVideoStreamer(
     fun start(): Boolean {
         stopped = false
         paramsSet = false
-        startNs = System.nanoTime()
 
         client.setLogs(false)
         client.setProtocol(if (config.tcp) Protocol.TCP else Protocol.UDP)

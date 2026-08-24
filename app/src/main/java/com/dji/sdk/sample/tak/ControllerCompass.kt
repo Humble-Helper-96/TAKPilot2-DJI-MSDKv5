@@ -28,6 +28,15 @@ object ControllerCompass {
     private var listener: SensorEventListener? = null
     private var loggedMissing = false
 
+    // Declination cache: azimuthTrueDeg() is called from the 2 Hz HUD tick, and building a
+    // GeomagneticField is a real spherical-harmonics computation, not a cheap lookup — done
+    // every 500ms it was work with no payoff, since declination barely moves over a few km.
+    // Rebuilt only when the operator fix has moved past DECLINATION_CACHE_DEG.
+    private var cachedDeclination: Double? = null
+    private var cachedFixLat: Double? = null
+    private var cachedFixLon: Double? = null
+    private const val DECLINATION_CACHE_DEG = 0.01   // ~1.1km at the equator
+
     fun start(context: Context) {
         if (listener != null) return
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
@@ -77,9 +86,22 @@ object ControllerCompass {
     fun azimuthTrueDeg(): Double? {
         val mag = azimuthMagDeg ?: return null
         val fix = OperatorLocation.latest ?: return null
-        val declination = GeomagneticField(
-            fix.latitude.toFloat(), fix.longitude.toFloat(),
-            fix.altitude.toFloat(), System.currentTimeMillis()).declination
-        return CameraSlantPoint.norm360(mag + declination)
+        return CameraSlantPoint.norm360(mag + declinationFor(fix))
+    }
+
+    private fun declinationFor(fix: android.location.Location): Double {
+        val lastLat = cachedFixLat
+        val lastLon = cachedFixLon
+        val stale = cachedDeclination == null || lastLat == null || lastLon == null ||
+            Math.abs(fix.latitude - lastLat) > DECLINATION_CACHE_DEG ||
+            Math.abs(fix.longitude - lastLon) > DECLINATION_CACHE_DEG
+        if (stale) {
+            cachedDeclination = GeomagneticField(
+                fix.latitude.toFloat(), fix.longitude.toFloat(),
+                fix.altitude.toFloat(), System.currentTimeMillis()).declination.toDouble()
+            cachedFixLat = fix.latitude
+            cachedFixLon = fix.longitude
+        }
+        return cachedDeclination!!
     }
 }

@@ -33,6 +33,12 @@ SCREEN_DP = 768.0
 REC_DECLARED_DP = 74.0
 TOLERANCE_DP = 2.0
 
+# The toolbar's row, in DP from the top of the screen — not a fraction of screenshot height.
+# Calibrated once against a reference 1920x1200px capture (RC Plus 2's real panel: 1200x1920px
+# portrait / 400dpi-bucket / 2.5x density, per DJI-RC-Plus-2-Hardware.md) where the toolbar
+# sampled cleanly at y=70px: 70px / 2.5 density = 28dp.
+TOOLBAR_Y_DP = 28.0
+
 
 def is_toolbar_bg(px):
     """True for the toolbar's blue (bg_toolbar.xml, #0D47A1 with a gradient to #0A3A80)."""
@@ -44,7 +50,15 @@ def main(path):
     im = Image.open(path).convert("RGB")
     w, h = im.size
     dp = w / SCREEN_DP
-    row = [im.getpixel((x, int(70 * h / 1200))) for x in range(w)]
+    # §3 tools bug: this used to be `70 * h / 1200` — a fraction OF THE SCREENSHOT'S OWN
+    # HEIGHT, which only lands on the toolbar when h happens to equal the exact reference
+    # capture's 1200px (i.e. only when the screenshot's aspect ratio matches the reference
+    # exactly). A screenshot with extra/missing status-bar rows, a different crop, or any
+    # other height variance on the same physical panel would silently sample the wrong row
+    # instead of failing loudly. Deriving y from the SAME px/dp scale already computed from
+    # width (dp) and a fixed DP offset is correct regardless of how h varies.
+    y = min(h - 1, int(TOOLBAR_Y_DP * dp))
+    row = [im.getpixel((x, y)) for x in range(w)]
 
     if not any(is_toolbar_bg(p) for p in row):
         sys.exit("no toolbar blue found — is the device on the flight screen?")

@@ -39,6 +39,9 @@ class RecordToggleView @JvmOverloads constructor(
     private val colorRecording = ContextCompat.getColor(context, R.color.tp_hud_toggle_active)
 
     fun setRecording(recording: Boolean) {
+        // No-op when nothing moved — called from the 2 Hz HUD tick, so without this the view
+        // invalidated twice a second for the entire flight regardless of recording state.
+        if (recording == isRecording) return
         isRecording = recording
         invalidate()
     }

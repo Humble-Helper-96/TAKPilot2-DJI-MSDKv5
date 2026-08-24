@@ -42,6 +42,9 @@ class SignalBarsView @JvmOverloads constructor(
     private val oval = RectF()
 
     fun setPercent(pct: Int?) {
+        // No-op when nothing moved — called from the 2 Hz HUD tick, so without this an
+        // unchanged/no-signal percent invalidated the view twice a second for the whole flight.
+        if (pct == percent) return
         percent = pct
         invalidate()
     }

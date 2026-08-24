@@ -427,14 +427,18 @@ class DroneTakBridge(
         pushPilotPli()
 
         val loc = lastLocation ?: run {
-            AppLog.d(TAG, "tick: no aircraft location pushed yet")
+            // §3 log hygiene: per-tick internals, not a state change/warning/error — AppLog's
+            // own documented tier for exactly this is v(), gated on both enabled AND verbose.
+            // At AppLog.d these built a string and wrote to the file (when enabled) on every
+            // 2s bridge tick regardless of the verbose setting.
+            AppLog.v(TAG, "tick: no aircraft location pushed yet")
             return
         }
         // FRESHNESS, not just presence — an aircraft that stopped talking must stop being
         // reported, or its CoT marker can never stale out on other clients (measured and
         // fixed on the Autel tree first, 2026-08-13).
         if (android.os.SystemClock.elapsedRealtime() - lastStateMs > TELEMETRY_FRESH_MS) {
-            AppLog.d(TAG, "tick: telemetry stale — not publishing the aircraft")
+            AppLog.v(TAG, "tick: telemetry stale — not publishing the aircraft")
             return
         }
         logReadinessIfChanged()
@@ -443,7 +447,7 @@ class DroneTakBridge(
         val lon = loc.longitude
         if (!isValidLat(lat) || !isValidLon(lon)) {
             // No GPS fix yet — skip this tick rather than send a bogus 0,0 marker.
-            AppLog.d(TAG, "tick: no valid GPS fix yet (lat=$lat lon=$lon)")
+            AppLog.v(TAG, "tick: no valid GPS fix yet (lat=$lat lon=$lon)")
             return
         }
         // ⚠ NOT a geodetic altitude, despite KeyAircraftLocation3D reusing a field named
@@ -489,7 +493,7 @@ class DroneTakBridge(
         }
 
         val absAlt = absoluteAlt(relAlt)
-        AppLog.d(TAG, "tick: lat=$lat lon=$lon relAlt=$relAlt absAlt=$absAlt " +
+        AppLog.v(TAG, "tick: lat=$lat lon=$lon relAlt=$relAlt absAlt=$absAlt " +
             "hdg=${"%.0f".format(heading)} " +
             "spd=${"%.1f".format(speed)} batt=$battery% flying=$isFlying tak.connected=${tak.isConnected}")
 
@@ -607,7 +611,7 @@ class DroneTakBridge(
     private fun pushCameraPoint(lat: Double, lon: Double, aglMeters: Double, aircraftHeading: Double) {
         val gimbal = lastGimbalAttitude
         if (gimbal == null) {
-            AppLog.d(TAG, "SPI skip: gimbal attitude not yet received")
+            AppLog.v(TAG, "SPI skip: gimbal attitude not yet received")
             return
         }
         val pitch = gimbal.pitch
@@ -625,7 +629,7 @@ class DroneTakBridge(
         if (pitchAdj > -1.0) {
             sensorFov = -1.0; sensorVfov = -1.0; sensorAzimuth = -1.0
             sensorElevation = pitchAdj; sensorRange = -1.0
-            AppLog.d(TAG, "SPI suppressed: camera at or above horizon " +
+            AppLog.v(TAG, "SPI suppressed: camera at or above horizon " +
                 "(pitch ${"%.1f".format(pitchAdj)}) — no ground intersection to publish")
             return
         }
@@ -645,7 +649,7 @@ class DroneTakBridge(
         // with the look-point the same calibration moves. (Bridge audit finding, 2026-08-20.)
         sensorElevation = pitchAdj
         sensorRange = gp.rangeMeters
-        AppLog.d(TAG, "SPI: pitch=$pitch yaw=$yaw heading=${"%.0f".format(aircraftHeading)} " +
+        AppLog.v(TAG, "SPI: pitch=$pitch yaw=$yaw heading=${"%.0f".format(aircraftHeading)} " +
             "az=${"%.0f".format(bearing)} alt=$aglMeters range=${Math.round(gp.rangeMeters)}m")
     }
 

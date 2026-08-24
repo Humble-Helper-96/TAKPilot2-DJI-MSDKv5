@@ -9,3 +9,4 @@ app/keystore.properties
 app/*.jks
 captures/
 .DS_Store
+__pycache__/

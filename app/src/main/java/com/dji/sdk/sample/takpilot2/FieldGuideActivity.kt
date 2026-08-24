@@ -404,11 +404,12 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(
-                live(LiveToggleView.State.OFF) to "Off",
-                live(LiveToggleView.State.LIVE) to "Video on",
-                live(LiveToggleView.State.RECONNECTING) to "Connects again",
-            ),
+            // §3 Field Guide content bug: this entry used to show the LIVE pill's icon states
+            // (Off / Video on / Connects again) — a copy-paste into the wrong entry, since the
+            // IR button isn't a LiveToggleView at all, it's a plain pill that goes green (see
+            // the body text below, which was already correct). Empty here, same as Lights
+            // right below — the body text is what actually describes this button's states.
+            emptyList(),
             "IR: the thermal camera",
             "Touch to change between the usual camera and the thermal camera. The button is " +
                 "green when the thermal camera is on.\n\n" +
@@ -430,7 +431,13 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            emptyList(),
+            // These are the LIVE button's own states — misplaced onto the IR entry above until
+            // this fix. This is where they actually belong.
+            listOf(
+                live(LiveToggleView.State.OFF) to "Off",
+                live(LiveToggleView.State.LIVE) to "Video on",
+                live(LiveToggleView.State.RECONNECTING) to "Connects again",
+            ),
             "LIVE: video to your team",
             "Starts and stops the live video to the video server of your team. Set the server " +
                 "in Pre-Flight Setup first.\n\n" +
@@ -486,7 +493,7 @@ class FieldGuideActivity : AppCompatActivity() {
             "Static marker: touch and hold the crosshair",
             "Touch the crosshair and hold it to put a static marker of the type Unknown. THIS " +
                 "MARKER DOES NOT MOVE. A second touch and hold puts a SECOND marker. The name " +
-                "is the callsign of the aircraft and a number, for example MINI2-P7.\n\n" +
+                "is the callsign of the aircraft and a number, for example I101-P7.\n\n" +
                 "Use it to keep a record of a position.",
         )
 
@@ -860,6 +867,14 @@ class FieldGuideActivity : AppCompatActivity() {
     }
 
     /** The TAK badge exactly as the toolbar builds it, dot tinted to the state described. */
+    // §3 cleanup: these used to be raw hex literals (0xFF4CAF50 etc.) duplicating tokens that
+    // already exist in takpilot_colors.xml — the CLAUDE.md rule this file otherwise follows
+    // ("colours come from the tokens... do not add a new Color.parseColor call site").
+    // Instance-level (not companion) because resolving a color token needs a Context.
+    private val connectedGreen by lazy { ContextCompat.getColor(this, R.color.tp_state_go) }
+    private val disconnectedRed by lazy { ContextCompat.getColor(this, R.color.tp_state_danger) }
+    private val noFixGrey by lazy { ContextCompat.getColor(this, R.color.tp_text_secondary) }
+
     private fun takBadge(connected: Boolean): View {
         val frame = android.widget.FrameLayout(this).apply { layoutParams = iconParams() }
         frame.addView(ImageView(this).apply {
@@ -869,7 +884,7 @@ class FieldGuideActivity : AppCompatActivity() {
         })
         frame.addView(ImageView(this).apply {
             setImageResource(R.drawable.bg_status_dot)
-            setColorFilter(if (connected) CONNECTED_GREEN else DISCONNECTED_RED)
+            setColorFilter(if (connected) connectedGreen else disconnectedRed)
             layoutParams = android.widget.FrameLayout.LayoutParams(dp(12), dp(12)).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
             }
@@ -885,7 +900,7 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun gps(hasFix: Boolean): View = ImageView(this).apply {
         setImageResource(R.drawable.ic_gps)
-        setColorFilter(if (hasFix) CONNECTED_GREEN else NO_FIX_GREY)
+        setColorFilter(if (hasFix) connectedGreen else noFixGrey)
         layoutParams = iconParams()
     }
 
@@ -916,7 +931,7 @@ class FieldGuideActivity : AppCompatActivity() {
         text = "AR"
         gravity = Gravity.CENTER
         setBackgroundResource(if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
-        setTextColor(if (on) CONNECTED_GREEN else Color.WHITE)
+        setTextColor(if (on) connectedGreen else Color.WHITE)
         alpha = if (on) 1f else 0.45f
         textSize = 12f
         setTypeface(null, android.graphics.Typeface.BOLD)
@@ -948,11 +963,5 @@ class FieldGuideActivity : AppCompatActivity() {
         private const val TAG = "TP2Guide"
         private const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         private const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
-
-        // Same values the flight screen tints these with, so a state shown here is the state
-        // the pilot will actually see.
-        private val CONNECTED_GREEN = 0xFF4CAF50.toInt()
-        private val DISCONNECTED_RED = 0xFFF44336.toInt()
-        private val NO_FIX_GREY = 0xFFAAAAAA.toInt()
     }
 }
