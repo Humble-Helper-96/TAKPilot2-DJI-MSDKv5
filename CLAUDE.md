@@ -87,7 +87,25 @@ v4 tree and the V1 crib sheet are the places to look.
 7. **Test the hardware before you design around its limits.** Three wrong "the SDK cannot do
    this" calls on the Autel sibling came from auditing one subsystem instead of the whole
    surface.
-8. **`applicationId` is `com.anchortak.takpilot2djiv5` and must not change** — the DJI API
+8. ⚠ **THE GITHUB REPOSITORY IS PUBLIC.** Verified 2026-08-24 against the API. `app/keystore.properties`
+   (the AnchorTAK signing key) and `app/dji-key.properties` are gitignored and untracked — confirmed
+   — and they must stay that way, because a single `git add -A` on a public repository publishes
+   irreversibly. The `AIRCRAFT_API_KEY` line in `gradle.properties` stays EMPTY.
+   ⚠ This file used to say the key was in the history and that the repository was private
+   "because" of it. **Both were false**, checked commit by commit: the only value that line has
+   ever held is `PLACEHOLDER_DJI_KEY`, and the real key is in no commit. The danger of the old
+   wording was not the false alarm — it was the words "the repository is private", which would
+   make committing a secret look survivable.
+   ⚠ **THE MSDKv4 SIBLING IS NOT CLEAN, AND THAT IS WHERE THE CLAIM CAME FROM.** Its real DJI
+   key sits in `app/src/main/AndroidManifest.xml` across 50 commits reachable from
+   `origin/main` on a PUBLIC repository. Commit `8af6367` ("Move the DJI SDK key out of the
+   manifest, ahead of open-sourcing this repo") took it out of the working tree and nobody
+   took it out of the HISTORY — then the repository went public. **Removing a secret from
+   HEAD does nothing; `git log -S` still finds it.** That key needs ROTATING, not scrubbing:
+   a history rewrite cannot un-publish what was already fetchable. Checked 2026-08-24 by
+   searching every commit in all three trees for the actual values — the signing passwords
+   appear in none of them, and this tree's key appears in none of them.
+8b. **`applicationId` is `com.anchortak.takpilot2djiv5` and must not change** — the DJI API
    key is registered against this exact id. A suffix, flavour or side-by-side variant breaks
    aircraft registration outright.
 9. **A completion callback can fire TWICE.** This was observed on the MSDKv4 sibling. Make

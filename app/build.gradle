@@ -8,9 +8,18 @@ apply plugin: 'kotlin-kapt'
 // manifest placeholder is empty and the SDK registration fails with a clear error, which is
 // better than a build that silently produces an application no aircraft will talk to.
 //
-// The AIRCRAFT_API_KEY line in gradle.properties is a fallback and MUST STAY EMPTY. The key was
-// committed there until 2026-08-16 — it is still in this repository's history, which is why the
-// repository is private. Putting a key back in that file publishes it again.
+// The AIRCRAFT_API_KEY line in gradle.properties is a fallback and MUST STAY EMPTY.
+//
+// ⚠ THIS REPOSITORY IS PUBLIC. Verified 2026-08-24 against the GitHub API ("private": false).
+// Anything committed here is published irreversibly, so the key never goes in a tracked file.
+//
+// ⚠ AND THE OLD WARNING HERE WAS WRONG. It said the key had been committed to gradle.properties
+// until 2026-08-16 and was "still in this repository's history, which is why the repository is
+// private" — every part of that is false. Checked commit by commit: the only value that key line
+// has ever held in history is the literal PLACEHOLDER_DJI_KEY, the real key appears in NO commit,
+// and the repository is public. A stale claim like that is worse than none: it invites either a
+// panic about a leak that does not exist, or a fatal assumption that this repository is a safe
+// place for a secret. Putting a key back in that file publishes it again.
 //
 // The key is bound to the applicationId in the DJI developer console.
 def djiApiKey = project.hasProperty('AIRCRAFT_API_KEY') ? project.AIRCRAFT_API_KEY : ''
