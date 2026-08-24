@@ -146,7 +146,7 @@ android {
         //     erased the icon list with no error. Fixed generally (strip_leading() skips
         //     comments, not just whitespace), which also recovered a third, not-yet-reported
         //     instance: the LIVE entry's icons, moved there in v1.0.3, were silently blank too.
-        //     Not yet flown.
+        //     Flown 2026-08-23 — a ~15-minute mission, clean, no issues reported.
         versionCode 88
         versionName "1.0.4"
         buildConfigField "String", "BUILD_TIME",
