@@ -83,9 +83,10 @@ import com.taklite.util.AppLog
  * prose. **No sentence was deleted to do it.** Every safety fact still reads, in the same
  * words, in the paragraph where it belongs.
  *
- * Three boxes are left. Two are the two Autel keeps — the calibration note and "the AR view
- * is not accurate for a point". The third is "nothing in this build has flown", which is
- * temporary and goes when the aircraft flies.
+ * The boxes left are the ones Autel keeps — the calibration note and "the AR view is not
+ * accurate for a point" — plus the facts the aircraft itself taught us: the spotlight disabling
+ * obstacle sensing, and a message continuing when the panel is closed. The temporary "nothing in
+ * this build has flown" box is GONE (2026-08-24); it had been stale since v1.0.0.
  *
  * **Keep it that way.** A new `warn` or `note` here is a fourth box, and the reason to reach
  * for one is almost always that the sentence matters — which is true of most sentences in
@@ -107,8 +108,8 @@ import com.taklite.util.AppLog
  * What survived BOTH cuts and must not be trimmed again, because each one changes what a pilot
  * does: the battery-refusal warning, the crosshair angle and error table, the marker refusal
  * conditions, what a marker delete does NOT do, the certificate rule on channels, the FAA
- * "not an approval" warning, the obstacle "no mark is not clear" warning, and the
- * "nothing in this build has flown" warning.
+ * "not an approval" warning, the obstacle "no mark is not clear" warning, and the spotlight
+ * disabling the obstacle sensors.
  *
  * ## The controller buttons
  *
@@ -150,12 +151,16 @@ class FieldGuideActivity : AppCompatActivity() {
         title("TAKPilot2 Field Guide")
         lede("What each control does, on the screen and in Pre-Flight Setup. Read it before " +
             "you fly. This is the build for the smart controller.")
-        // ⚠ THIS WARNING WAS SECTION 5. That section was removed on 2026-08-20 to shorten the
-        // guide; the warning moved here instead of going with it, because it is on the
-        // must-not-trim list and it is still true. DELETE IT WHEN THE AIRCRAFT HAS FLOWN, at
-        // the same time as versionName loses its -dev suffix — not before, and not separately.
-        warn("NOTHING IN THIS BUILD HAS FLOWN. The app was tested on the ground only. " +
-            "Examine each control on your first flight, and keep the aircraft in sight.")
+        // ⚠ A "NOTHING IN THIS BUILD HAS FLOWN" WARNING STOOD HERE UNTIL 2026-08-24, AND IT WAS
+        // FOUR RELEASES STALE. Its own comment said to delete it when the aircraft had flown, at
+        // the same time as versionName lost its -dev suffix. That happened at v1.0.0; the suffix
+        // went and this did not, so the guide opened by telling pilots the build had never flown
+        // through v1.0.x, v1.1.0 and v1.2.0 — every one of which had. The operator caught it.
+        //
+        // A FALSE SAFETY NOTICE COSTS MORE THAN A MISSING ONE: it is the first thing in the
+        // guide, and a pilot who learns that the loudest warning is untrue has been taught to
+        // discount the rest. If a temporary warning is ever added here again, tie it to
+        // something that CANNOT be forgotten rather than to a comment asking a human to remember.
 
         sectionOne()
         sectionTwo()

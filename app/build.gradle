@@ -215,7 +215,12 @@ android {
         //      2.90m, where the vehicle's height should have given a 1.5m step. Removed rather
         //      than shipped as something it is not.
         //      Flown 2026-08-24.
-        versionCode 106
+        // 107: v1.2.0 as shipped. ⚠ THE FIELD GUIDE OPENED WITH "NOTHING IN THIS BUILD HAS
+        //      FLOWN" AND HAD DONE SINCE v1.0.0 — four releases, every one of them flown. Its own
+        //      comment said to delete it when versionName lost its -dev suffix; the suffix went
+        //      and the warning did not. Caught by the operator on release day. A false safety
+        //      notice at the top of the guide teaches a pilot to discount the true ones below it.
+        versionCode 107
         versionName "1.2.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""

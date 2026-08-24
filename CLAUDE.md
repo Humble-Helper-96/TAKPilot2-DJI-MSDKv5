@@ -373,3 +373,15 @@ was attached to the `MapView`, so with the vision view showing it reached a view
 ⚠ **Specification §4.12 does NOT yet describe the vision view.** It is a SLOT — Autel and MSDKv4
 fly airframes without it — and the wording needs the operator's agreement before the shared
 specification is touched.
+
+⚠ **AND THE FIELD GUIDE OPENED WITH A LIE FOR FOUR RELEASES.** "NOTHING IN THIS BUILD HAS FLOWN"
+stood at the top of the guide from before v1.0.0 until the operator caught it on 2026-08-24 —
+through v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4, v1.1.0 and v1.2.0, every one of which had flown.
+The warning carried a comment saying to delete it when `versionName` lost its `-dev` suffix. The
+suffix went at v1.0.0. The warning did not, because the only thing tying them together was a
+comment asking a human to remember.
+
+**A FALSE SAFETY NOTICE COSTS MORE THAN A MISSING ONE.** It was the first thing in the guide, and
+a pilot who discovers the loudest warning is untrue has been taught to discount the rest of them
+— including the ones that matter, like the spotlight disabling obstacle sensing. If a temporary
+warning is ever added again, tie it to something that CANNOT be forgotten, not to a comment.
