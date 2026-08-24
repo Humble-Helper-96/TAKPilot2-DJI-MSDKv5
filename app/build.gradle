@@ -147,8 +147,42 @@ android {
         //     comments, not just whitespace), which also recovered a third, not-yet-reported
         //     instance: the LIVE entry's icons, moved there in v1.0.3, were silently blank too.
         //     Flown 2026-08-23 — a ~15-minute mission, clean, no issues reported.
-        versionCode 88
-        versionName "1.0.4"
+        // 89: v1.1.0 — three operator requests. (1) The warning banner can now be CLOSED: a ✕
+        //     beside the text hides the set of faults on it. The close is keyed to the exact
+        //     fault set, so any change — a new fault, a worse one, a cleared fault returning —
+        //     brings the banner straight back; a pilot cannot close it and miss the next thing
+        //     the aircraft says. (2) The still-image pill is gone from the flight screen and the
+        //     Field Guide; the controller's own shutter button takes the still. The photo code
+        //     is untouched, only the control is removed. (3) L2, which was deliberately
+        //     unassigned, now opens an ACCESSORY PANEL for the AL1 light and the AS1 speaker:
+        //     light on/off, brightness, steady/strobe; speaker play/stop, volume, repeat.
+        //     ⚠ NOT YET ON HARDWARE. The speaker goes through MegaphoneManager, which the M4D
+        //     capability file declares. The LIGHT HAS NO MANAGER IN MSDK v5 at all and two
+        //     candidate key groups, and which one a 4TD answers cannot be known from the desk —
+        //     AircraftAccessories asks both and keeps whichever replies. Bench-verify the light
+        //     first; if neither route answers, the payload index is the first thing to walk.
+        // 90: v1.1.0 as flown on the bench, after a long hardware session on 2026-08-23. The
+        //     accessory panel is the whole of it and almost nothing survived first contact:
+        //     the AL1 is NOT reachable by any light key (SpotLightKey and PayloadKey.KeyLightCtrl
+        //     are both refused) — it is a PSDK payload on port EXTERNAL driven by three widgets,
+        //     found by asking the aircraft to NAME its payloads rather than by which key replied,
+        //     after the SPEAKER's port answered a light key with plausible defaults and sent the
+        //     first build chasing a light that was not there. The speaker is MegaphoneManager at
+        //     index UPSIDE. Four bugs behind "it does not work", all of them ours: a read-back on
+        //     a fixed timer that missed the payload's answer by 19ms; a pull-after-write racing
+        //     the push feed and returning half-built frames (the pill blinking off and on); a
+        //     write of a value the payload already held waiting for a frame that never comes, and
+        //     a panel-wide guard that let it kill every other control; and every speaker
+        //     confirmation reading a cache one write behind. The light UI is now three toggles —
+        //     LOW, HIGH, STROBE, no separate on/off — because a pill labelled with its STATE read
+        //     as a button labelled with its ACTION and the light went unswitched through three
+        //     builds. Presses show green at once and revert on refusal: a deliberate, documented
+        //     exception to "show what the aircraft holds", allowed for a lamp and a loudspeaker
+        //     and nothing else. New: PUSH-TO-TALK through the AS1, on the panel and on R1, hold
+        //     only, closed by every exit path. Not built: a file picker — the aircraft reports
+        //     one slot, 'megaphone_file', and the file-list key is refused.
+        versionCode 90
+        versionName "1.1.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

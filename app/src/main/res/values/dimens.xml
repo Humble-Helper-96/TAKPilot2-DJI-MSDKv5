@@ -52,6 +52,15 @@
          covers the picture. -->
     <dimen name="flight_warning_text_size">13sp</dimen>
     <dimen name="flight_warning_max_width">380dp</dimen>
+    <!-- The banner's ✕ close button. A touch target, not a glyph box: 34dp is what the other
+         flight-screen pills use on this controller, and the ✕ it holds is about 9dp wide.
+         It ADDS to the banner width, thus max_width above no longer bounds the whole banner. -->
+    <dimen name="flight_warning_close_size">34dp</dimen>
+
+    <!-- The accessory panel (L2). 280dp of a 768dp screen — wide enough for a usable brightness
+         slider, and it still leaves the crosshair and the whole right-hand HUD column clear.
+         Do not grow it past a third of the width: it opens over live video in flight. -->
+    <dimen name="accessory_panel_width">280dp</dimen>
 
     <dimen name="flight_map_size">148dp</dimen>
     <!-- ⚠ DERIVED, NOT A FREE NUMBER: flight_map_size + the HUD column's paddingEnd, which is

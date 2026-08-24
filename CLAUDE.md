@@ -179,3 +179,55 @@ show less, check what it stopped showing.
 
 Open on the flight screen: dead vertical space in the right-hand column, and the collapse
 arrow sits alone on its own line when the banner is expanded.
+
+**2026-08-23: v1.1.0, three operator requests after the first flight.** The warning banner takes
+a ✕ that closes the set of faults on it (specification §4.8 has the new SLOT, and the rule that
+makes it safe: the close is keyed to the exact fault set and any change to that set brings the
+banner back). The shutter pill leaves the flight screen and the Field Guide, because the RC Plus
+2 has a shutter button of its own — the photo CODE is untouched, only the control is gone, and
+the shutter is now a specification SLOT. And L2, held free on purpose since 2026-08-20, opens a
+new ACCESSORY PANEL for the AL1 light and the AS1 speaker (specification §4.12).
+
+**The panel was then taken to the aircraft the same evening, and almost nothing survived first
+contact.** What it cost is worth more than what it does:
+
+- **The AL1 is NOT reachable by any light key.** `SpotLightKey` and `PayloadKey.KeyLightCtrl`
+  both looked right and both are refused. It is a PSDK payload on port `EXTERNAL` with three
+  widgets — `on/off`, `brightiness` (DJI's spelling), `blink` — driven by `setWidgetValue`. The
+  speaker is `MegaphoneManager` at index `UPSIDE`.
+- ⚠ **"IT ANSWERED" IS NOT "IT IS THERE".** The first port walk asked `KeyLightState` at each
+  index and the SPEAKER's port replied with a full, plausible `mode=CLOSE type=FLOOD
+  brightness=10`. It latched that port and drew a light control for a port with no light in it.
+  A payload is now found by asking the aircraft to NAME its payloads.
+- **Four separate bugs hid behind "it does not work", and all four were ours, not the SDK's:** a
+  read-back on a fixed timer that missed the payload's answer by 19ms; a pull-after-write racing
+  the push feed and returning half-built frames; a write of a value the payload already held
+  waiting for a frame that never comes (a payload pushes on CHANGE); and every speaker
+  confirmation reading a cache one write behind.
+- ⚠ **A CONTROL LABELLED WITH ITS STATE IS A CONTROL NOBODY PRESSES.** The light pill read
+  "ON"/"OFF"; the operator read "OFF" as what it WOULD DO and never touched it, so the light went
+  unswitched through three builds while an SDK fault was chased that did not exist. The panel
+  follows the flight screen's idiom now — the text names the control, the colour is the state.
+- **Presses paint green at once and revert on refusal.** A deliberate, documented exception to
+  "show what the aircraft holds", allowed because this is a lamp and a loudspeaker and because
+  the guess cannot outlive the push feed. ⚠ Do not copy it to a camera, gimbal or flight
+  controller.
+
+**PUSH-TO-TALK** through the AS1 landed the same night — the panel's HOLD TO TALK and R1, the
+same function. ⚠ **HOLD ONLY, NEVER A TOGGLE, AND THAT IS A SAFETY DECISION**: a toggle can
+leave a hot microphone broadcasting from an aircraft over a public area with nobody aware.
+`SpeakerTalk.stop()` is called from the panel closing, `onPause` and `onDestroy`, so no path
+through the application leaves the microphone open. ⚠ **IT HAS NOT BEEN ON THE AIRCRAFT** — it
+was written after the bench session ended.
+
+Two things the panel is NOT, both deliberate: it does not upload audio to the speaker, and it
+has no toolbar pill, so **the ◀ ACC hint chip is the only sign it exists**. Do not hide that
+chip. A FILE PICKER IS NOT POSSIBLE: `SpeakerKey.KeyAudioFileList` is refused and the payload
+reports a single slot named `megaphone_file`, so there is nothing to choose between.
+
+**Open, and NOT from this work: the zoom pill can open stale.** On a cold start with the camera
+left zoomed, the pill showed 1.5x while the camera was at its widest (24mm f35). The write of
+1.0 succeeded every time; the RATIO the app held was stale. Note what is missing from that
+session's log — `camera state adopted from the aircraft` never appears at all, so the entry
+migration from the WIDE camera never completed its adoption. Exercising the camera in DJI Pilot
+2 cleared it, which is a warm cache and not a fix.

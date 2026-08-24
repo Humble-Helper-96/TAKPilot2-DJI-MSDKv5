@@ -376,11 +376,9 @@ class FieldGuideActivity : AppCompatActivity() {
             anchor = ANCHOR_AR,
         )
 
-        entry(
-            listOf(image(R.drawable.ic_camera_shutter) to "Photo"),
-            "Photo",
-            "Takes a photo. The app saves it to the card in the aircraft, not to the controller.",
-        )
+        // NO "PHOTO" ENTRY SINCE 2026-08-23. The shutter pill was removed from the flight screen
+        // — the controller's own shutter button takes the still — and this guide documents what
+        // the screen shows, not what the aircraft can do on its own.
 
         entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
@@ -548,9 +546,42 @@ class FieldGuideActivity : AppCompatActivity() {
                 "L1 is the crosshair as a button. Press it to put the quick marker where " +
                 "the crosshair points. Press and hold it to put a new static marker there. " +
                 "Each hold makes a new marker.\n\n" +
-                "L2 does nothing now.\n\n" +
+                "L2 opens and closes the accessory panel. This is the ONLY way to the " +
+                "panel. There is no button for it on the screen.\n\n" +
                 "L3 changes between the usual camera and the thermal camera, the same as " +
                 "the IR button.",
+        )
+
+        entry(
+            emptyList(),
+            "The accessory panel (L2)",
+            "Controls the light and the speaker on the aircraft. Press L2 to open it and L2 " +
+                "again to close it. You can also touch the ✕ in the corner of the panel.\n\n" +
+                "The panel shows only the parts that answer. If the light is not fitted, " +
+                "there is no light section.\n\n" +
+                "For the light there are three buttons: LOW, HIGH and STROBE. Touch one to put " +
+                "the light in that state. Touch the same button again to turn the light off. " +
+                "STROBE always flashes at full brightness.\n\n" +
+                "For the speaker: SOUND plays and stops, REPEAT plays again and again, and a " +
+                "slider sets the volume.\n\n" +
+                "TO SPEAK THROUGH THE AIRCRAFT, hold HOLD TO TALK, or hold the R1 button on " +
+                "the controller. The two do the same. Speak into the controller. The button " +
+                "shows ON AIR while the aircraft sends your voice.\n\n" +
+                "You must HOLD the button. The aircraft stops when you let go. This is on " +
+                "purpose: a button that stays on can leave the aircraft loud when you do not " +
+                "know it.\n\n" +
+                "A button is GREEN when that function is on. It is grey when the function is " +
+                "off. It is AMBER when the aircraft has not said yet.\n\n" +
+                "SOUND plays the sound that is ALREADY on the speaker. This app does not put " +
+                "sounds on the speaker. If the speaker is empty, SOUND makes no sound. To send " +
+                "your own words, use HOLD TO TALK.\n\n" +
+                "Each control shows what the AIRCRAFT reports, not what you asked for. Two " +
+                "dashes (--) mean the aircraft did not answer. If a change does not happen, " +
+                "a message tells you at the top of the screen.",
+            listOf(
+                "MOVE THE VOLUME SLIDER AND LET GO. The new value goes to the aircraft when " +
+                    "you lift your finger, not while you move it.",
+            ),
         )
 
         sub("The readout: right side")

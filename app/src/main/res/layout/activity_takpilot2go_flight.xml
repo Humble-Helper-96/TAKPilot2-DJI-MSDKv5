@@ -78,26 +78,54 @@
 
          Moved from 88dp to 64dp and restyled 2026-08-14 (conformance D5) to match the Autel
          sibling: white 15sp bold on a background the activity tints by severity, instead of
-         tinted text on a fixed dark-red backing. -->
-    <TextView
-        android:id="@+id/flightDiagnostics"
+         tinted text on a fixed dark-red backing.
+
+         THE CLOSE BUTTON (operator, 2026-08-23). The banner had no way to leave the screen: it
+         stayed until the aircraft cleared the fault, and a standing fault the pilot has read and
+         accepted covered the video for the rest of the flight. The ✕ is a REAL button beside the
+         text, not a hidden gesture, because the tap already means "expand".
+         ⚠ A close hides ONE SET OF FAULTS. The activity remembers what was closed, and any change
+         to the live set brings the banner back — see [warningDismissedSignature]. -->
+    <LinearLayout
+        android:id="@+id/flightDiagnosticsRow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginTop="64dp"
         android:layout_marginStart="16dp"
         android:background="@drawable/bg_warning_banner"
-        android:letterSpacing="0.03"
-        android:maxWidth="@dimen/flight_warning_max_width"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
-        android:text=""
-        android:textColor="@color/tp_text_primary"
-        android:textSize="@dimen/flight_warning_text_size"
-        android:textStyle="bold"
-        android:visibility="gone" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/flightDiagnostics"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.03"
+            android:maxWidth="@dimen/flight_warning_max_width"
+            android:paddingStart="12dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text=""
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/flight_warning_text_size"
+            android:textStyle="bold" />
+
+        <!-- Sized to the specification's minimum touch target (§7), not to the glyph: a 13sp ✕
+             is about 9dp across and unhittable with a thumb over live video. -->
+        <TextView
+            android:id="@+id/flightDiagnosticsClose"
+            android:layout_width="@dimen/flight_warning_close_size"
+            android:layout_height="@dimen/flight_warning_close_size"
+            android:contentDescription="Close this warning"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/flight_warning_text_size"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <!-- DEBUG resource overlay: memory, CPU and the TAK contact count. Hidden unless switched
          on in the Debug screen, and off by default — it covers live video.
@@ -130,9 +158,11 @@
     <!-- HARDWARE-BUTTON HINTS, DJI Pilot 2's own idiom for these slots: terse chips at the
          screen edge with an arrowhead pointing at the physical button (see
          pilot2-reference/pilot2-flight-screen.png — "◄ IR", "◄ ZOOM"). L1 is the top button
-         on the front-left column, L3 the bottom; the stack keeps that order, with L2's slot
-         empty because the button is unassigned. Above the resource row, below the AR edge
-         band. -->
+         on the front-left column, L3 the bottom; the stack keeps that order. Above the resource
+         row, below the AR edge band.
+
+         L2 carries the accessory panel since 2026-08-23; its slot held a bare Space before
+         that, because the button was deliberately unassigned. -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -153,15 +183,33 @@
             android:textSize="11sp"
             android:textStyle="bold" />
 
-        <!-- L2's slot, deliberately empty but present so the IR chip sits at L3's height.
-             60dp, set over two rounds of the operator's bezel judgement 2026-08-20 (the
-             first guess had IR riding at L2's height). The stack's bottom margin is 0 —
-             IR wanted 4dp more than the margin had left to give, so it sits directly on the
-             resource row's top edge, which is fine: that row is debug-only and hidden in
-             normal flight. -->
+        <!-- L2's slot. It was a bare 56dp Space until 2026-08-23, set over two rounds of the
+             operator's bezel judgement 2026-08-20 (the first guess had IR riding at L2's
+             height). ⚠ THE 56dp IS LOAD-BEARING: it is what puts the IR chip at L3's real
+             height on the bezel. The chip is about 18dp tall, so the two spacers below add up
+             to 56dp WITH it. Change one and change the other, or IR drifts off its button.
+             The stack's bottom margin is 0 — IR wanted 4dp more than the margin had left to
+             give, so it sits directly on the resource row's top edge, which is fine: that row
+             is debug-only and hidden in normal flight. -->
         <Space
             android:layout_width="1dp"
-            android:layout_height="56dp" />
+            android:layout_height="19dp" />
+
+        <TextView
+            android:id="@+id/hintL2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#66000000"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="2dp"
+            android:text="◀ ACC"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="19dp" />
 
         <TextView
             android:id="@+id/hintL3"
@@ -593,15 +641,11 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <ImageButton
-            android:id="@+id/flightShootPhotoButton"
-            android:layout_width="46dp"
-            android:layout_height="34dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Take photo (saves to aircraft SD card)"
-            android:padding="6dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_camera_shutter" />
+        <!-- THE SHUTTER PILL IS GONE (operator, 2026-08-23). The RC Plus 2 has a physical
+             shutter button and it takes the still on its own, so the pill was a second way to
+             do one thing and it cost 46dp in an action bar that has overflowed its width
+             before. The photo code stays in the activity — see [onShootPhotoTapped]; only the
+             control is removed. -->
 
         <TextView
             android:id="@+id/flightZoomButton"
@@ -668,5 +712,11 @@
             android:contentDescription="Start/stop recording to SD (not wired yet)" />
 
     </LinearLayout>
+
+    <!-- THE ACCESSORY PANEL (L2), LAST IN THE FILE ON PURPOSE. A FrameLayout draws in
+         declaration order, so this is on top of everything — including the crosshair. That
+         z-order is what stops a touch on a slider falling through to the video and dropping a
+         marker, the same reason the warning banner sits above the crosshair. -->
+    <include layout="@layout/view_accessory_panel" />
 
 </FrameLayout>

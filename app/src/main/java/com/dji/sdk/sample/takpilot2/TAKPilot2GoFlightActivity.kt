@@ -19,7 +19,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.dji.sdk.sample.R
 import com.dji.sdk.sample.tak.ArSettings
+import com.dji.sdk.sample.tak.AircraftAccessories
 import com.dji.sdk.sample.tak.AircraftLights
+import com.dji.sdk.sample.tak.SpeakerTalk
+import dji.v5.manager.aircraft.megaphone.MegaphoneStatus
+import dji.v5.manager.aircraft.megaphone.PlayMode
 import com.dji.sdk.sample.tak.CameraSlantPoint
 import com.dji.sdk.sample.tak.FlightLimitsController
 import com.dji.sdk.sample.tak.ZoomLadder
@@ -150,6 +154,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private var homeLineLayer: LineLayer? = null
     private lateinit var fpvNotice: TextView
     private lateinit var flightDiagnostics: TextView
+    private lateinit var flightDiagnosticsRow: View
+    private lateinit var flightDiagnosticsClose: TextView
     private lateinit var fpvAntennaArc: AntennaAimView
 
     /**
@@ -160,6 +166,48 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * the banner hides, thus a new set of faults always arrives collapsed.
      */
     private var warningExpanded = false
+
+    /**
+     * The set of faults the pilot has CLOSED, as the joined text of every line the banner was
+     * showing at the moment of the close. Null when nothing is closed.
+     *
+     * ⚠ A CLOSE HIDES ONE SET OF FAULTS, NEVER THE BANNER ITSELF. The signature is compared on
+     * every repaint, so the banner returns the instant the live set differs by one line — a new
+     * fault, a worse fault, or a fault that cleared and came back. A pilot cannot close the
+     * banner and then miss the next thing the aircraft says.
+     *
+     * This is the whole reason a close is safe here. The lesson from the 2026-08-19 banner work
+     * is that making something show less can turn a display quirk into a safety fault, so the
+     * only state a close can reach is "this exact set, already read".
+     */
+    private var warningDismissedSignature: String? = null
+
+    // ---- THE ACCESSORY PANEL (L2): the AL1 light and the AS1 speaker. See AircraftAccessories.
+    private lateinit var accessoryPanel: View
+    private lateinit var accessoryNone: TextView
+    private lateinit var accessoryLightBlock: View
+    private lateinit var accessoryLightBrightnessRow: View
+    private lateinit var accessoryLightLow: TextView
+    private lateinit var accessoryLightHigh: TextView
+    private lateinit var accessoryLightBlink: TextView
+    private lateinit var accessorySpeakerBlock: View
+    private lateinit var accessorySpeakerPlay: TextView
+    private lateinit var accessorySpeakerVolumeLabel: TextView
+    private lateinit var accessorySpeakerVolume: android.widget.SeekBar
+    private lateinit var accessorySpeakerLoop: TextView
+    private lateinit var accessorySpeakerStatus: TextView
+    private lateinit var accessorySpeakerTalk: TextView
+
+    /**
+     * True while a slider is being dragged, so [renderAccessoryPanel] leaves it alone.
+     *
+     * Without it a repaint mid-drag would snap the thumb back to the aircraft's last reported
+     * value and fight the pilot's finger. The write goes on the RELEASE, never on every step:
+     * a brightness slider dragged across its travel would otherwise be a keystroke burst of
+     * writes to a payload, which is the shape of the fault that crashed an aircraft on the Autel
+     * sibling (safety rule 3).
+     */
+    private var accessorySliderDragging = false
 
     private var flightShootPhotoButton: ImageButton? = null
 
@@ -297,6 +345,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
 
         fpvNotice = findViewById(R.id.fpvNotice)
         flightDiagnostics = findViewById(R.id.flightDiagnostics)
+        flightDiagnosticsRow = findViewById(R.id.flightDiagnosticsRow)
+        flightDiagnosticsClose = findViewById(R.id.flightDiagnosticsClose)
         fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         obstacles = findViewById(R.id.flightObstacles)
         obstacles.update(DjiObstacleState.faces)
@@ -310,6 +360,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // fall through and drop a marker.
         flightDiagnostics.setOnClickListener {
             warningExpanded = !warningExpanded
+            renderWarning()
+        }
+        // The ✕ closes the set of faults now on the banner. It is a separate view and not a
+        // second gesture on the text, because the text's tap already means "expand" and a
+        // long-press to close would be a third hidden gesture on one control.
+        flightDiagnosticsClose.setOnClickListener {
+            warningDismissedSignature = FlightWarnings.display()?.all?.joinToString("\n")
+            warningExpanded = false
+            AppLog.i(TAG, "warning banner closed by pilot: $warningDismissedSignature")
             renderWarning()
         }
         renderWarning()
@@ -583,6 +642,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
         AircraftLights.refresh { runOnUiThread { renderLightsButton() } }
 
+        // The accessory panel (L2). Bound now, opened only on the button — and it reads the
+        // aircraft on every open, so nothing is asked of the AL1 or the AS1 until a pilot wants
+        // them.
+        setupAccessoryPanel()
+        // The accessory state is a PUSH feed. Without this the panel only ever showed what was
+        // true at the moment it was opened, and a light switched from DJI Pilot 2 — or by our own
+        // write landing after its callback — never reached the screen.
+        AircraftAccessories.onChanged = { renderAccessoryPanel() }
+
         zoomButton = findViewById(R.id.flightZoomButton)
         zoomButton.setOnClickListener { onZoomTapped() }
 
@@ -617,9 +685,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             }
         }
 
-        flightShootPhotoButton = findViewById<ImageButton>(R.id.flightShootPhotoButton).also {
-            it.setOnClickListener { onShootPhotoTapped() }
-        }
+        // NO SHUTTER PILL SINCE 2026-08-23. The controller's own shutter button takes the still,
+        // so [flightShootPhotoButton] stays null for the life of the screen and [setShutterBusy]
+        // is a no-op. The photo sequence below is kept whole and working for the day a caller
+        // needs it again — a marker with a still attached is the obvious one.
 
         liveToggle = findViewById(R.id.flightStreamButton)
         liveToggle.setOnClickListener { onLiveToggleTapped() }
@@ -1109,13 +1178,19 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      *
      *   L1 tap  — the quick (dynamic) marker: same function as touching the crosshair.
      *   L1 hold — a static Unknown marker: same function as holding the crosshair.
-     *   L2      — unassigned, kept free on purpose.
+     *   L2      — the accessory panel: the AL1 light and the AS1 speaker (2026-08-23).
      *   L3      — thermal on/off: same function as the IR pill.
      *
      * One button for both marker kinds, the same tap/hold split the crosshair itself has —
      * so L1 IS the crosshair, in button form. Each route ends in the SAME function as its
      * on-screen control (the sibling's doctrine); the hint chips on the screen's left edge
      * say what the buttons do, DJI Pilot 2's own idiom for these slots.
+     *
+     * ⚠ L2 IS THE ONE EXCEPTION TO THAT DOCTRINE: the accessory panel has no on-screen control,
+     * so L2 is the only way to it. That was the operator's call (2026-08-23) — the action bar has
+     * overflowed its width before and a fourth pill was not worth the room. The consequence is
+     * that the ◀ ACC chip is not a reminder here, it is the ONLY sign the panel exists, so it
+     * must never be hidden, and the function is in the Field Guide for the same reason.
      *
      * The tap/hold split uses the framework's own tracking: startTracking() on the down,
      * onKeyLongPress for the hold, and the up only fires the tap when the long press has not
@@ -1125,6 +1200,23 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         when (keyCode) {
             android.view.KeyEvent.KEYCODE_F1 -> {
                 event.startTracking()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_F4 -> {
+                // R1 IS THE SAME FUNCTION AS THE TALK BUTTON, held the same way. repeatCount
+                // filters the auto-repeat the framework sends while a key is down; the channel
+                // opens once and the key-up closes it.
+                if (event.repeatCount == 0) {
+                    AppLog.i(TAG, "controller button R1 — talk")
+                    startTalking()
+                }
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_F2 -> {
+                if (event.repeatCount == 0) {
+                    AppLog.i(TAG, "controller button L2 — accessory panel")
+                    toggleAccessoryPanel()
+                }
                 return true
             }
             android.view.KeyEvent.KEYCODE_F3 -> {
@@ -1148,6 +1240,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_F4) {
+            AppLog.i(TAG, "controller button R1 released — talk ends")
+            SpeakerTalk.stop()
+            return true
+        }
         if (keyCode == android.view.KeyEvent.KEYCODE_F1) {
             // isCanceled is true when the long press already fired — the up then does nothing.
             if (!event.isCanceled) {
@@ -2599,16 +2696,393 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         toolbarBattery.setBands(crit, warn)
     }
 
+    /**
+     * Binds the accessory panel. Called once from onCreate; the panel itself stays hidden until
+     * L2.
+     */
+    private fun setupAccessoryPanel() {
+        accessoryPanel = findViewById(R.id.accessoryPanel)
+        accessoryNone = findViewById(R.id.accessoryNone)
+        accessoryLightBlock = findViewById(R.id.accessoryLightBlock)
+        accessoryLightBrightnessRow = findViewById(R.id.accessoryLightBrightnessRow)
+        accessoryLightLow = findViewById(R.id.accessoryLightLow)
+        accessoryLightHigh = findViewById(R.id.accessoryLightHigh)
+        accessoryLightBlink = findViewById(R.id.accessoryLightBlink)
+        accessorySpeakerBlock = findViewById(R.id.accessorySpeakerBlock)
+        accessorySpeakerPlay = findViewById(R.id.accessorySpeakerPlay)
+        accessorySpeakerVolumeLabel = findViewById(R.id.accessorySpeakerVolumeLabel)
+        accessorySpeakerVolume = findViewById(R.id.accessorySpeakerVolume)
+        accessorySpeakerLoop = findViewById(R.id.accessorySpeakerLoop)
+        accessorySpeakerStatus = findViewById(R.id.accessorySpeakerStatus)
+        accessorySpeakerTalk = findViewById(R.id.accessorySpeakerTalk)
+        // HOLD, not tap. The touch listener is the control: down opens the channel, up or cancel
+        // closes it. A click listener would be a toggle, and a toggle can leave the microphone
+        // open — see SpeakerTalk.
+        accessorySpeakerTalk.setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { v.isPressed = true; startTalking() }
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL -> { v.isPressed = false; SpeakerTalk.stop() }
+            }
+            true
+        }
+        SpeakerTalk.onChanged = { renderAccessoryPanel() }
+
+        // The panel eats every touch that lands on it. Without this the taps between the
+        // controls fall through to the video and drop a marker — the same hazard §4.8 records
+        // for the warning banner's tap.
+        accessoryPanel.setOnClickListener { }
+        findViewById<TextView>(R.id.accessoryClose).setOnClickListener { hideAccessoryPanel() }
+
+        accessoryLightLow.setOnClickListener { requestLightMode(LIGHT_LOW) }
+        accessoryLightHigh.setOnClickListener { requestLightMode(LIGHT_HIGH) }
+        accessoryLightBlink.setOnClickListener { requestLightMode(LIGHT_STROBE) }
+
+        accessorySpeakerPlay.setOnClickListener {
+            val playing = AircraftAccessories.speakerStatus == MegaphoneStatus.PLAYING
+            if (!claimAccessoryWrite("sound")) return@setOnClickListener
+            showPending("sound", !playing)
+            AircraftAccessories.setSpeakerPlaying(!playing) { confirmed ->
+                runOnUiThread {
+                    releaseAccessoryWrite("sound")
+                    clearPending("sound")
+                    renderAccessoryPanel()
+                    if (!confirmed) showNotice("The speaker refused", refused = true)
+                }
+            }
+        }
+        accessorySpeakerLoop.setOnClickListener {
+            val loop = AircraftAccessories.speakerPlayMode == PlayMode.LOOP
+            val next = if (loop) PlayMode.SINGLE else PlayMode.LOOP
+            if (!claimAccessoryWrite("repeat")) return@setOnClickListener
+            showPending("repeat", next == PlayMode.LOOP)
+            AircraftAccessories.setSpeakerPlayMode(next) { confirmed ->
+                runOnUiThread {
+                    releaseAccessoryWrite("repeat")
+                    clearPending("repeat")
+                    renderAccessoryPanel()
+                    if (!confirmed) showNotice("The speaker refused", refused = true)
+                }
+            }
+        }
+        accessorySpeakerVolume.max = AircraftAccessories.speakerVolumeRange.last
+        accessorySpeakerVolume.setOnSeekBarChangeListener(
+            object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: android.widget.SeekBar, p: Int, byUser: Boolean) {
+                    if (byUser) accessorySpeakerVolumeLabel.text = "Volume  $p"
+                }
+
+                override fun onStartTrackingTouch(bar: android.widget.SeekBar) {
+                    accessorySliderDragging = true
+                }
+
+                override fun onStopTrackingTouch(bar: android.widget.SeekBar) {
+                    accessorySliderDragging = false
+                    if (!claimAccessoryWrite("volume")) return
+                    AircraftAccessories.setSpeakerVolume(bar.progress) { confirmed ->
+                        runOnUiThread {
+                            releaseAccessoryWrite("volume")
+                            renderAccessoryPanel()
+                            if (!confirmed) showNotice("The speaker refused", refused = true)
+                        }
+                    }
+                }
+            })
+    }
+
+    /**
+     * The three brightness steps the pills write.
+     *
+     * Round numbers on the payload's own 0..100 scale, not thirds of it: LOW is meant to be
+     * usable at close range without blinding anyone, HIGH is everything the light has.
+     */
+    /**
+     * THE LIGHT'S THREE STATES, as the panel offers them. Each pill IS one of these, and each
+     * pill is a toggle: press the one the light is already in and the light goes dark.
+     */
+    private val LIGHT_LOW = "low"
+    private val LIGHT_HIGH = "high"
+    private val LIGHT_STROBE = "strobe"
+
+    private val BRIGHTNESS_LOW = 20
+    private val BRIGHTNESS_HIGH = 100
+
+    /**
+     * Which of the three the aircraft is in, or null when the light is dark or has not answered.
+     *
+     * Brightness is read as a BAND and not an exact value, so a level set from DJI Pilot 2 still
+     * lights the right pill. A blinking light is STROBE whatever its brightness — the pilot's
+     * question about a flashing light is not how bright it is.
+     */
+    private fun currentLightMode(): String? {
+        val on = AircraftAccessories.lightOn ?: return null
+        if (!on) return null
+        if (AircraftAccessories.lightBlink == true) return LIGHT_STROBE
+        val bright = AircraftAccessories.lightBrightness ?: return null
+        return if (bright <= 50) LIGHT_LOW else LIGHT_HIGH
+    }
+
+    /**
+     * Puts the light into [mode], or turns it off when it is already there.
+     *
+     * All three pills share ONE in-flight claim, because they are one control: a press of HIGH
+     * while LOW is still being written is the pilot changing their mind, not a second control.
+     */
+    /**
+     * Opens the live channel, after making sure this application may use the microphone.
+     *
+     * ⚠ THE PERMISSION IS CHECKED HERE AND NOT ASSUMED. `RECORD_AUDIO` is declared in the
+     * manifest but it is a RUNTIME permission, and a denied one makes the microphone produce
+     * silence with no error at all — the pilot would hold the button, see ON AIR, and broadcast
+     * nothing. The request is not made mid-press: a dialog over the flight screen while the
+     * pilot is holding a button is its own hazard, so the press is refused with a notice and the
+     * pilot can grant it between presses.
+     */
+    private fun startTalking() {
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            AppLog.w(TAG, "talk refused: no microphone permission")
+            showNotice("No microphone permission", refused = true)
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this, arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_MIC)
+            return
+        }
+        SpeakerTalk.start { ok ->
+            runOnUiThread {
+                renderAccessoryPanel()
+                if (!ok) showNotice("The speaker did not take the talk", refused = true)
+            }
+        }
+    }
+
+    private fun requestLightMode(mode: String) {
+        if (!claimAccessoryWrite("light")) return
+        val turningOff = currentLightMode() == mode
+        val brightness = when {
+            turningOff -> null
+            // STROBE IS ALWAYS FULL BRIGHTNESS — see the layout's note. A blinking light is one
+            // meant to be seen, and it does not share the LOW/HIGH choice.
+            mode == LIGHT_STROBE -> BRIGHTNESS_HIGH
+            mode == LIGHT_LOW -> BRIGHTNESS_LOW
+            else -> BRIGHTNESS_HIGH
+        }
+        val target = if (turningOff) null else mode
+        accessoryPending[LIGHT_LOW] = target == LIGHT_LOW
+        accessoryPending[LIGHT_HIGH] = target == LIGHT_HIGH
+        accessoryPending[LIGHT_STROBE] = target == LIGHT_STROBE
+        renderAccessoryPanel()
+        AircraftAccessories.applyLightState(
+            on = !turningOff,
+            brightness = brightness,
+            blink = mode == LIGHT_STROBE && !turningOff,
+        ) { confirmed ->
+            runOnUiThread {
+                releaseAccessoryWrite("light")
+                clearPending(LIGHT_LOW)
+                clearPending(LIGHT_HIGH)
+                clearPending(LIGHT_STROBE)
+                renderAccessoryPanel()
+                if (!confirmed) showNotice("The light did not change", refused = true)
+            }
+        }
+    }
+
+    private val accessoryWritesInFlight = HashSet<String>()
+
+    /**
+     * What a control is SHOWING while its write is in flight, before the aircraft has answered.
+     *
+     * ⚠ THIS IS A DELIBERATE EXCEPTION TO "SHOW WHAT THE AIRCRAFT HOLDS" (CLAUDE.md conventions,
+     * safety rule 4), and it is allowed here for reasons that do not generalise:
+     *
+     *  - The round trip is 240-840ms (measured, bench 2026-08-23), which is long enough that a
+     *    pill that does not move reads as a control that did not work — and the operator's first
+     *    reaction was to press it again.
+     *  - NOTHING HERE IS FLIGHT-CRITICAL. This is a lamp and a loudspeaker.
+     *  - The guess cannot outlive the truth. It is dropped the moment the write resolves, a
+     *    refusal reverts it AND says so on the notice, and the payload's push feed repaints the
+     *    panel regardless.
+     *
+     * ⚠ DO NOT COPY THIS TO A CAMERA, A GIMBAL OR THE FLIGHT CONTROLLER. On those, a control that
+     * claims a state the aircraft never took is the exact fault safety rule 4 exists to stop.
+     */
+    private val accessoryPending = HashMap<String, Boolean>()
+
+    /** [actual] unless the control is mid-write, in which case what the pilot asked for. */
+    private fun pendingOr(control: String, actual: Boolean?): Boolean? =
+        accessoryPending[control] ?: actual
+
+    /** Shows the asked-for state at once, then lets the write resolve it. */
+    private fun showPending(control: String, value: Boolean) {
+        accessoryPending[control] = value
+        renderAccessoryPanel()
+    }
+
+    private fun clearPending(control: String) {
+        accessoryPending.remove(control)
+    }
+
+    /**
+     * @return true when the caller may proceed with a write to [control].
+     *
+     * ⚠ PER CONTROL, NOT PER PANEL. It was one flag for the whole panel, and a write that went
+     * unanswered — which a write of an unchanged value always did — made every OTHER control
+     * dead until the watchdog expired. One stuck accessory must never take the rest of them with
+     * it.
+     */
+    private fun claimAccessoryWrite(control: String): Boolean {
+        if (!accessoryWritesInFlight.add(control)) {
+            AppLog.v(TAG, "accessory: $control press ignored, its write is still in flight")
+            return false
+        }
+        return true
+    }
+
+    private fun releaseAccessoryWrite(control: String) {
+        accessoryWritesInFlight.remove(control)
+    }
+
+    private fun toggleAccessoryPanel() {
+        if (accessoryPanel.visibility == View.VISIBLE) hideAccessoryPanel() else showAccessoryPanel()
+    }
+
+    /**
+     * Opens the panel on the AIRCRAFT'S state, never on the last one this screen drew.
+     *
+     * The read is issued every time the panel opens because the light and the speaker keep their
+     * settings across an app restart and these fields do not — the trap that opened the flight
+     * screen claiming "1X, white hot" while the aircraft was in thermal (CLAUDE.md conventions).
+     */
+    private fun showAccessoryPanel() {
+        accessoryPanel.visibility = View.VISIBLE
+        renderAccessoryPanel()
+        AircraftAccessories.refresh { renderAccessoryPanel() }
+        // The speaker has no push feed — it is polled while the panel is open so a sound that
+        // ends by itself does not leave SOUND green. Stopped again in hideAccessoryPanel.
+        AircraftAccessories.startSpeakerPolling()
+    }
+
+    private fun hideAccessoryPanel() {
+        accessoryPanel.visibility = View.GONE
+        accessoryPending.clear()
+        AircraftAccessories.stopSpeakerPolling()
+        // ⚠ CLOSING THE PANEL CLOSES THE MICROPHONE. See SpeakerTalk: no route through this
+        // application may leave the aircraft broadcasting.
+        SpeakerTalk.stop()
+        accessorySliderDragging = false
+    }
+
+    /**
+     * Paints the panel from what the aircraft has answered.
+     *
+     * ⚠ NOTHING HERE INVENTS A STATE. A null reads as "--" and its control is disabled, because
+     * a light pill that says OFF when nothing has answered is a claim about the aircraft, and on
+     * an aircraft in the dark it is the wrong one.
+     */
+    private fun renderAccessoryPanel() {
+        if (accessoryPanel.visibility != View.VISIBLE) return
+
+        val hasLight = AircraftAccessories.lightOn != null
+        val hasSpeaker = AircraftAccessories.speakerAnswered
+        accessoryLightBlock.visibility = if (hasLight) View.VISIBLE else View.GONE
+        accessorySpeakerBlock.visibility = if (hasSpeaker) View.VISIBLE else View.GONE
+        accessoryNone.visibility = if (hasLight || hasSpeaker) View.GONE else View.VISIBLE
+        if (!hasLight && !hasSpeaker) {
+            accessoryNone.text = "No light and no speaker answered.\nCheck they are fitted and powered."
+            return
+        }
+
+        if (hasLight) {
+            val mode = currentLightMode()
+            val known = AircraftAccessories.lightOn != null
+            accessoryLightBrightnessRow.visibility = View.VISIBLE
+            // Unknown leaves all three amber rather than claiming the light is dark — §4.6.
+            renderStatePill(accessoryLightLow,
+                pendingOr(LIGHT_LOW, if (known) mode == LIGHT_LOW else null))
+            renderStatePill(accessoryLightHigh,
+                pendingOr(LIGHT_HIGH, if (known) mode == LIGHT_HIGH else null))
+            renderStatePill(accessoryLightBlink,
+                pendingOr(LIGHT_STROBE, if (known) mode == LIGHT_STROBE else null))
+        }
+
+        if (hasSpeaker) {
+            val status = AircraftAccessories.speakerStatus
+            val playing = if (status == null) null else status == MegaphoneStatus.PLAYING
+            renderStatePill(accessorySpeakerPlay, pendingOr("sound", playing))
+
+            val vol = AircraftAccessories.speakerVolume
+            accessorySpeakerVolume.isEnabled = vol != null
+            if (!accessorySliderDragging && vol != null) accessorySpeakerVolume.progress = vol
+            accessorySpeakerVolumeLabel.text = if (vol == null) "Volume  --" else "Volume  $vol"
+
+            val loop = AircraftAccessories.speakerPlayMode
+            renderStatePill(accessorySpeakerLoop,
+                pendingOr("repeat", if (loop == null) null else loop == PlayMode.LOOP))
+
+            renderStatePill(accessorySpeakerTalk, SpeakerTalk.talking)
+            accessorySpeakerTalk.text =
+                if (SpeakerTalk.talking) "ON AIR" else "HOLD TO TALK"
+
+            accessorySpeakerStatus.text = when (status) {
+                MegaphoneStatus.PLAYING -> "Playing the loaded sound."
+                MegaphoneStatus.IDLE -> "Ready. Plays the sound already on the speaker."
+                MegaphoneStatus.IN_TRANSMISSION -> "Receiving a sound file."
+                MegaphoneStatus.TTS_IN_CONVERSION -> "Making speech from text."
+                MegaphoneStatus.IN_EXCEPTION -> "The speaker reports a fault."
+                else -> "The speaker did not report its state."
+            }
+        }
+    }
+
+    /**
+     * Paints one accessory pill from a three-state value: on, off, or not yet known.
+     *
+     * ⚠ THE LABEL NEVER CHANGES — the colour is the state. This is the flight screen's own idiom
+     * (the AR and IR pills) and it is here because the panel started out doing the opposite: the
+     * light pill read "ON" or "OFF", and on the bench 2026-08-23 the operator read the word "OFF"
+     * as what the button WOULD DO and never pressed it, so the light was never switched on
+     * through three builds of chasing an SDK fault that was not there.
+     *
+     * Green is on, neutral is off, amber is unknown — §4.6, where unknown is its own state and is
+     * never collapsed into off. Every pill in the panel goes through here so the three cannot
+     * drift apart.
+     */
+    private fun renderStatePill(pill: TextView, state: Boolean?) {
+        pill.setBackgroundResource(
+            when (state) {
+                true -> R.drawable.bg_ar_pill_active
+                false -> R.drawable.bg_zoom_pill
+                null -> R.drawable.bg_pill_unknown
+            }
+        )
+        // Unknown is still TOUCHABLE where the control has a sensible first action; it is the
+        // colour that says the state is not known, not a dead button.
+        pill.alpha = if (state == null) 0.75f else 1f
+    }
+
     private fun renderWarning() {
         val d = FlightWarnings.display()
         if (d == null) {
-            flightDiagnostics.visibility = View.GONE
+            flightDiagnosticsRow.visibility = View.GONE
             // Collapse with the banner. A pilot who opened it for the last set of faults must
             // not have the next one — a different fault, possibly worse — arrive pre-expanded
             // across the video.
             warningExpanded = false
+            // The same rule for the close: nothing is standing, so nothing stays closed. The
+            // next fault gets a fresh banner even if its text repeats what was closed before.
+            warningDismissedSignature = null
             return
         }
+        // Closed by the pilot, and the aircraft still says the SAME thing. Any change to the
+        // set falls through here and repaints — see [warningDismissedSignature].
+        val signature = d.all.joinToString("\n")
+        if (signature == warningDismissedSignature) {
+            flightDiagnosticsRow.visibility = View.GONE
+            return
+        }
+        warningDismissedSignature = null
         // Collapsed: the worst warning and a count. Expanded: every warning on its own line,
         // worst first. The arrow is the only hint that the banner opens at all, so it is on the
         // line whenever there is something behind the count.
@@ -2621,13 +3095,13 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // Severity goes on the BACKGROUND and the text stays white — specification §4.8, and
         // the same shape as the Autel sibling. Tinting the text instead left a red-on-dark-red
         // message that was the hardest thing on the screen to read at the moment it mattered.
-        flightDiagnostics.background?.setTint(
+        flightDiagnosticsRow.background?.setTint(
             ContextCompat.getColor(
                 applicationContext,
                 if (d.red) R.color.tp_warn_banner_red else R.color.tp_warn_banner_amber,
             )
         )
-        flightDiagnostics.visibility = View.VISIBLE
+        flightDiagnosticsRow.visibility = View.VISIBLE
     }
 
     /**
@@ -3069,6 +3543,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        // ⚠ NO HOT MICROPHONE IN THE BACKGROUND. See SpeakerTalk.
+        SpeakerTalk.stop()
         AppLog.v(TAG, "onPause")
         com.dji.sdk.sample.tak.ControllerCompass.stop()
         com.dji.sdk.sample.tak.CameraZoomFollow.disarm()
@@ -3114,6 +3590,13 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         DjiSdkBridge.onDiagnostics = null
         DjiObstacleState.onChanged = null
         TakDropMarkers.ui = null
+        SpeakerTalk.onChanged = null
+        SpeakerTalk.stop()
+        // The accessory state belongs to the AIRFRAME that is plugged in, not to this
+        // application, and AircraftAccessories is a process-wide object. Dropping it here stops
+        // the next flight screen opening on the last aircraft's answers — including which key
+        // route its light used, which a different aircraft need not share.
+        AircraftAccessories.reset()
         com.dji.sdk.sample.tak.TakMapMarkers.onMapDestroyed()
         if (::mapView.isInitialized) mapView.onDestroy()
         super.onDestroy()
@@ -3339,6 +3822,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
          *  untargeted key was accepted and discarded by this aircraft (2026-08-20). */
         private val MAIN_CAM = ComponentIndexType.LEFT_OR_MAIN
         private const val REQUEST_MEDIA_PROJECTION = 3001
+
+        /** Push-to-talk needs the microphone at runtime — see startTalking. */
+        private const val REQ_MIC = 3002
         private const val HUD_INTERVAL_MS = 500L
 
         private const val RESOURCE_LOG_INTERVAL_MS = 30_000L
