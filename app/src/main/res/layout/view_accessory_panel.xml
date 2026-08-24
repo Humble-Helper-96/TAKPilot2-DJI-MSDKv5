@@ -159,32 +159,109 @@
             android:layout_marginBottom="10dp"
             android:background="@color/tp_divider" />
 
-        <LinearLayout
+        <!-- THE THREE STANDARDISED MESSAGES. Each is its own toggle, the same shape as the
+             light's LOW/HIGH/STROBE: touch one to send it and play it, touch the playing one to
+             stop. Green is the message going out, amber is the upload, grey is idle.
+
+             ⚠ THERE IS NO SEPARATE "PLAY WHAT IS LOADED" CONTROL, and there must not be. The
+             speaker holds ONE sound and this application owns it, so "whatever is loaded" is
+             always the message that was sent last — a second control for it would be a button
+             whose only job is to replay the pill next to it.
+
+             ⚠ REPEAT IS GONE ON PURPOSE. Every message plays SINGLE. A standardised message
+             looping unattended over a public area is the loudspeaker form of the hot microphone
+             that push-to-talk's hold-only rule exists to prevent, and worse in one way: nobody
+             is holding anything, so nothing ends it. -->
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
+            android:paddingBottom="6dp"
+            android:text="Speaker"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/accessorySpeakerMessageRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal">
 
             <TextView
+                android:id="@+id/accessorySpeakerMsg1"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginEnd="8dp"
                 android:layout_weight="1"
-                android:text="Speaker"
+                android:background="@drawable/bg_zoom_pill"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="MSG 1"
                 android:textColor="@color/tp_text_primary"
-                android:textSize="14sp"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/accessorySpeakerPlay"
-                android:layout_width="62dp"
+                android:id="@+id/accessorySpeakerMsg2"
+                android:layout_width="0dp"
                 android:layout_height="34dp"
-                android:background="@drawable/bg_pill_unknown"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_zoom_pill"
+                android:ellipsize="end"
                 android:gravity="center"
-                android:text="SOUND"
+                android:maxLines="1"
+                android:text="MSG 2"
                 android:textColor="@color/tp_text_primary"
-                android:textSize="13sp"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/accessorySpeakerMsg3"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_zoom_pill"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="MSG 3"
+                android:textColor="@color/tp_text_primary"
+                android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
+
+        <!-- REPEAT ×3. ARMS the next message: it is sent three times, thirty seconds apart,
+             and then stops by itself. It is NOT the SDK's loop mode — that never ends. Green
+             means armed.
+
+             ⚠ IT DEFAULTS OFF EVERY TIME THE FLIGHT SCREEN OPENS, deliberately, and is not
+             remembered. A run lasts over a minute with the aircraft speaking unattended, so it
+             should be a decision made for this mission, not one inherited from a previous one. -->
+        <TextView
+            android:id="@+id/accessorySpeakerRepeat"
+            android:layout_width="match_parent"
+            android:layout_height="34dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_zoom_pill"
+            android:gravity="center"
+            android:text="REPEAT ×3"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <!-- Shown INSTEAD of the pills when no message has been recorded. It names where to go,
+             because a pilot who wants a message now has no way to guess. §4.12: never a greyed
+             dead control. -->
+        <TextView
+            android:id="@+id/accessorySpeakerNoMessages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="No messages recorded.\nPre-Flight → 7. Speaker Messages."
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/accessorySpeakerVolumeLabel"
@@ -200,18 +277,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:enabled="false" />
-
-        <TextView
-            android:id="@+id/accessorySpeakerLoop"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_pill_unknown"
-            android:gravity="center"
-            android:text="REPEAT"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="12sp"
-            android:textStyle="bold" />
 
         <!-- PUSH TO TALK. Hold it — this is never a toggle, because a toggle can leave a hot
              microphone broadcasting from the aircraft with nobody aware (see SpeakerTalk).

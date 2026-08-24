@@ -21,6 +21,8 @@ import com.dji.sdk.sample.R
 import com.dji.sdk.sample.tak.ArSettings
 import com.dji.sdk.sample.tak.AircraftAccessories
 import com.dji.sdk.sample.tak.AircraftLights
+import com.dji.sdk.sample.tak.SpeakerBroadcast
+import com.dji.sdk.sample.tak.SpeakerMessages
 import com.dji.sdk.sample.tak.SpeakerTalk
 import dji.v5.manager.aircraft.megaphone.MegaphoneStatus
 import dji.v5.manager.aircraft.megaphone.PlayMode
@@ -191,10 +193,32 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private lateinit var accessoryLightHigh: TextView
     private lateinit var accessoryLightBlink: TextView
     private lateinit var accessorySpeakerBlock: View
-    private lateinit var accessorySpeakerPlay: TextView
+    private lateinit var accessorySpeakerMessageRow: View
+    private lateinit var accessorySpeakerNoMessages: TextView
+    private lateinit var accessorySpeakerRepeat: TextView
+
+    /**
+     * The L2 hint chip, which doubles as the ON AIR indicator.
+     *
+     * ⚠ THIS IS THE ONLY THING ON SCREEN THAT SAYS THE AIRCRAFT IS SPEAKING once the panel is
+     * closed — and a repeat run speaks, unattended, for over a minute. Closing the panel does not
+     * stop a message on purpose (a bounded message should finish; cutting it off mid-sentence is
+     * an operational failure), so the safety has to come from being visible instead. It is also
+     * exactly where the pilot must press to reach the stop.
+     */
+    private lateinit var hintL2: TextView
+
+    /**
+     * True when the next message is sent three times, thirty seconds apart.
+     *
+     * ⚠ HELD IN THE ACTIVITY AND NOT PERSISTED. A run speaks unattended for over a minute, so it
+     * is armed per mission rather than inherited from a previous one — a pilot who armed it last
+     * week must not get a surprise three-message broadcast today.
+     */
+    private var speakerRepeatArmed = false
+    private lateinit var accessorySpeakerMsgPills: List<TextView>
     private lateinit var accessorySpeakerVolumeLabel: TextView
     private lateinit var accessorySpeakerVolume: android.widget.SeekBar
-    private lateinit var accessorySpeakerLoop: TextView
     private lateinit var accessorySpeakerStatus: TextView
     private lateinit var accessorySpeakerTalk: TextView
 
@@ -1299,8 +1323,53 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private fun renderZoomPill() {
         zoomButton.setBackgroundResource(
             if (zoomRatio > 1.05) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
-        zoomButton.text = if (zoomRatio == Math.floor(zoomRatio)) ZoomLadder.label(zoomRatio)
-                          else "%.1fX".format(java.util.Locale.US, zoomRatio)
+        // ONE formatting path. This used to do its own whole-number test and fall back to
+        // "%.1fX", which meant the pill had two ways to render a ratio and they disagreed at the
+        // edges — 6.9958 came out "7.0X" here and "6X" through the adoption path. ZoomLadder.label
+        // now owns the whole question.
+        zoomButton.text = ZoomLadder.label(zoomRatio)
+    }
+
+    /**
+     * Reads the camera's OWN ratio and puts it on the pill.
+     *
+     * ⚠ THE RAMP IS NOT INSTANT. A lens switch leaves the camera moving toward the ratio it was
+     * given, so a read taken the moment the switch returns catches it mid-travel. The read is
+     * repeated until the value settles or the attempts run out — and the LAST answer is the one
+     * displayed, because the camera is the authority on where it ended up (safety rule 10).
+     */
+    private fun adoptZoomRatioFromCamera(attempt: Int = 1) {
+        if (attempt > ZOOM_ADOPT_MAX_ATTEMPTS) return
+        val key = KeyTools.createCameraKey(
+            CameraKey.KeyCameraZoomRatios, MAIN_CAM, CameraLensType.CAMERA_LENS_ZOOM)
+        KeyManager.getInstance().getValue(key,
+            object : CommonCallbacks.CompletionCallbackWithParam<Double> {
+                override fun onSuccess(value: Double?) {
+                    if (value == null || value <= 0) return
+                    runOnUiThread {
+                        if (irOn || sourceSwitchPending) return@runOnUiThread
+                        val settled = kotlin.math.abs(value - zoomRatio) < 0.01
+                        if (!settled) {
+                            AppLog.i(TAG, "zoom adopted from the camera: $value " +
+                                "(pill was $zoomRatio)")
+                            zoomRatio = value
+                            renderZoomPill()
+                            TakBridgeHolder.setZoomFactor(value)
+                            com.dji.sdk.sample.tak.CameraFov.refresh(irOn, value)
+                        }
+                        // Keep asking while it is still moving; stop once two reads agree.
+                        if (!settled) {
+                            handler.postDelayed(
+                                { adoptZoomRatioFromCamera(attempt + 1) }, ZOOM_ADOPT_RETRY_MS)
+                        }
+                    }
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    handler.postDelayed(
+                        { adoptZoomRatioFromCamera(attempt + 1) }, ZOOM_ADOPT_RETRY_MS)
+                }
+            })
     }
 
     private fun onCameraZoomChanged(ratio: Double) {
@@ -1332,14 +1401,24 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                         teleLive = nowSource == CameraVideoStreamSourceType.ZOOM_CAMERA
                         sourceSwitchPending = false
                         cameraStateSynced = true   // an entry migration counts as the adoption
-                        // The display follows the READ-BACK gear times the asked crop — the
-                        // camera's answer, never the request (bench, 2026-08-20).
+                        // ⚠ THE COMMENT HERE USED TO CLAIM A READ-BACK THAT DID NOT EXIST. It
+                        // said "the camera's answer, never the request" while assigning
+                        // `gearHeld * crop` — the value we ASKED for. On this path the camera is
+                        // still ramping from wherever it was left (7x on the bench, 2026-08-23)
+                        // and onCameraZoomChanged DISCARDS every ratio update while
+                        // sourceSwitchPending is true, so nothing afterwards necessarily
+                        // corrects it. That is how the pill came to read 1.5X over a 24mm
+                        // picture, and why three explanations for it were all wrong: the pill
+                        // was never showing a measured number in the first place.
+                        //
+                        // Provisional display so the pill is not blank, then ASK THE CAMERA.
                         zoomRatio = gearHeld * crop
                         renderZoomPill()
                         fpvView.setDigitalCrop(crop)
                         TakBridgeHolder.setDigitalCrop(crop)
                         TakBridgeHolder.setZoomFactor(zoomRatio)
                         com.dji.sdk.sample.tak.CameraFov.refresh(irOn, zoomRatio)
+                        adoptZoomRatioFromCamera()
                     }
                 }
 
@@ -2499,6 +2578,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
 
         cameraStateSynced = true
+        // ⚠ MEASURED 2026-08-24 and worth keeping written down: this camera declares
+        // ZoomRatiosRange{isContinuous=false, gears=[1, 3, 7, 14, 28, 56, 112]} — so 1X exists
+        // (a "the floor is 1.5" theory was wrong), and the dial reaches 112x, not the 28x this
+        // application once assumed was the top. The ratio is wide-referenced: f35 = ratio x 24,
+        // exact at twenty samples.
         irOn = source == CameraVideoStreamSourceType.INFRARED_CAMERA
         teleLive = source == CameraVideoStreamSourceType.ZOOM_CAMERA
         renderIrButtons()
@@ -2514,7 +2598,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                         if (value == null || value <= 0) return
                         runOnUiThread {
                             zoomRatio = value
-                            zoomButton.text = ZoomLadder.label(value)
+                            // ⚠ renderZoomPill(), NOT ZoomLadder.label(). label() is
+                            // "${'$'}{ratio.toInt()}X" and toInt() TRUNCATES, so the camera
+                            // reporting 6.9958 — which is its gear 7 — was drawn as "6X".
+                            // Measured 2026-08-24 after a restart with the camera left at 7x.
+                            // label()'s own documentation says it is for whole numbers only and
+                            // that fractional ratios are the caller's job; this caller was the
+                            // one place that ignored it and set the text itself.
+                            renderZoomPill()
                             TakBridgeHolder.setZoomFactor(value)
                             AppLog.i(TAG, "zoom adopted from the aircraft: $value")
                         }
@@ -2709,10 +2800,33 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         accessoryLightHigh = findViewById(R.id.accessoryLightHigh)
         accessoryLightBlink = findViewById(R.id.accessoryLightBlink)
         accessorySpeakerBlock = findViewById(R.id.accessorySpeakerBlock)
-        accessorySpeakerPlay = findViewById(R.id.accessorySpeakerPlay)
+        accessorySpeakerMessageRow = findViewById(R.id.accessorySpeakerMessageRow)
+        accessorySpeakerNoMessages = findViewById(R.id.accessorySpeakerNoMessages)
+        hintL2 = findViewById(R.id.hintL2)
+        // Tappable while a message is going out, so the stop is one touch from the indicator.
+        hintL2.setOnClickListener { if (SpeakerBroadcast.live) showAccessoryPanel() }
+        accessorySpeakerRepeat = findViewById(R.id.accessorySpeakerRepeat)
+        accessorySpeakerRepeat.setOnClickListener {
+            speakerRepeatArmed = !speakerRepeatArmed
+            AppLog.i(TAG, "repeat ×${SpeakerBroadcast.REPEAT_TIMES} " +
+                if (speakerRepeatArmed) "armed" else "off")
+            renderAccessoryPanel()
+        }
+        accessorySpeakerMsgPills = listOf(
+            findViewById(R.id.accessorySpeakerMsg1),
+            findViewById(R.id.accessorySpeakerMsg2),
+            findViewById(R.id.accessorySpeakerMsg3),
+        )
+        accessorySpeakerMsgPills.forEachIndexed { i, pill ->
+            pill.setOnClickListener { onMessagePillTapped(i + 1) }
+        }
+        // The panel repaints as the upload runs and when the message ends by itself.
+        SpeakerBroadcast.onChanged = {
+            renderOnAirChip()
+            renderAccessoryPanel()
+        }
         accessorySpeakerVolumeLabel = findViewById(R.id.accessorySpeakerVolumeLabel)
         accessorySpeakerVolume = findViewById(R.id.accessorySpeakerVolume)
-        accessorySpeakerLoop = findViewById(R.id.accessorySpeakerLoop)
         accessorySpeakerStatus = findViewById(R.id.accessorySpeakerStatus)
         accessorySpeakerTalk = findViewById(R.id.accessorySpeakerTalk)
         // HOLD, not tap. The touch listener is the control: down opens the channel, up or cancel
@@ -2726,7 +2840,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             }
             true
         }
-        SpeakerTalk.onChanged = { renderAccessoryPanel() }
+        SpeakerTalk.onChanged = {
+            runOnUiThread {
+                renderOnAirChip()
+                renderAccessoryPanel()
+            }
+        }
 
         // The panel eats every touch that lands on it. Without this the taps between the
         // controls fall through to the video and drop a marker — the same hazard §4.8 records
@@ -2738,33 +2857,6 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         accessoryLightHigh.setOnClickListener { requestLightMode(LIGHT_HIGH) }
         accessoryLightBlink.setOnClickListener { requestLightMode(LIGHT_STROBE) }
 
-        accessorySpeakerPlay.setOnClickListener {
-            val playing = AircraftAccessories.speakerStatus == MegaphoneStatus.PLAYING
-            if (!claimAccessoryWrite("sound")) return@setOnClickListener
-            showPending("sound", !playing)
-            AircraftAccessories.setSpeakerPlaying(!playing) { confirmed ->
-                runOnUiThread {
-                    releaseAccessoryWrite("sound")
-                    clearPending("sound")
-                    renderAccessoryPanel()
-                    if (!confirmed) showNotice("The speaker refused", refused = true)
-                }
-            }
-        }
-        accessorySpeakerLoop.setOnClickListener {
-            val loop = AircraftAccessories.speakerPlayMode == PlayMode.LOOP
-            val next = if (loop) PlayMode.SINGLE else PlayMode.LOOP
-            if (!claimAccessoryWrite("repeat")) return@setOnClickListener
-            showPending("repeat", next == PlayMode.LOOP)
-            AircraftAccessories.setSpeakerPlayMode(next) { confirmed ->
-                runOnUiThread {
-                    releaseAccessoryWrite("repeat")
-                    clearPending("repeat")
-                    renderAccessoryPanel()
-                    if (!confirmed) showNotice("The speaker refused", refused = true)
-                }
-            }
-        }
         accessorySpeakerVolume.max = AircraftAccessories.speakerVolumeRange.last
         accessorySpeakerVolume.setOnSeekBarChangeListener(
             object : android.widget.SeekBar.OnSeekBarChangeListener {
@@ -2779,6 +2871,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 override fun onStopTrackingTouch(bar: android.widget.SeekBar) {
                     accessorySliderDragging = false
                     if (!claimAccessoryWrite("volume")) return
+                    SpeakerMessages.saveVolume(this@TAKPilot2GoFlightActivity, bar.progress)
                     AircraftAccessories.setSpeakerVolume(bar.progress) { confirmed ->
                         runOnUiThread {
                             releaseAccessoryWrite("volume")
@@ -2853,6 +2946,31 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             runOnUiThread {
                 renderAccessoryPanel()
                 if (!ok) showNotice("The speaker did not take the talk", refused = true)
+            }
+        }
+    }
+
+    /**
+     * Sends the message in [slot] and plays it, or stops it when it is the one going out.
+     *
+     * ⚠ ALL THREE PILLS SHARE ONE CLAIM, because they are one control — pressing SHELTER while
+     * EVACUATE is uploading is the pilot changing their mind, not a second control being worked.
+     * [SpeakerBroadcast] serialises the rest; a press while another is in flight is refused with
+     * a reason rather than queued, because a queued broadcast is one nobody asked for by the
+     * time it goes out.
+     */
+    private fun onMessagePillTapped(slot: Int) {
+        if (SpeakerBroadcast.activeSlot == slot && SpeakerBroadcast.live) {
+            AppLog.i(TAG, "message slot $slot: stopping")
+            SpeakerBroadcast.stop { runOnUiThread { renderAccessoryPanel() } }
+            return
+        }
+        if (!claimAccessoryWrite("message")) return
+        SpeakerBroadcast.play(this, slot, repeat = speakerRepeatArmed) { ok, why ->
+            runOnUiThread {
+                releaseAccessoryWrite("message")
+                renderAccessoryPanel()
+                if (!ok) showNotice(why ?: "The message did not go out", refused = true)
             }
         }
     }
@@ -2982,6 +3100,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * an aircraft in the dark it is the wrong one.
      */
     private fun renderAccessoryPanel() {
+        renderOnAirChip()
         if (accessoryPanel.visibility != View.VISIBLE) return
 
         val hasLight = AircraftAccessories.lightOn != null
@@ -3008,30 +3127,104 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
 
         if (hasSpeaker) {
-            val status = AircraftAccessories.speakerStatus
-            val playing = if (status == null) null else status == MegaphoneStatus.PLAYING
-            renderStatePill(accessorySpeakerPlay, pendingOr("sound", playing))
+            // THE MESSAGE PILLS. Green is the one going out; amber is its upload; everything
+            // else grey. Unlike the light there is NO optimistic green here — a message is not
+            // "on" until the aircraft has the bytes, and painting it early would claim a
+            // broadcast that has not happened.
+            val messages = SpeakerMessages.all(this)
+            val any = messages.isNotEmpty()
+            accessorySpeakerMessageRow.visibility = if (any) View.VISIBLE else View.GONE
+            accessorySpeakerNoMessages.visibility = if (any) View.GONE else View.VISIBLE
+            val active = SpeakerBroadcast.activeSlot
+            val sending = SpeakerBroadcast.phase == SpeakerBroadcast.Phase.UPLOADING ||
+                SpeakerBroadcast.phase == SpeakerBroadcast.Phase.PREPARING ||
+                SpeakerBroadcast.phase == SpeakerBroadcast.Phase.STARTING ||
+                SpeakerBroadcast.phase == SpeakerBroadcast.Phase.WAITING
+            // The toggle cannot be changed mid-run: the run's length is already decided.
+            renderStatePill(accessorySpeakerRepeat, speakerRepeatArmed)
+            accessorySpeakerRepeat.isEnabled = !SpeakerBroadcast.live
+            accessorySpeakerMsgPills.forEachIndexed { i, pill ->
+                val slot = i + 1
+                val message = messages.firstOrNull { it.slot == slot }
+                pill.visibility = if (message == null) View.GONE else View.VISIBLE
+                if (message == null) return@forEachIndexed
+                pill.text = message.label
+                renderStatePill(pill, when {
+                    active != slot -> false
+                    sending -> null                       // amber: on its way, or between repeats
+                    else -> SpeakerBroadcast.phase == SpeakerBroadcast.Phase.PLAYING
+                })
+            }
 
+            // ⚠ THIS WAS DELETED BY A REFACTOR AND NOT NOTICED UNTIL A FLIGHT. Nothing set the
+            // slider from the aircraft and nothing enabled it, so it sat at 0 whatever the
+            // speaker was actually doing — the operator reported the volume "resetting to 0" on
+            // re-entry. The aircraft had NOT lost it: it reported vol=100 across every screen
+            // cycle in the same log. The setting was fine; the control was blind.
             val vol = AircraftAccessories.speakerVolume
             accessorySpeakerVolume.isEnabled = vol != null
-            if (!accessorySliderDragging && vol != null) accessorySpeakerVolume.progress = vol
-            accessorySpeakerVolumeLabel.text = if (vol == null) "Volume  --" else "Volume  $vol"
+            if (!accessorySliderDragging) {
+                // The remembered value stands in until the aircraft answers, so the slider never
+                // shows a 0 that was never true.
+                val show = vol ?: SpeakerMessages.savedVolume(this)
+                accessorySpeakerVolume.progress = show.coerceIn(0, accessorySpeakerVolume.max)
+            }
+            accessorySpeakerVolumeLabel.text =
+                if (vol == null) "Volume  ${SpeakerMessages.savedVolume(this)}  (asking…)"
+                else "Volume  $vol"
 
-            val loop = AircraftAccessories.speakerPlayMode
-            renderStatePill(accessorySpeakerLoop,
-                pendingOr("repeat", if (loop == null) null else loop == PlayMode.LOOP))
+            val status = AircraftAccessories.speakerStatus
+            // ⚠ THE TALK CONTROL PAINTS ITSELF HERE, and losing these two lines in a refactor
+            // made a WORKING push-to-talk read as a dead button — the operator reported it as
+            // lost functionality while the log showed it going live and sending frames. A
+            // control with no feedback is indistinguishable from a broken one.
+            // ⚠ OPENING IS ITS OWN STATE. The aircraft takes 2-3s to start carrying the voice
+            // (measured in flight 2026-08-24) while this app is sending within ~80ms, so a pill
+            // that said ON AIR on the press claimed a broadcast that had not started and the
+            // pilot spoke into a dead channel. Amber while it opens, green when it carries.
+            // Three states, and the third one matters: after the release the aircraft is still
+            // speaking the pilot's last words for about 1.5s (see SpeakerTalk.draining). Going
+            // grey there would tell the pilot the aircraft is silent while it is not.
+            renderStatePill(accessorySpeakerTalk, when {
+                SpeakerTalk.carrying -> true
+                SpeakerTalk.talking || SpeakerTalk.draining -> null
+                else -> false
+            })
+            accessorySpeakerTalk.text = when {
+                SpeakerTalk.carrying -> "ON AIR"
+                SpeakerTalk.talking -> "OPENING…  WAIT"
+                SpeakerTalk.draining -> "FINISHING…"
+                else -> "HOLD TO TALK"
+            }
 
-            renderStatePill(accessorySpeakerTalk, SpeakerTalk.talking)
-            accessorySpeakerTalk.text =
-                if (SpeakerTalk.talking) "ON AIR" else "HOLD TO TALK"
-
-            accessorySpeakerStatus.text = when (status) {
-                MegaphoneStatus.PLAYING -> "Playing the loaded sound."
-                MegaphoneStatus.IDLE -> "Ready. Plays the sound already on the speaker."
-                MegaphoneStatus.IN_TRANSMISSION -> "Receiving a sound file."
-                MegaphoneStatus.TTS_IN_CONVERSION -> "Making speech from text."
-                MegaphoneStatus.IN_EXCEPTION -> "The speaker reports a fault."
-                else -> "The speaker did not report its state."
+            val label = SpeakerBroadcast.activeSlot
+                ?.let { slot -> messages.firstOrNull { it.slot == slot }?.label }
+                ?: ""
+            accessorySpeakerStatus.text = when (SpeakerBroadcast.phase) {
+                SpeakerBroadcast.Phase.PREPARING -> "Preparing $label…"
+                SpeakerBroadcast.Phase.UPLOADING ->
+                    "Sending $label…  ${SpeakerBroadcast.progressPct}%"
+                SpeakerBroadcast.Phase.STARTING -> "Starting $label…"
+                SpeakerBroadcast.Phase.PLAYING ->
+                    if (SpeakerBroadcast.totalPlays > 1)
+                        "Playing $label.  ${SpeakerBroadcast.playNumber} of " +
+                            "${SpeakerBroadcast.totalPlays}."
+                    else "Playing $label."
+                SpeakerBroadcast.Phase.WAITING ->
+                    "$label again in ${SpeakerBroadcast.secondsToNextPlay}s.  " +
+                        "${SpeakerBroadcast.playsLeft} left."
+                SpeakerBroadcast.Phase.FAILED ->
+                    "$label did not go out: ${SpeakerBroadcast.failure ?: "refused"}"
+                SpeakerBroadcast.Phase.IDLE -> when {
+                    !any -> ""
+                    status == MegaphoneStatus.IN_EXCEPTION -> "The speaker reports a fault."
+                    status == null -> "The speaker did not report its state."
+                    speakerRepeatArmed ->
+                        "Ready.  The next message goes out " +
+                            "${SpeakerBroadcast.REPEAT_TIMES} times."
+                    else -> "Ready.  ${messages.size} message" +
+                        if (messages.size == 1) "." else "s."
+                }
             }
         }
     }
@@ -3049,7 +3242,56 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * never collapsed into off. Every pill in the panel goes through here so the three cannot
      * drift apart.
      */
+    /**
+     * Turns the L2 hint chip into an ON AIR light while the aircraft is speaking.
+     *
+     * ⚠ NOT GATED ON THE PANEL BEING OPEN, unlike [renderAccessoryPanel]. The whole point is the
+     * case where it is shut.
+     */
+    private fun renderOnAirChip() {
+        if (!::hintL2.isInitialized) return
+        // ⚠ THE CHIP CARRIES THE SAME THREE STATES AS THE PANEL, not just on/off. It used to go
+        // GREEN "ON AIR" the moment anything started — including the ~1.5s while the channel is
+        // still opening and the ~1.6s tail after a release — so from the flight screen the pilot
+        // could not tell "the aircraft is speaking" from "wait" or from "finishing". Green means
+        // sound is coming out of the aircraft NOW; amber means something is happening but it is
+        // not that. Same colour language as every pill in the panel.
+        val label: String?
+        val green: Boolean
+        when {
+            SpeakerTalk.carrying -> { label = "ON AIR"; green = true }
+            SpeakerTalk.draining -> { label = "FINISHING"; green = false }
+            SpeakerTalk.talking -> { label = "OPENING"; green = false }
+            SpeakerBroadcast.phase == SpeakerBroadcast.Phase.PLAYING -> {
+                label = "ON AIR"; green = true
+            }
+            // The gap between repeats stays lit: the run is not over and the aircraft WILL speak
+            // again. Flight-tested that way (D7) — do not quietly change it to grey.
+            SpeakerBroadcast.phase == SpeakerBroadcast.Phase.WAITING -> {
+                label = "AGAIN ${SpeakerBroadcast.secondsToNextPlay}s"; green = true
+            }
+            SpeakerBroadcast.live -> { label = "SENDING"; green = false }
+            else -> { label = null; green = false }
+        }
+
+        if (label == null) {
+            hintL2.text = "◀ ACC"
+            hintL2.setBackgroundResource(0)
+            hintL2.setBackgroundColor(0x66000000)
+            return
+        }
+        hintL2.text = "◀ ACC ● $label"
+        hintL2.setBackgroundResource(
+            if (green) R.drawable.bg_ar_pill_active else R.drawable.bg_pill_unknown)
+    }
+
     private fun renderStatePill(pill: TextView, state: Boolean?) {
+        // ⚠ NO-OP WHEN NOTHING CHANGED. The panel now repaints once a second through a repeat
+        // run, and re-setting a background on a view the pilot is holding risks cancelling the
+        // touch — which on HOLD TO TALK would cut the pilot off mid-sentence.
+        val key = state?.toString() ?: "unknown"
+        if (pill.getTag(R.id.accessoryPanel) == key) return
+        pill.setTag(R.id.accessoryPanel, key)
         pill.setBackgroundResource(
             when (state) {
                 true -> R.drawable.bg_ar_pill_active
@@ -3592,6 +3834,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         TakDropMarkers.ui = null
         SpeakerTalk.onChanged = null
         SpeakerTalk.stop()
+        // ⚠ The screen carrying the ON AIR indicator is going away, so nothing may be left
+        // broadcasting behind it. Closing the PANEL deliberately does not stop a message — a
+        // bounded message should finish — but the screen dying is different.
+        SpeakerBroadcast.reset()
         // The accessory state belongs to the AIRFRAME that is plugged in, not to this
         // application, and AircraftAccessories is a process-wide object. Dropping it here stops
         // the next flight screen opening on the last aircraft's answers — including which key
@@ -3822,6 +4068,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
          *  untargeted key was accepted and discarded by this aircraft (2026-08-20). */
         private val MAIN_CAM = ComponentIndexType.LEFT_OR_MAIN
         private const val REQUEST_MEDIA_PROJECTION = 3001
+
+        /** The lens-switch ramp settles well inside this; see adoptZoomRatioFromCamera. */
+        private const val ZOOM_ADOPT_MAX_ATTEMPTS = 8
+        private const val ZOOM_ADOPT_RETRY_MS = 400L
 
         /** Push-to-talk needs the microphone at runtime — see startTalking. */
         private const val REQ_MIC = 3002

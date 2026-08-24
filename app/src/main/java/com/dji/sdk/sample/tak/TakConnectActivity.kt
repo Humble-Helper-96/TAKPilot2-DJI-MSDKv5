@@ -42,6 +42,9 @@ class TakConnectActivity : AppCompatActivity() {
     private var suppressBatterySave = false
 
     override fun onDestroy() {
+        SpeakerRecorder.onChanged = null
+        SpeakerBroadcast.onChanged = null
+        if (SpeakerRecorder.recording) SpeakerRecorder.cancel()
         // The listeners hold this Activity and TakManager outlives it, so leaving them attached
         // leaks the whole screen and repaints views that are gone.
         runCatching { TakManager.getInstance().removeGroupChangeListener(groupChangeListener) }
@@ -67,6 +70,7 @@ class TakConnectActivity : AppCompatActivity() {
         setupMapDisplay()
         setupDtedSection()
         setupUasfmSection()
+        setupSpeakerMessagesSection()
 
         val host = findViewById<EditText>(R.id.takHost)
         val enrollPort = findViewById<EditText>(R.id.takEnrollPort)
@@ -463,6 +467,252 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.limitLowBattery, R.id.limitCriticalBattery,
     )
 
+    // ======================= 7. SPEAKER MESSAGES =======================
+    //
+    // Recording belongs on the ground, not over live video, so the flight panel carries only the
+    // three fire buttons and this screen carries everything that makes them.
+    //
+    // ⚠ NO CONFIG LOCK ON THIS SECTION, deliberately. The three locks in §5.5 guard aircraft
+    // CONFIGURATION; a message is CONTENT, and locking it would stop an operator re-recording in
+    // the field, which is the point of the feature. Delete asks for confirmation instead — the
+    // right speed bump for the one action that cannot be undone.
+
+    private val speakerRowIds = listOf(
+        // name, status, record, play, delete
+        arrayOf(R.id.speakerMsg1Name, R.id.speakerMsg1Status, R.id.speakerMsg1Record,
+            R.id.speakerMsg1Play, R.id.speakerMsg1Delete, R.id.speakerMsg1Export,
+            R.id.speakerMsg1Import),
+        arrayOf(R.id.speakerMsg2Name, R.id.speakerMsg2Status, R.id.speakerMsg2Record,
+            R.id.speakerMsg2Play, R.id.speakerMsg2Delete, R.id.speakerMsg2Export,
+            R.id.speakerMsg2Import),
+        arrayOf(R.id.speakerMsg3Name, R.id.speakerMsg3Status, R.id.speakerMsg3Record,
+            R.id.speakerMsg3Play, R.id.speakerMsg3Delete, R.id.speakerMsg3Export,
+            R.id.speakerMsg3Import),
+    )
+
+    private fun setupSpeakerMessagesSection() {
+        for ((i, ids) in speakerRowIds.withIndex()) {
+            val slot = i + 1
+            val name = findViewById<android.widget.EditText>(ids[0])
+            name.setText(SpeakerMessages.label(this, slot))
+            // Saved as it is typed, like the limit fields. Upper-cased and capped by the store,
+            // because the label is a pill face and the pill is 78dp wide.
+            name.addTextChangedListener(object : android.text.TextWatcher {
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    SpeakerMessages.saveLabel(this@TakConnectActivity, slot, e?.toString() ?: "")
+                }
+
+                override fun beforeTextChanged(c: CharSequence?, a: Int, b: Int, d: Int) {}
+                override fun onTextChanged(c: CharSequence?, a: Int, b: Int, d: Int) {}
+            })
+
+            findViewById<android.widget.Button>(ids[2]).setOnClickListener {
+                onRecordTapped(slot)
+            }
+            findViewById<android.widget.Button>(ids[3]).setOnClickListener {
+                onSendTapped(slot)
+            }
+            findViewById<android.widget.Button>(ids[4]).setOnClickListener {
+                confirmDeleteMessage(slot)
+            }
+            findViewById<TextView>(ids[5]).setOnClickListener { onExportTapped(slot) }
+            findViewById<TextView>(ids[6]).setOnClickListener { onImportTapped(slot) }
+        }
+        SpeakerRecorder.onChanged = { runOnUiThread { renderSpeakerMessages() } }
+        SpeakerBroadcast.onChanged = { runOnUiThread { renderSpeakerMessages() } }
+        renderSpeakerMessages()
+    }
+
+    private fun renderSpeakerMessages() {
+        for ((i, ids) in speakerRowIds.withIndex()) {
+            val slot = i + 1
+            val status = findViewById<TextView>(ids[1]) ?: continue
+            val record = findViewById<android.widget.Button>(ids[2])
+            val play = findViewById<android.widget.Button>(ids[3])
+            val delete = findViewById<android.widget.Button>(ids[4])
+            val recordingThis = SpeakerRecorder.recording && SpeakerRecorder.slot == slot
+            val message = SpeakerMessages.saved(this, slot)
+
+            // Clears any red refusal text from a previous import attempt.
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(
+                this, R.color.tp_text_tertiary))
+            status.text = when {
+                recordingThis -> "Recording…  %.1f s".format(SpeakerRecorder.elapsedMs / 1000.0)
+                message == null -> "Not recorded."
+                else -> "%.1f s · %d KB".format(
+                    message.durationMs / 1000.0, message.bytes / 1024)
+            }
+            // A changing label is right HERE and wrong on the flight screen: this is an action in
+            // progress, not a state pill, and the 2026-08-23 lesson was about the latter.
+            record.text = if (recordingThis) "Stop" else if (message == null) "Record" else "Re-record"
+            record.isEnabled = !SpeakerRecorder.recording || recordingThis
+            play.isEnabled = message != null && !SpeakerRecorder.recording
+            delete.isEnabled = message != null && !SpeakerRecorder.recording
+        }
+    }
+
+    private fun speakerStatus(text: String) {
+        findViewById<TextView>(R.id.speakerMsgStatus)?.text = text
+    }
+
+    private fun onRecordTapped(slot: Int) {
+        if (SpeakerRecorder.recording) {
+            SpeakerRecorder.stop { durationMs, bytes, ok ->
+                val take = SpeakerRecorder.lastTake()
+                val stored = ok && take != null &&
+                    SpeakerMessages.store(this, slot, take, durationMs)
+                runOnUiThread {
+                    speakerStatus(
+                        if (stored) "Message $slot recorded, %.1f s.".format(durationMs / 1000.0)
+                        else "That recording was too short to keep.")
+                    renderSpeakerMessages()
+                }
+            }
+            return
+        }
+        // ⚠ A DENIED RECORD_AUDIO GIVES SILENCE WITH NO ERROR — the operator would only find out
+        // when the message they thought they made turns out to be nothing. Ask before recording,
+        // and refuse this press rather than raising a dialog over one.
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this, arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_MIC_PREFLIGHT)
+            speakerStatus("Allow the microphone, then touch Record again.")
+            return
+        }
+        SpeakerRecorder.start(this, slot) { ok, why ->
+            runOnUiThread {
+                speakerStatus(if (ok) "Speak now. Touch Stop when you are finished."
+                              else "Could not record: ${why ?: "the microphone did not open"}")
+                renderSpeakerMessages()
+            }
+        }
+    }
+
+    private fun onSendTapped(slot: Int) {
+        speakerStatus("Sending message $slot to the aircraft…")
+        SpeakerBroadcast.play(this, slot) { ok, why ->
+            runOnUiThread {
+                speakerStatus(if (ok) "Playing message $slot on the aircraft."
+                              else "It did not go out: ${why ?: "refused"}")
+            }
+        }
+    }
+
+    /**
+     * The slot a file picker is working on.
+     *
+     * ⚠ PERSISTED, NOT HELD IN MEMORY. The Storage Access Framework hands back a Uri and nothing
+     * else — no extras survive the round trip — and this Activity can be destroyed while the
+     * picker is in front of it. A slot held only in a field comes back null and the import lands
+     * in the wrong place, or nowhere.
+     */
+    private var pendingMessageSlot: Int
+        get() = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("msg_pending_slot", 0)
+        set(v) { getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putInt("msg_pending_slot", v).apply() }
+
+    private fun onExportTapped(slot: Int) {
+        if (SpeakerMessages.saved(this, slot) == null) {
+            speakerStatus("Record message $slot before you export it.")
+            return
+        }
+        pendingMessageSlot = slot
+        startActivityForResult(
+            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/octet-stream"
+                putExtra(Intent.EXTRA_TITLE, SpeakerMessages.bundleName(this@TakConnectActivity, slot))
+            }, REQUEST_CODE_MSG_EXPORT)
+    }
+
+    private fun onImportTapped(slot: Int) {
+        pendingMessageSlot = slot
+        startActivityForResult(
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }, REQUEST_CODE_MSG_IMPORT)
+    }
+
+    private fun onMessageExportPicked(uri: Uri) {
+        val slot = pendingMessageSlot
+        if (slot !in SpeakerMessages.SLOTS) return
+        speakerStatus("Exporting message $slot…")
+        // Off the main thread, per R25 — small files, but the pattern is the pattern.
+        Thread {
+            // ⚠ NOT AN ELVIS. exportTo returns NULL FOR SUCCESS, so `?.use { … } ?: "failed"`
+            // turns every success into a failure — the stream being null and the export
+            // succeeding both produce null and become indistinguishable. That exact mistake made
+            // a working import report a failure and skip its own success path (2026-08-24).
+            val stream = try { contentResolver.openOutputStream(uri) } catch (t: Throwable) { null }
+            val why = if (stream == null) "Could not open that location"
+                      else stream.use { SpeakerMessages.exportTo(this, slot, it) }
+            runOnUiThread {
+                speakerStatus(why ?: "Message $slot exported. Copy it to another controller " +
+                    "and import it there.")
+            }
+        }.start()
+    }
+
+    private fun onMessageImportPicked(uri: Uri) {
+        val slot = pendingMessageSlot
+        if (slot !in SpeakerMessages.SLOTS) return
+        speakerStatus("Importing into message $slot…")
+        Thread {
+            // See the note in onMessageExportPicked: null means SUCCESS here, not "no stream".
+            val stream = try { contentResolver.openInputStream(uri) } catch (t: Throwable) { null }
+            val why = if (stream == null) "Could not open that file"
+                      else stream.use { SpeakerMessages.importFrom(this, slot, it) }
+            runOnUiThread {
+                if (why == null) {
+                    // The label came from the bundle — put it in the field the operator sees.
+                    findViewById<android.widget.EditText>(speakerRowIds[slot - 1][0])
+                        ?.setText(SpeakerMessages.label(this, slot))
+                    speakerStatus("Message $slot imported.")
+                } else {
+                    // ⚠ THE REFUSAL GOES WHERE THE OPERATOR IS LOOKING. It used to go only to
+                    // the one status line at the BOTTOM of section 7 — below slot 3, on a
+                    // scrolling form — so importing into slot 1 put the reason two rows off the
+                    // screen and it read as a silent failure (operator, 2026-08-24). A refusal
+                    // the pilot cannot see is the same as no refusal at all.
+                    findViewById<TextView>(speakerRowIds[slot - 1][1])?.apply {
+                        text = why
+                        setTextColor(androidx.core.content.ContextCompat.getColor(
+                            this@TakConnectActivity, R.color.tp_btn_danger_dialog))
+                    }
+                    speakerStatus(why)
+                    // And a dialog, because an import is a deliberate act with a file the
+                    // operator chose: they are entitled to be told plainly that it was rejected.
+                    androidx.appcompat.app.AlertDialog.Builder(this, R.style.TakDialogTheme)
+                        .setTitle("Message $slot not imported")
+                        .setMessage("$why\n\nOnly a .tp2msg file exported from TAKPilot2 can " +
+                            "be imported. Audio from anywhere else is not in the form the " +
+                            "speaker accepts.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                renderSpeakerMessages()
+            }
+        }.start()
+    }
+
+    private fun confirmDeleteMessage(slot: Int) {
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+            .setTitle("Delete message $slot?")
+            .setMessage("The recording is removed from this controller. There is no other copy " +
+                "and this cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                SpeakerMessages.delete(this, slot)
+                speakerStatus("Message $slot deleted.")
+                renderSpeakerMessages()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun setupConfigLocks() {
         setupOneLock(
             R.id.limitBatteryLock, KEY_AIRCRAFT_LOCKED, aircraftLockedFields,
@@ -772,7 +1022,10 @@ class TakConnectActivity : AppCompatActivity() {
             status.text = "Checking…"
             UasfmStore.countAsync(bbox) { result ->
                 checkBtn.isEnabled = true
-                status.text = when {
+                // Clears any red refusal text from a previous import attempt.
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(
+                this, R.color.tp_text_tertiary))
+            status.text = when {
                     result.error != null -> "Couldn't reach the FAA service: ${result.error}"
                     result.count == 0 ->
                         "No facility-map cells in that area — it's likely all uncontrolled " +
@@ -913,8 +1166,17 @@ class TakConnectActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_CODE_DTED_PICK || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri: Uri = data?.data ?: return
+        // ⚠ THIS WAS `if (requestCode != REQUEST_CODE_DTED_PICK) return`, and adding a second
+        // picker to that shape would have dropped its result on the floor with no error at all —
+        // the silent-failure class this tree keeps finding. Every request code is handled here.
+        when (requestCode) {
+            REQUEST_CODE_MSG_EXPORT -> { onMessageExportPicked(uri); return }
+            REQUEST_CODE_MSG_IMPORT -> { onMessageImportPicked(uri); return }
+            REQUEST_CODE_DTED_PICK -> Unit
+            else -> return
+        }
         val name = queryDisplayName(uri) ?: "Region-${System.currentTimeMillis()}"
         val status = findViewById<TextView>(R.id.dtedStatus)
         val importButton = findViewById<Button>(R.id.dtedUploadButton)
@@ -927,6 +1189,9 @@ class TakConnectActivity : AppCompatActivity() {
             onProgress = { tiles -> status.text = "Importing $name… $tiles tile(s)" },
         ) { result ->
             importButton?.isEnabled = true
+            // Clears any red refusal text from a previous import attempt.
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(
+                this, R.color.tp_text_tertiary))
             status.text = when {
                 result.error != null && result.importedCount == 0 -> "Failed to import $name: ${result.error}"
                 result.error != null -> "Imported ${result.importedCount} tile(s) from $name (${result.error})"
@@ -1564,8 +1829,13 @@ class TakConnectActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "TakConnectActivity"
         private const val REQUEST_CODE_DTED_PICK = 2001
+        private const val REQUEST_CODE_MSG_EXPORT = 2002
+        private const val REQUEST_CODE_MSG_IMPORT = 2003
         /** Shared with the flight screen, which reads the TAK lock to gate its channel dialog. */
         internal const val PREFS = "takpilot2_tak"
+
+        /** Push-to-record needs the microphone at runtime — see onRecordTapped. */
+        private const val REQ_MIC_PREFLIGHT = 4101
         private const val KEY_HOST = "host"
         private const val KEY_ENROLL_PORT = "enroll_port"
         private const val KEY_COT_PORT = "cot_port"

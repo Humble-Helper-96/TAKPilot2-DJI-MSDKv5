@@ -1081,5 +1081,267 @@
             android:textColor="@color/tp_text_primary"
             android:backgroundTint="@color/tp_btn_info" />
 
+
+        <!-- ======================= 7. SPEAKER MESSAGES ======================= -->
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:layout_marginTop="20dp" android:background="@color/tp_border" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text="7. Speaker Messages"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:text="Three messages the aircraft can play in flight, from the L2 panel. Record each one here, in your own words. A short message goes out sooner: the aircraft receives it in about one second for every ten seconds of speech."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp" />
+
+        <!-- Slot 1. Three explicit blocks rather than an <include> used three times: the ids
+             inside an include collide, and three slots is not a list worth building dynamically. -->
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:layout_marginTop="14dp" android:background="@color/tp_border" />
+
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="10dp">
+            <TextView style="@style/takLabelStyle"
+                android:layout_width="wrap_content"
+                android:text="Message 1" />
+            <EditText
+                android:id="@+id/speakerMsg1Name"
+                style="@style/takFieldStyle"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:hint="Name"
+                android:inputType="textCapCharacters"
+                android:maxLength="8" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/speakerMsg1Status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:text="Not recorded."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp" />
+
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="6dp">
+            <Button
+                android:id="@+id/speakerMsg1Record"
+                style="@style/TakButton.Info"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Record" />
+            <Button
+                android:id="@+id/speakerMsg1Play"
+                style="@style/TakButton.Neutral"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Send + Play" />
+            <Button
+                android:id="@+id/speakerMsg1Delete"
+                style="@style/TakButton.Danger"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Delete" />
+        </LinearLayout>
+
+        <!-- Export writes a .tp2msg bundle; import reads one. A fleet records once and copies,
+             so every aircraft says the same words. -->
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="4dp">
+            <TextView
+                android:id="@+id/speakerMsg1Export"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="6dp"
+                android:text="Export file"
+                android:textColor="@color/tp_accent"
+                android:textSize="12sp" />
+            <TextView
+                android:id="@+id/speakerMsg1Import"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:padding="6dp"
+                android:text="Import file"
+                android:textColor="@color/tp_accent"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Slot 2. Three explicit blocks rather than an <include> used three times: the ids
+             inside an include collide, and three slots is not a list worth building dynamically. -->
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:layout_marginTop="14dp" android:background="@color/tp_border" />
+
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="10dp">
+            <TextView style="@style/takLabelStyle"
+                android:layout_width="wrap_content"
+                android:text="Message 2" />
+            <EditText
+                android:id="@+id/speakerMsg2Name"
+                style="@style/takFieldStyle"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:hint="Name"
+                android:inputType="textCapCharacters"
+                android:maxLength="8" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/speakerMsg2Status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:text="Not recorded."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp" />
+
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="6dp">
+            <Button
+                android:id="@+id/speakerMsg2Record"
+                style="@style/TakButton.Info"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Record" />
+            <Button
+                android:id="@+id/speakerMsg2Play"
+                style="@style/TakButton.Neutral"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Send + Play" />
+            <Button
+                android:id="@+id/speakerMsg2Delete"
+                style="@style/TakButton.Danger"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Delete" />
+        </LinearLayout>
+
+        <!-- Export writes a .tp2msg bundle; import reads one. A fleet records once and copies,
+             so every aircraft says the same words. -->
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="4dp">
+            <TextView
+                android:id="@+id/speakerMsg2Export"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="6dp"
+                android:text="Export file"
+                android:textColor="@color/tp_accent"
+                android:textSize="12sp" />
+            <TextView
+                android:id="@+id/speakerMsg2Import"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:padding="6dp"
+                android:text="Import file"
+                android:textColor="@color/tp_accent"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Slot 3. Three explicit blocks rather than an <include> used three times: the ids
+             inside an include collide, and three slots is not a list worth building dynamically. -->
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:layout_marginTop="14dp" android:background="@color/tp_border" />
+
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="10dp">
+            <TextView style="@style/takLabelStyle"
+                android:layout_width="wrap_content"
+                android:text="Message 3" />
+            <EditText
+                android:id="@+id/speakerMsg3Name"
+                style="@style/takFieldStyle"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:hint="Name"
+                android:inputType="textCapCharacters"
+                android:maxLength="8" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/speakerMsg3Status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:text="Not recorded."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp" />
+
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="6dp">
+            <Button
+                android:id="@+id/speakerMsg3Record"
+                style="@style/TakButton.Info"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Record" />
+            <Button
+                android:id="@+id/speakerMsg3Play"
+                style="@style/TakButton.Neutral"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Send + Play" />
+            <Button
+                android:id="@+id/speakerMsg3Delete"
+                style="@style/TakButton.Danger"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Delete" />
+        </LinearLayout>
+
+        <!-- Export writes a .tp2msg bundle; import reads one. A fleet records once and copies,
+             so every aircraft says the same words. -->
+        <LinearLayout style="@style/takFormRow" android:layout_marginTop="4dp">
+            <TextView
+                android:id="@+id/speakerMsg3Export"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="6dp"
+                android:text="Export file"
+                android:textColor="@color/tp_accent"
+                android:textSize="12sp" />
+            <TextView
+                android:id="@+id/speakerMsg3Import"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:padding="6dp"
+                android:text="Import file"
+                android:textColor="@color/tp_accent"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/speakerMsgStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text=""
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="12sp" />
+
     </LinearLayout>
 </ScrollView>

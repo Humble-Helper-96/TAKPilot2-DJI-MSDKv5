@@ -17,7 +17,23 @@ object ZoomLadder {
     /** The bottom of the range: 1x, the wide framing. The snap-to-1X pill's target. */
     const val MIN = 1.0
 
-    /** The label for a whole-number ratio, without a trailing ".0" — "1X", "28X". Fractional
-     *  ratios are formatted by the caller ("4.6X"); this is only the clean-integer case. */
-    fun label(ratio: Double): String = "${ratio.toInt()}X"
+    /**
+     * The pill's text for ANY ratio: "1X", "28X", "4.6X".
+     *
+     * ⚠ THIS USED TO BE `"${'$'}{ratio.toInt()}X"` WITH A COMMENT SAYING FRACTIONAL RATIOS WERE
+     * THE CALLER'S JOB, and one caller did not do that job. `toInt()` truncates toward zero, so
+     * a camera reporting **6.9958** — which is its gear 7 — was drawn as **"6X"** on the flight
+     * screen after any restart with the camera left zoomed (measured 2026-08-24).
+     *
+     * A function that silently truncates when it is misused is a trap, and the contract that
+     * was supposed to prevent it lived only in a comment. It handles the whole range now, so
+     * there is nothing left to get wrong: whole numbers print clean, anything else gets one
+     * decimal. Values very close to a whole number round to it, because a camera that reports
+     * 6.9958 for its own gear 7 should not make the pill say 7.0X.
+     */
+    fun label(ratio: Double): String {
+        val nearest = Math.round(ratio).toDouble()
+        return if (Math.abs(ratio - nearest) < 0.05) "${nearest.toInt()}X"
+        else "%.1fX".format(java.util.Locale.US, ratio)
+    }
 }

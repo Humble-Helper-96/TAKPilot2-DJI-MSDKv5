@@ -56,7 +56,11 @@ object CameraFov {
      * @param irLive  true when the INFRARED camera is the live stream source.
      * @param zoomRatio the ladder's read-back — only consulted to decide wide vs zoom lens.
      */
+    @Volatile
+    private var lastRatio: Double = 0.0
+
     fun refresh(irLive: Boolean, zoomRatio: Double) {
+        lastRatio = zoomRatio
         when {
             irLive -> {
                 KeyManager.getInstance().getValue(
@@ -101,7 +105,10 @@ object CameraFov {
         }
         val dfov = 2.0 * Math.toDegrees(Math.atan(FF_DIAGONAL_MM / (2.0 * f35mm)))
         TakBridgeHolder.setCameraFov(dfov)
+        // The ratio is logged beside the focal length so the two feeds can always be compared
+        // after the fact — their disagreement is what a wrong zoom pill looks like in a log.
         AppLog.i(TAG, "camera FOV adopted: $lens f35=${"%.1f".format(f35mm)}mm -> " +
-            "dfov=${"%.1f".format(dfov)} deg (h=${"%.1f".format(TakBridgeHolder.currentHFov())})")
+            "dfov=${"%.1f".format(dfov)} deg (h=${"%.1f".format(TakBridgeHolder.currentHFov())})" +
+            " [ratio ${"%.2f".format(lastRatio)}]")
     }
 }

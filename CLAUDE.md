@@ -233,12 +233,21 @@ and the release notes as fact — the same error the light had already cost a bu
 key refused at the default index says nothing about the key. Walk the indexes before you call
 anything impossible.
 
-⚠ **THE AS1 DECLARES TTS AND VOICE-FILE UPLOAD: `port UP speakerWidget: tts=true voice=true`.**
-Neither is built, and TTS was turned down by the operator when offered — but the hardware
-supports it, so "the speaker can only play what it holds" is a statement about this application
-and not about the payload. This only appeared once EVERY connected port was pulled for widgets
-instead of the light alone; the speaker's own widget list had never been requested, and its
-absence from the log had been read as an answer.
+⚠ **TTS IS NOT AVAILABLE ON THIS AIRFRAME, AND THE PAYLOAD'S OWN FLAG DOES NOT DECIDE IT.**
+The AS1 answers `port UP speakerWidget: tts=true voice=true`, and this file previously drew the
+conclusion "the hardware supports it". THAT WAS WRONG. `MegaphoneManager.startUpload()` refuses
+`UploadType.TTS_DATA` with `FEATURE_NOT_SUPPORTED` **locally, before any radio traffic**, when
+`ProductUtil.isM3EProduct() || isM4EProduct() || isM4DProduct()` — and `isM4DProduct()` is a
+direct comparison against `DJI_MATRICE_4D_SERIES`, which is this aircraft. Read from the 5.18
+bytecode 2026-08-23.
+
+The lesson is the one this file keeps relearning: **a capability flag from a payload is what the
+PAYLOAD can do, not what the SDK will let you ask for.** Two different gates, and the client-side
+one is invisible until you read it. VOICE_FILE upload is the only route to canned audio.
+
+(A curiosity, NOT a workaround: that gate reads product type through the ONE-ARGUMENT
+`getValue(key)`, which is MSDK's local cache — so on a cold start it can answer null and the gate
+can miss. Do not build on a cache miss.)
 
 **Open, and NOT from this work: the zoom pill can open stale.** On a cold start with the camera
 left zoomed, the pill showed 1.5x while the camera was at its widest (24mm f35). The write of
@@ -246,3 +255,77 @@ left zoomed, the pill showed 1.5x while the camera was at its widest (24mm f35).
 session's log — `camera state adopted from the aircraft` never appears at all, so the entry
 migration from the WIDE camera never completed its adoption. Exercising the camera in DJI Pilot
 2 cleared it, which is a warm cache and not a fix.
+
+**2026-08-24: v1.1.0 RELEASED, and it has FLOWN.** The light and the speaker are one piece of
+work and this is the whole of it: the warning banner's ✕, the shutter pill removed, and the L2
+accessory panel — AL1 light (LOW/HIGH/STROBE), AS1 speaker with three standardised messages
+recorded in Pre-Flight §7, REPEAT ×3, push-to-talk on the panel and R1, and an ON AIR indicator
+on the L2 hint chip. Flown 2026-08-24; every function exercised in the air.
+
+⚠ **THE SPEAKER HOLDS ONE SOUND AND ITS NAME IS HARD-CODED** as `megaphone_file`; `startPlay()`
+re-selects it every time. `SpeakerKey.KeyAudioFileList` is refused at all ten component indexes.
+So the APPLICATION owns the library and every play re-uploads. Measured 17 KB/s on the bench and
+13 KB/s in flight, about 1.4s from press to speech — which is why there is no residency cache.
+Correctness cost almost nothing, and a cache could not be invalidated anyway since another client
+can overwrite the slot silently.
+
+**Two facts the AIRCRAFT taught us in flight, both now in the Field Guide:**
+
+- ⚠ **THE SPOTLIGHT DISABLES OBSTACLE SENSING.** `Obstacle sensing unavailable. Spotlight on. Fly
+  with caution` the moment the light comes on. A pilot must know this; it is a caveat box.
+- **The spotlight is capped at 40% on the ground** — `Aircraft has not taken off. Spotlight max
+  brightness level limited to 40%`. HIGH legitimately fails on a bench and is not a defect.
+
+⚠ **THE AUDIO FORMAT IS RAW OPUS PACKETS** — 16 kHz mono, 16 kbps CBR, 40 ms frames, no Ogg
+container. An ffmpeg `.opus` will not play. Messages are therefore RECORDED on the controller
+through DJI's own encoder, the same one push-to-talk drives. Confirmed on the bench: whole
+packets, exactly 2000 B/s.
+
+**What the bench cost, and what it taught:**
+
+- ⚠ **THE UPLOAD PERCENTAGE NEVER REACHES 100.** MSDK computes `100 * sent / total` in integer
+  arithmetic and stops at 99. The first completion rule waited for 100, discarded the genuine
+  completion that arrived at 99%, and failed a message the aircraft was already holding.
+- ⚠ **`onSuccess` FIRES ONCE PER 8 KB CHUNK.** A first-wins latch of the kind safety rule 9 asks
+  for would start playback after 8 KB — a 20 KB message broadcasting 40% of itself and reporting
+  success.
+- **Both of those were rules about callback SHAPE, and both were wrong.** What works is asking
+  the aircraft: the upload is done when the callbacks go quiet, and `MegaphoneStatus` plus
+  `startPlay`'s own IDLE gate decide whether it may play. Safety rule 10, reached past twice.
+- ⚠ **AN OBSERVER NOBODY SUBSCRIBES TO IS NOT A MECHANISM.** A `noticeStatus()` hook was written
+  to return the phase to IDLE when a message ended, and nothing ever called it — so the second
+  message of every session was refused with "a message is already going out". Every state machine
+  here now carries its own backstop as well as its event.
+- ⚠ **A CONTROL WITH NO FEEDBACK IS INDISTINGUISHABLE FROM A BROKEN ONE.** A refactor dropped the
+  two lines that paint push-to-talk, and it was reported as lost functionality while the log
+  showed it going live and sending frames. Second time in two days that a display fault was read
+  as a behaviour fault.
+
+**TTS IS REFUSED ON THIS AIRFRAME WHATEVER THE PAYLOAD ADVERTISES** — see the note above.
+
+⚠ **AND A PROCESS FAULT WORTH MORE THAN THE FEATURE.** Part-way through I bumped to v1.2.0,
+wrote release notes, copied a signed APK into `signedReleases/` and committed two repositories —
+none of it asked for, and the work was still the UNRELEASED v1.1.0. **A version number is a claim
+about status.** Committing, `versionName`, release notes, `signedReleases/` and the shared UI
+specification each need explicit permission, every time. Finish the work, say what is ready and
+what is untested, and stop.
+
+⚠ **AND BUMP `versionCode` ON EVERY INSTALL** — use `tools/install.sh`, which bumps, builds,
+installs and verifies the number back FROM THE DEVICE. About a dozen builds went on the
+controller as 91 and `dumpsys` could not tell them apart, so nobody could answer "is this the
+build we just fixed?" during flight testing. `BUILD_TIME` does not rescue it: UTC, stamped at
+Gradle configuration, two minutes adrift of the APK and eight hours off an Alaska clock.
+
+⚠ **A `+` WHERE A `,` BELONGED SILENTLY DELETED A SAFETY WARNING.** `FieldGuideActivity`'s
+accessory entry read `"...text" + listOf(...)` instead of `"...text", listOf(...)`. Kotlin ACCEPTS
+it — `String.plus(Any?)` appends the list's `toString()` — so it compiled, ran, and rendered the
+obstacle-sensing caveat as a bracketed list literal glued to the body while the entry lost its
+caveats parameter entirely. Caught on release day. **Count the caveat boxes in the generated
+guide after any `FieldGuideActivity` change**; the generator is source-parsing and cannot warn.
+
+**Open and NOT from this work:** the aircraft has a LASER RANGEFINDER
+(`CameraKey.KeyLaserMeasureInformation` → target `location3D` and true slant `distance`, declared
+in `ProductCapability/M4DSeries/M4TCameraCapability.json`) and nothing uses it. The crosshair
+still SOLVES its ground point against the terrain model in `CameraSlantPoint`. Confirm with
+`KeyLaserMeasureExisted` before designing around it — a declared capability is not a working one,
+which is the whole lesson of the TTS flag.

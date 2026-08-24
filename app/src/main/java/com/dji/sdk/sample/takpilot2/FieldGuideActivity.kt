@@ -562,25 +562,46 @@ class FieldGuideActivity : AppCompatActivity() {
                 "For the light there are three buttons: LOW, HIGH and STROBE. Touch one to put " +
                 "the light in that state. Touch the same button again to turn the light off. " +
                 "STROBE always flashes at full brightness.\n\n" +
-                "For the speaker: SOUND plays and stops, REPEAT plays again and again, and a " +
-                "slider sets the volume.\n\n" +
+                "ON THE GROUND THE AIRCRAFT LIMITS THE LIGHT to 40 percent. HIGH does not give " +
+                "full brightness until the aircraft is in the air. The aircraft tells you this " +
+                "in the warning box.\n\n" +
+                "For the speaker there are three message buttons. Touch one to send that " +
+                "message to the aircraft and play it. Touch the same button again to stop it. " +
+                "The aircraft speaks about one second after you touch.\n\n" +
+                "REPEAT x3 sends the next message three times, with 30 seconds between each " +
+                "one. It then stops. The button on the screen counts down to the next one.\n\n" +
+                "A slider sets the volume.\n\n" +
                 "TO SPEAK THROUGH THE AIRCRAFT, hold HOLD TO TALK, or hold the R1 button on " +
-                "the controller. The two do the same. Speak into the controller. The button " +
-                "shows ON AIR while the aircraft sends your voice.\n\n" +
+                "the controller. The two do the same. Speak into the controller.\n\n" +
+                "WAIT FOR GREEN BEFORE YOU SPEAK. The button shows OPENING in amber for about " +
+                "one and a half seconds while the aircraft gets ready. It then shows ON AIR in " +
+                "green. Your words before green do not go out.\n\n" +
+                "WHEN YOU LET GO, the button shows FINISHING in amber for about two seconds. " +
+                "The aircraft is still saying your last words. Do not be surprised by this.\n\n" +
                 "You must HOLD the button. The aircraft stops when you let go. This is on " +
                 "purpose: a button that stays on can leave the aircraft loud when you do not " +
                 "know it.\n\n" +
+                "RECORD THE THREE MESSAGES IN PRE-FLIGHT, in section 7. The aircraft has no " +
+                "messages until you record them.\n\n" +
+                "THE L2 LABEL AT THE LEFT OF THE SCREEN tells you what the aircraft is doing, " +
+                "even when the panel is closed. Green ON AIR means the aircraft is making " +
+                "sound now. Amber means it is not yet: OPENING, SENDING or FINISHING. Touch " +
+                "the label to open the panel and stop the message.\n\n" +
                 "A button is GREEN when that function is on. It is grey when the function is " +
-                "off. It is AMBER when the aircraft has not said yet.\n\n" +
-                "SOUND plays the sound that is ALREADY on the speaker. This app does not put " +
-                "sounds on the speaker. If the speaker is empty, SOUND makes no sound. To send " +
-                "your own words, use HOLD TO TALK.\n\n" +
-                "Each control shows what the AIRCRAFT reports, not what you asked for. Two " +
-                "dashes (--) mean the aircraft did not answer. If a change does not happen, " +
-                "a message tells you at the top of the screen.",
+                "off. It is AMBER when the aircraft has not said yet, or while a message goes " +
+                "to the aircraft.",
+            // ⚠ A COMMA, NOT A PLUS. This read `"..." +` followed by listOf(...), which Kotlin
+            // ACCEPTS — String.plus(Any?) appends the list's toString() — so it compiled, ran,
+            // and rendered the caveats as a bracketed list literal glued onto the body while the
+            // entry silently lost its caveats parameter entirely. Found the day it would have
+            // shipped, and the mangled text was the obstacle-sensing warning.
             listOf(
-                "MOVE THE VOLUME SLIDER AND LET GO. The new value goes to the aircraft when " +
-                    "you lift your finger, not while you move it.",
+                "THE LIGHT STOPS THE OBSTACLE SENSORS. When the light is on, the aircraft " +
+                    "cannot see obstacles. The aircraft gives a caution when this happens. Fly " +
+                    "with more care, and keep more distance from obstacles, while the light " +
+                    "is on.",
+                "A MESSAGE CONTINUES IF YOU CLOSE THE PANEL. This is on purpose, so a message " +
+                    "is not cut in half. Watch for the green ON AIR label.",
             ),
         )
 

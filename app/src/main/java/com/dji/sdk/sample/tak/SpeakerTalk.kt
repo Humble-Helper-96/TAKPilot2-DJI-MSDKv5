@@ -49,12 +49,78 @@ object SpeakerTalk {
     var talking = false
         private set
 
+    /**
+     * True once the AIRCRAFT is believed to be carrying the audio — not merely when the channel
+     * was requested.
+     *
+     * ⚠ MEASURED IN FLIGHT 2026-08-24: the pilot's voice does not come out of the aircraft for
+     * TWO TO THREE SECONDS after the press, while this application reaches "LIVE" in about 80ms.
+     * The microphone is not the delay — a 1.84s press captured and sent 42 frames, all of it —
+     * the payload's real-time channel simply takes that long to start emitting. The pill used to
+     * paint ON AIR the instant [talking] was set, which is BEFORE any of the asynchronous work,
+     * so it claimed the aircraft was speaking through the whole of a short press that produced
+     * no sound at all. The pilot spoke into a dead channel and the screen said it was working.
+     */
+    @Volatile
+    var carrying = false
+        private set
+
+    /**
+     * True from the pilot's RELEASE until the last of their speech has gone to the aircraft.
+     *
+     * ⚠ THE RELEASE USED TO CUT THE PILOT OFF MID-WORD. `stop()` set [talking] false first, and
+     * both send guards test it — so the frames `OpusEncoder.release()` flushes were discarded,
+     * and so was anything already queued on the IO thread. Measured 2026-08-24: the payload takes
+     * about 1.5s to start emitting, which means roughly that much of the pilot's voice is in
+     * flight at any moment, and all of it was thrown away by this application the instant the
+     * button came up.
+     *
+     * ⚠ THIS IS A DELIBERATE, BOUNDED EXCEPTION TO "STOP MEANS STOP". The aircraft keeps speaking
+     * for up to [TAIL_DRAIN_MS] after the release — but ONLY words the pilot has already said,
+     * never new microphone input: the recorder is stopped first, so nothing further can be
+     * captured. The pill stays amber for the whole drain, because the screen must not say silent
+     * while the aircraft is still talking.
+     */
+    @Volatile
+    var draining = false
+        private set
+
+    /**
+     * How long the already-spoken tail is allowed to finish.
+     *
+     * From the measured pipeline latency: the payload reported PLAYING 1533ms and 1535ms after
+     * two separate presses, so about that much audio is in flight when the button is released.
+     * Sending the end-of-file any sooner is what truncates it.
+     */
+    private const val TAIL_DRAIN_MS = 1600L
+
+    /**
+     * How long to keep saying "opening" when the aircraft never confirms.
+     *
+     * A backstop, not the mechanism: [pollCarrying] asks the payload and this only decides how
+     * long to wait before believing it anyway. Set from the measured 2-3s with margin.
+     */
+    /**
+     * ⚠ IN_TRANSMISSION IS NOT "EMITTING". The payload reports it about 260ms after the press,
+     * reliably — but the operator confirms the voice still does not come out of the aircraft for
+     * two to three seconds, so believing that status put the pill green far too early and moved
+     * the lie rather than removing it (2026-08-24).
+     *
+     * So the poll now runs for the WHOLE talk and logs every status change, looking for a later
+     * transition that means "the speaker is actually making sound". If one exists it becomes the
+     * signal and this constant stops mattering; until then it is the honest fallback, set from
+     * the operator's own observation and marked as such.
+     */
+    private const val CARRY_ASSUME_MS = 2500L
+    private const val CARRY_POLL_MS = 250L
+
     /** Told whenever [talking] changes, so the panel can paint the TALK control. */
     @Volatile
     var onChanged: (() -> Unit)? = null
 
     private var thread: HandlerThread? = null
     private var io: Handler? = null
+    private val ui = Handler(android.os.Looper.getMainLooper())
 
     private var micFrames = 0
     private var sentFrames = 0
@@ -68,8 +134,25 @@ object SpeakerTalk {
      */
     fun start(onStarted: (Boolean) -> Unit) {
         if (talking) { onStarted(true); return }
+        // ⚠ THE PAIRED HALF OF SpeakerRecorder'S GUARD. The microphone is a process singleton;
+        // the two features REFUSE each other rather than releasing each other's hold, because a
+        // "clean up whatever is there" call is how one silently steals the microphone from the
+        // other mid-sentence.
+        if (SpeakerRecorder.recording) {
+            AppLog.w(TAG, "talk refused: a message is being recorded")
+            onStarted(false); return
+        }
+        // A press during a drain abandons the tail: the pilot is speaking again, and the new
+        // words outrank the end of the last sentence.
+        if (draining) {
+            AppLog.i(TAG, "talk: a new press abandoned the previous tail")
+            ui.removeCallbacksAndMessages(null)
+            draining = false
+        }
         forceRelease()
         talking = true
+        carrying = false          // opening, NOT on air — see [carrying]
+        lastStatus = null
         notifyChanged()
         micFrames = 0
         sentFrames = 0
@@ -99,7 +182,8 @@ object SpeakerTalk {
                         buildPipeline()
                         recorder?.start()
                         encoder?.start()
-                        AppLog.i(TAG, "talk: LIVE")
+                        AppLog.i(TAG, "talk: sending — waiting for the aircraft to carry it")
+                        pollCarrying(android.os.SystemClock.elapsedRealtime())
                         onStarted(true)
                     } catch (t: Throwable) {
                         AppLog.w(TAG, "talk: the audio pipeline failed: ${t.message}")
@@ -117,6 +201,66 @@ object SpeakerTalk {
             })
     }
 
+    /**
+     * Asks the payload whether it has started carrying the audio, and says so on the pill.
+     *
+     * ⚠ WE CANNOT HEAR THE AIRCRAFT, so this is the aircraft's own status rather than an
+     * assumption — the same lesson as the message upload. The status values seen during a live
+     * talk are logged, because nothing documents what a megaphone reports in REAL_TIME mode and
+     * the answer decides whether this stays a poll or becomes something better.
+     */
+    private fun pollCarrying(startedAtMs: Long) {
+        if (!talking) return
+        val waited = android.os.SystemClock.elapsedRealtime() - startedAtMs
+        MegaphoneManager.getInstance().getStatus(
+            object : CommonCallbacks.CompletionCallbackWithParam<
+                dji.v5.manager.aircraft.megaphone.MegaphoneStatus> {
+                override fun onSuccess(
+                    status: dji.v5.manager.aircraft.megaphone.MegaphoneStatus?,
+                ) {
+                    if (!talking) return
+                    // Log only the CHANGES, so a whole talk is a short readable trace rather
+                    // than forty identical lines.
+                    if (status != lastStatus) {
+                        AppLog.i(TAG, "talk: after ${waited}ms the speaker reports $status")
+                        lastStatus = status
+                    }
+                    // ⚠ PLAYING, NOT IN_TRANSMISSION. If this payload ever reports PLAYING during
+                    // a live talk then THAT is the moment it makes sound, and it is the signal
+                    // this whole poll exists to find. IN_TRANSMISSION only means bytes arriving.
+                    val emitting =
+                        status == dji.v5.manager.aircraft.megaphone.MegaphoneStatus.PLAYING
+                    when {
+                        emitting -> markCarrying(waited, "the speaker reports PLAYING")
+                        waited >= CARRY_ASSUME_MS ->
+                            markCarrying(waited, "no PLAYING reported — assuming by ${CARRY_ASSUME_MS}ms")
+                        else -> io?.postDelayed({ pollCarrying(startedAtMs) }, CARRY_POLL_MS)
+                    }
+                    // Keep watching even after the pill goes green, so the trace shows whether a
+                    // later transition exists that we should have been using instead.
+                    if (carrying && waited < 6000L) {
+                        io?.postDelayed({ pollCarrying(startedAtMs) }, CARRY_POLL_MS)
+                    }
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    if (!talking) return
+                    if (waited >= CARRY_ASSUME_MS) markCarrying(waited, "status unavailable")
+                    else io?.postDelayed({ pollCarrying(startedAtMs) }, CARRY_POLL_MS)
+                }
+            })
+    }
+
+    @Volatile
+    private var lastStatus: dji.v5.manager.aircraft.megaphone.MegaphoneStatus? = null
+
+    private fun markCarrying(waitedMs: Long, why: String) {
+        if (carrying || !talking) return
+        carrying = true
+        AppLog.i(TAG, "talk: ON AIR after ${waitedMs}ms — $why")
+        notifyChanged()
+    }
+
     private fun buildPipeline() {
         val rec = AudioRecordHandler.getInstance()
         rec.init()
@@ -125,13 +269,14 @@ object SpeakerTalk {
         AppLog.i(TAG, "talk: rate=${rec.audioConfig?.audioSampleRate} " +
             "ch=${rec.audioConfig?.audioChannelCount} buf=${rec.audioConfig?.bufferSize}")
         enc.setEncodedDataCallback(EncodedDataCallback { data, size ->
-            // ⚠ THE GUARD IS INSIDE THE CALLBACK. Frames already queued keep arriving for a
-            // moment after the pilot lets go, and without this test they would be sent after
-            // the release — audio out of the aircraft that nobody is holding a button for.
-            if (!talking) return@EncodedDataCallback
+            // ⚠ THE GUARD ALLOWS THE DRAIN. It used to be `if (!talking) return`, which threw
+            // away the encoder's flushed tail and cut the pilot off mid-word — see [draining].
+            // Nothing NEW can arrive here after a release, because the recorder is stopped
+            // first; what passes now is only speech the pilot already made.
+            if (!talking && !draining) return@EncodedDataCallback
             sentFrames++
             io?.post {
-                if (!talking) return@post
+                if (!talking && !draining) return@post
                 MegaphoneManager.getInstance().sendRealTimeDataToMegaphone(data, size,
                     object : CommonCallbacks.CompletionCallback {
                         override fun onSuccess() {}
@@ -156,12 +301,38 @@ object SpeakerTalk {
      * told there are none coming.
      */
     fun stop() {
-        if (!talking && recorder == null && encoder == null) return
+        if (!talking && !draining && recorder == null && encoder == null) return
         val wasTalking = talking
         talking = false
-        AppLog.i(TAG, "talk: stopping (mic frames=$micFrames sent=$sentFrames)")
+        carrying = false
+        AppLog.i(TAG, "talk: released (mic frames=$micFrames sent=$sentFrames) — draining the tail")
+
+        if (!wasTalking) { finishDrain(false); return }
+
+        // ⚠ ORDER. The microphone stops FIRST, so nothing new can be captured, and only then is
+        // the encoder released — its flush is the tail we are trying to keep.
+        draining = true
+        notifyChanged()                       // amber: released, still finishing
+        runCatching { recorder?.stop() }
+        runCatching { recorder?.release() }
+        recorder = null
+        runCatching { encoder?.release() }    // flushes the last frames through the callback
+        encoder = null
+
+        // ⚠ THE END-OF-FILE IS DELAYED ON PURPOSE. Sent immediately it truncates whatever the
+        // payload still holds — which is about 1.5s of the pilot's voice.
+        ui.postDelayed({ finishDrain(true) }, TAIL_DRAIN_MS)
+    }
+
+    /** Closes the channel once the tail has gone. */
+    private fun finishDrain(sendEof: Boolean) {
+        if (!draining && !sendEof) {
+            forceRelease(); stopIoThread(); notifyChanged(); return
+        }
+        draining = false
+        AppLog.i(TAG, "talk: tail drained (sent=$sentFrames) — closing")
         forceRelease()
-        if (wasTalking) {
+        if (sendEof) {
             MegaphoneManager.getInstance().appendEOFToRealTimeData(
                 object : CommonCallbacks.CompletionCallback {
                     override fun onSuccess() { AppLog.i(TAG, "talk: closed") }

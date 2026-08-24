@@ -181,7 +181,26 @@ android {
         //     and nothing else. New: PUSH-TO-TALK through the AS1, on the panel and on R1, hold
         //     only, closed by every exit path. Not built: a file picker — the aircraft reports
         //     one slot, 'megaphone_file', and the file-list key is refused.
-        versionCode 90
+        // 91: still v1.1.0, NOT RELEASED. The light and the speaker are one piece of work and
+        //     this is the rest of it: THREE STANDARDISED VOICE MESSAGES through the AS1, for a
+        //     public safety aircraft that has to put out the same words every time. Recorded and
+        //     named in Pre-Flight §7, fired from three pills in the L2 panel where SOUND and
+        //     REPEAT used to be, plus REPEAT x3 (three plays, 30s apart, then silence) and an ON
+        //     AIR indicator on the L2 hint chip.
+        //     ⚠ THE SPEAKER HOLDS ONE SOUND, so the application owns the library and every play
+        //     re-uploads: measured 17 KB/s, about 1.4s from press to speech. The audio must be
+        //     RAW OPUS PACKETS (16kHz mono 16kbps CBR, 40ms frames, no Ogg container), so
+        //     messages are RECORDED on the controller through DJI's own encoder — an ffmpeg
+        //     .opus will not play, and PCMTools mis-frames its tail. TTS is refused outright by
+        //     MSDK on the M4D series whatever the payload advertises.
+        //     Bench-proven: format, upload, playback, repeat, stop, push-to-talk.
+        //     ⚠ STILL TO COME BEFORE THIS IS A RELEASE: import/export of messages between
+        //     controllers, so a fleet can share one recording. NOTHING HAS FLOWN with any of it.
+        // 92+: bench iteration. ⚠ EVERY INSTALL BUMPS THIS from here on (operator,
+        //     2026-08-24) — about a dozen builds went on the controller as 91 and the device
+        //     could not tell them apart, which is not a state to flight-test from. Use
+        //     tools/install.sh, which bumps, builds, installs and VERIFIES from the device.
+        versionCode 95
         versionName "1.1.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
