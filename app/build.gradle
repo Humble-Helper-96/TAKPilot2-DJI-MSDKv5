@@ -200,8 +200,23 @@ android {
         //     2026-08-24) — about a dozen builds went on the controller as 91 and the device
         //     could not tell them apart, which is not a state to flight-test from. Use
         //     tools/install.sh, which bumps, builds, installs and VERIFIES from the device.
-        versionCode 105
-        versionName "1.1.0"
+        // 106: v1.2.0 — VISION ASSIST on R3. The aircraft's obstacle-sensing cameras as a
+        //      picture, sharing the mini-map's corner: R3 swaps between them. AUTO follows the
+        //      direction of travel, which is DJI's own mode. Measured on the airframe: 640x480
+        //      H264, six directions, no UP, nothing on the ground until takeoff, and no cost to
+        //      the main feed. ⚠ MSDK never reports which direction AUTO chose — no key exists —
+        //      so the chip names the VIEW, not the direction.
+        //      THE ZOOM PILL NOW COMES FROM THE FOCAL LENGTH. The ratio key's scale changed
+        //      mid-session (f35 = ratio x 24 all morning, x15.9 by the afternoon), which is why
+        //      "1.5X" kept coming back at the camera's widest. Focal length has never disagreed
+        //      with the picture.
+        //      Not built: measured height above the surface below. KeyUltrasonicHeight reports a
+        //      FUSED HEIGHT ABOVE GROUND — over a car it read 3.00m and sliding off it read
+        //      2.90m, where the vehicle's height should have given a 1.5m step. Removed rather
+        //      than shipped as something it is not.
+        //      Flown 2026-08-24.
+        versionCode 106
+        versionName "1.2.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

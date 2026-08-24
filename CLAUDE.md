@@ -329,3 +329,47 @@ in `ProductCapability/M4DSeries/M4TCameraCapability.json`) and nothing uses it. 
 still SOLVES its ground point against the terrain model in `CameraSlantPoint`. Confirm with
 `KeyLaserMeasureExisted` before designing around it — a declared capability is not a working one,
 which is the whole lesson of the TTS flag.
+
+**2026-08-24: v1.2.0 RELEASED and FLOWN — the VISION VIEW on R3.** The aircraft's
+obstacle-sensing cameras as a picture, sharing the mini-map's corner; R3 swaps between them.
+`AUTO` follows the direction of travel, which is DJI's own mode and not ours to build. Measured
+on the airframe: 640x480 H264 on `ComponentIndexType.VISION_ASSIST`, directions
+`[AUTO, LEFT, RIGHT, FRONT, BACK, DOWN]` with **no UP**, and **no cost to the main video feed**.
+
+⚠ **NOTHING STREAMS ON THE GROUND.** The first frame arrives on takeoff. A blank view before that
+is correct, and the chip says `WAITING` so it does not read as a fault.
+
+⚠ **MSDK NEVER REPORTS WHICH DIRECTION `AUTO` RESOLVED TO.** `VisionAssistDirection` is referenced
+by five classes, all of them the stream manager and its listener — there is no key. DJI Pilot 2
+labels its own view; we cannot. Deriving it from the velocity vector only works while the
+aircraft is MOVING, which is exactly when the pilot already knows — so the chip names the VIEW,
+not the direction, and there is no pin control. Do not re-litigate this without new evidence.
+
+⚠ **THE ZOOM PILL COMES FROM THE FOCAL LENGTH NOW, AND `KeyCameraZoomRatios` IS NOT A NUMBER TO
+DISPLAY.** Its SCALE CHANGED MID-SESSION: `f35 = ratio x 24` held exactly across twenty samples
+all morning, and by the afternoon the same camera at its widest 24.0mm reported 1.51 — a divisor
+of about 15.9, and 24/15.9 is precisely the 1.5 on the pill. **What shifts it is still unknown.**
+This is also the real cause of the 2026-08-23 "1.5X" that was never reproduced and that the
+`ZoomLadder.label` truncation fix appeared to cure — that fix was real, but for a different bug
+sitting next to this one. The focal length has never disagreed with the picture in a full day of
+logs. The ratio key is kept only as a change trigger.
+
+⚠ **THE MEASURED-HEIGHT FEATURE WAS BUILT AND THEN REMOVED, AND THE REASON IS WORTH KEEPING.**
+`FlightControllerKey.KeyUltrasonicHeight` is DECLARED in the M4D capability file, is accurate
+(9.2 ft against a 10 ft hover), is steady, and reports in DECIMETRES — and it gives a FUSED
+HEIGHT ABOVE GROUND, not range to whatever is underneath. Over a car it read 3.00m; sliding off
+the car, 2.90m — a 0.1m change where a five-foot vehicle should have produced 1.5m. Three passes,
+over/off/over. **This aircraft cannot measure height above an arbitrary landing surface**, so a
+"land softly on a roof or a vehicle" aid cannot be built on this key. Two of my own bugs hid
+inside that investigation and are worth remembering as a pair: `KeyIsUltrasonicUsed` means the
+flight controller is BLENDING the sensor into its position solution, not that the reading is
+good — gating the display on it made a steady sensor flicker three times a second; and a
+`KeyManager.listen` fires ON CHANGE, so a staleness timeout hid the number during a STEADY HOVER,
+which is exactly when a landing aid matters most.
+
+**The double-tap expansion belongs to the CORNER, not to the map that happens to be in it.** It
+was attached to the `MapView`, so with the vision view showing it reached a view that was `GONE`.
+
+⚠ **Specification §4.12 does NOT yet describe the vision view.** It is a SLOT — Autel and MSDKv4
+fly airframes without it — and the wording needs the operator's agreement before the shared
+specification is touched.
