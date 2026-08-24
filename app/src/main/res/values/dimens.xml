@@ -71,7 +71,14 @@
     <!-- Separate from flight_map_size so a taller screen can carry a taller map
          without a wider HUD column. Equal to the width today, so the map is square
          and nothing moved when this was introduced (conformance D8). -->
-    <dimen name="flight_map_height">110dp</dimen>
+    <!-- ⚠ 119dp SINCE 2026-08-24, AND THE COLUMN'S paddingBottom CAME DOWN 12->3 TO PAY FOR IT.
+         The corner now carries the vision-assist view as well as the map, and the operator asked
+         for its bottom edge to line up with the L3 "IR" chip on the opposite side of the screen.
+         That chip's stack sits 3dp off the bottom, so the column's bottom padding had to match —
+         and the 9dp that freed went straight into the map, which is why the VERTICAL BUDGET
+         ABOVE IS UNCHANGED at about 402dp. ⚠ Do not raise this without taking the height from
+         somewhere; overflow clips the map with no warning and no log line. -->
+    <dimen name="flight_map_height">119dp</dimen>
     <!-- HUD readout size, per bucket. 12sp is what hudText already used, so this
          changed no pixel; it exists so a controller can raise it (conformance D7).
          On a sunlight-readable screen at arm's length 12sp is too small. -->

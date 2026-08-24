@@ -261,7 +261,7 @@
         android:gravity="end"
         android:orientation="vertical"
         android:paddingTop="60dp"
-        android:paddingBottom="12dp"
+        android:paddingBottom="3dp"
         android:paddingEnd="4dp">
 
         <!-- TOP HUD PANEL: exposure controls, clock, telemetry and gimbal, on one
@@ -428,10 +428,30 @@
                 android:layout_height="match_parent"
                 app:mapbox_renderTextureMode="true" />
 
+            <!-- VISION ASSIST — the aircraft's obstacle-sensing cameras, DJI Pilot 2's grey
+                 wide-angle corner view. R3 swaps between this and the map.
+
+                 ⚠ IT SHARES THE MAP'S SLOT ON PURPOSE (operator, 2026-08-24). This screen is
+                 768x480dp and every corner is already spoken for; a second permanent view would
+                 have to cover live video or displace the warning banner. DJI Pilot 2 solves it
+                 the same way — its vision panel carries a swap icon. Inside the container rather
+                 than beside it, so the double-tap expansion resizes this too and the two views
+                 can never disagree about where they are.
+
+                 ⚠ IT ONLY STREAMS IN THE AIR. Measured 2026-08-24: nothing arrives on the
+                 ground, and the first frame came about 30s after switching on — which was the
+                 aircraft leaving the ground, not a delay. A blank view on the ground is correct. -->
+            <com.dji.sdk.sample.takpilot2.VisionAssistView
+                android:id="@+id/flightVisionAssist"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
             <!-- WIDE/NEAR toggle. Bottom-left, same corner as the sibling — free now that
                  MapLibre's (incorrect) Mapbox badge is switched off; see the flight activity.
                  Sized to THIS map, not copied: 36x22dp on a 130dp map is the same proportion
-                 as the sibling's 48x32 on its 180dp one. There is not much room here. -->
+                 as the sibling's 48x32 on its 180dp one. There is not much room here.
+                 ⚠ It belongs to the MAP, so the activity hides it while the vision view is up. -->
             <TextView
                 android:id="@+id/flightMapZoomButton"
                 android:layout_width="36dp"
@@ -445,6 +465,9 @@
                 android:textColor="@color/tp_text_primary"
                 android:textSize="10sp"
                 android:textStyle="bold" />
+
+            <!-- Says which view this is and that R3 changes it. The button is otherwise
+                 invisible, and this is the only place a pilot would learn it exists. -->
         </FrameLayout>
 
     </LinearLayout>
@@ -712,6 +735,33 @@
             android:contentDescription="Start/stop recording to SD (not wired yet)" />
 
     </LinearLayout>
+
+    <!-- R3's HINT CHIP — the mirror of the L1/L2/L3 chips on the far side.
+         Same background, padding, text size and weight as hintL3, and the same 3dp off the
+         bottom with a 2dp side margin, so the two sit at exactly the same height on opposite
+         edges. The arrowhead points RIGHT, at the physical button, which is the whole idiom
+         (DJI Pilot 2's own — see pilot2-reference/pilot2-flight-screen.png).
+
+         ⚠ IN THE ROOT AND NOT IN THE MAP CONTAINER. Inside it, its margin was measured from the
+         container's edge rather than the screen's, so it never quite matched the L chips. It is
+         also declared LAST so it draws over the corner view, whichever of the two is showing.
+
+         The WORD is the view you are looking at now, because that is what a pilot glancing at
+         the corner needs confirmed. -->
+    <TextView
+        android:id="@+id/flightVisionAssistLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="2dp"
+        android:layout_marginBottom="3dp"
+        android:background="#66000000"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="2dp"
+        android:text="MAP ▶"
+        android:textColor="@color/tp_text_primary"
+        android:textSize="11sp"
+        android:textStyle="bold" />
 
     <!-- THE ACCESSORY PANEL (L2), LAST IN THE FILE ON PURPOSE. A FrameLayout draws in
          declaration order, so this is on top of everything — including the crosshair. That

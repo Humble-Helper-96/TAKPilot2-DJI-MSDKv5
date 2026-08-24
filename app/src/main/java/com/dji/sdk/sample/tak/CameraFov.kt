@@ -98,6 +98,34 @@ object CameraFov {
         }
     }
 
+    /**
+     * The camera's live 35mm-equivalent focal length, or null before it has answered.
+     *
+     * ⚠ THIS IS THE ZOOM PILL'S SOURCE OF TRUTH, NOT `KeyCameraZoomRatios`. The ratio key's
+     * SCALE CHANGED MID-SESSION on 2026-08-24: for a whole morning `f35 = ratio x 24` held exactly
+     * across twenty samples, and by the afternoon the same camera at its widest 24.0mm was
+     * reporting a ratio of 1.51 — a divisor of about 15.9. What shifts it is not known. The pill
+     * read 1.5X while the picture was as wide as the camera goes, twice on two different days.
+     *
+     * The focal length has never once disagreed with the picture, so the pill is derived from it
+     * and the ratio key is no longer displayed at all.
+     */
+    @Volatile
+    var lastF35Mm: Double? = null
+        private set
+
+    /** Told when the focal length moves, so a screen can repaint the zoom readout. */
+    @Volatile
+    var onFovChanged: (() -> Unit)? = null
+
+    /**
+     * The zoom to SHOW: how much narrower the view is than the wide framing.
+     *
+     * Null until the camera answers. Thermal is excluded by the caller — its focal length is
+     * fixed and a "ratio" against the visible wide lens would be meaningless.
+     */
+    fun displayRatio(): Double? = lastF35Mm?.let { (it / WIDE_F35_MM).coerceAtLeast(1.0) }
+
     private fun adopt(f35mm: Double?, lens: String) {
         if (f35mm == null || !f35mm.isFinite() || f35mm < 4.0 || f35mm > 2000.0) {
             AppLog.w(TAG, "$lens focal length implausible ($f35mm mm) — keeping the previous FOV")
@@ -105,6 +133,10 @@ object CameraFov {
         }
         val dfov = 2.0 * Math.toDegrees(Math.atan(FF_DIAGONAL_MM / (2.0 * f35mm)))
         TakBridgeHolder.setCameraFov(dfov)
+        if (lens != "thermal") {
+            lastF35Mm = f35mm
+            onFovChanged?.invoke()
+        }
         // The ratio is logged beside the focal length so the two feeds can always be compared
         // after the fact — their disagreement is what a wrong zoom pill looks like in a log.
         AppLog.i(TAG, "camera FOV adopted: $lens f35=${"%.1f".format(f35mm)}mm -> " +

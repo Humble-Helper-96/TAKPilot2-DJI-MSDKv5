@@ -200,7 +200,7 @@ android {
         //     2026-08-24) — about a dozen builds went on the controller as 91 and the device
         //     could not tell them apart, which is not a state to flight-test from. Use
         //     tools/install.sh, which bumps, builds, installs and VERIFIES from the device.
-        versionCode 95
+        versionCode 105
         versionName "1.1.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""

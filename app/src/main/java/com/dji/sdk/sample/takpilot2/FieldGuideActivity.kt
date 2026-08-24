@@ -549,7 +549,30 @@ class FieldGuideActivity : AppCompatActivity() {
                 "L2 opens and closes the accessory panel. This is the ONLY way to the " +
                 "panel. There is no button for it on the screen.\n\n" +
                 "L3 changes between the usual camera and the thermal camera, the same as " +
-                "the IR button.",
+                "the IR button.\n\n" +
+                "R1, on the front right, is push-to-talk. Hold it to speak through the " +
+                "aircraft.\n\n" +
+                "R3, below it, changes the small view at the bottom right between the MAP and " +
+                "the VISION view. The small view shows which one it is, and shows R3.",
+        )
+
+        entry(
+            emptyList(),
+            "The vision view (R3)",
+            "The aircraft has cameras that look for obstacles. R3 shows what they see, in the " +
+                "small view at the bottom right, in place of the map. Press R3 again to get " +
+                "the map back.\n\n" +
+                "The picture is grey and very wide. This is normal: these are not the camera " +
+                "you take video with.\n\n" +
+                "The view changes by itself to look the way the aircraft moves. Forward, back, " +
+                "left, right and down.\n\n" +
+                "USE IT TO SEE WHAT IS BESIDE AND BEHIND THE AIRCRAFT. The video camera looks " +
+                "one way only, and this looks the way you are going.",
+            listOf(
+                "THE VIEW IS EMPTY UNTIL THE AIRCRAFT IS IN THE AIR. The obstacle cameras do " +
+                    "not send a picture on the ground. An empty view before you take off is " +
+                    "correct.",
+            ),
         )
 
         entry(

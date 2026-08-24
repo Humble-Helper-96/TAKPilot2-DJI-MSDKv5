@@ -46,7 +46,9 @@ class DebugActivity : AppCompatActivity() {
         }
     }
 
-    companion object { private const val TAG = "DebugActivity" }
+    companion object {
+        private const val TAG = "DebugActivity"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

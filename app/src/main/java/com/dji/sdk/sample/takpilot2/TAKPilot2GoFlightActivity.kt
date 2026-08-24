@@ -24,6 +24,8 @@ import com.dji.sdk.sample.tak.AircraftLights
 import com.dji.sdk.sample.tak.SpeakerBroadcast
 import com.dji.sdk.sample.tak.SpeakerMessages
 import com.dji.sdk.sample.tak.SpeakerTalk
+import com.dji.sdk.sample.tak.VisionAssist
+import dji.sdk.keyvalue.value.flightassistant.VisionAssistDirection
 import dji.v5.manager.aircraft.megaphone.MegaphoneStatus
 import dji.v5.manager.aircraft.megaphone.PlayMode
 import com.dji.sdk.sample.tak.CameraSlantPoint
@@ -196,6 +198,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private lateinit var accessorySpeakerMessageRow: View
     private lateinit var accessorySpeakerNoMessages: TextView
     private lateinit var accessorySpeakerRepeat: TextView
+    private lateinit var visionAssistView: VisionAssistView
+    private lateinit var visionAssistLabel: TextView
 
     /**
      * The L2 hint chip, which doubles as the ON AIR indicator.
@@ -427,6 +431,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             if (AppLog.resourceMonitor) View.VISIBLE else View.GONE
 
         mapContainer = findViewById(R.id.flightMapContainer)
+        // Bound here, ahead of the map gestures below, because the corner's double-tap handler
+        // is attached to both views. setupVisionAssist() re-finds it harmlessly.
+        visionAssistView = findViewById(R.id.flightVisionAssist)
         mapView = findViewById(R.id.flightMapView)
         mapView.onCreate(savedInstanceState)
 
@@ -472,6 +479,19 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         mapView.setOnTouchListener { _, ev ->
             mapGestures.onTouchEvent(ev)
             false
+        }
+        // ⚠ THE SAME GESTURE ON THE VISION VIEW. The two share this corner, and the double tap
+        // used to live only on the MapView — so with the corner expanded and vision showing, a
+        // double tap reached a view that was GONE and nothing happened. The corner stayed large
+        // until the pilot swapped back to the map to shrink it (operator, 2026-08-24). The
+        // expansion belongs to the CORNER, not to the map that happens to be in it.
+        //
+        // This one DOES consume: there is no MapLibre underneath to pass through to, and a
+        // touch falling past it lands on live video and drops a marker.
+        @Suppress("ClickableViewAccessibility")
+        visionAssistView.setOnTouchListener { _, ev ->
+            mapGestures.onTouchEvent(ev)
+            true
         }
         mapView.getMapAsync { mapboxMap ->
             map = mapboxMap
@@ -670,6 +690,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // aircraft on every open, so nothing is asked of the AL1 or the AS1 until a pilot wants
         // them.
         setupAccessoryPanel()
+        setupVisionAssist()
+        // The pill is derived from the focal length now, so it repaints when THAT moves.
+        com.dji.sdk.sample.tak.CameraFov.onFovChanged = { runOnUiThread { renderZoomPill() } }
         // The accessory state is a PUSH feed. Without this the panel only ever showed what was
         // true at the moment it was opened, and a light switched from DJI Pilot 2 — or by our own
         // write landing after its callback — never reached the screen.
@@ -1204,6 +1227,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      *   L1 hold — a static Unknown marker: same function as holding the crosshair.
      *   L2      — the accessory panel: the AL1 light and the AS1 speaker (2026-08-23).
      *   L3      — thermal on/off: same function as the IR pill.
+     *   R1      — push-to-talk: same function as HOLD TO TALK in the accessory panel.
+     *   R3      — swaps the bottom-right corner between the mini-map and the vision-assist
+     *             view (the aircraft's obstacle-sensing cameras). No on-screen equivalent, so
+     *             the corner carries an "R3" label — see [renderVisionAssistLabel].
      *
      * One button for both marker kinds, the same tap/hold split the crosshair itself has —
      * so L1 IS the crosshair, in button form. Each route ends in the SAME function as its
@@ -1224,6 +1251,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         when (keyCode) {
             android.view.KeyEvent.KEYCODE_F1 -> {
                 event.startTracking()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_F6 -> {
+                // R3 — swap the corner between the mini-map and the vision-assist view.
+                if (event.repeatCount == 0) {
+                    AppLog.i(TAG, "controller button R3 — swap the corner view")
+                    toggleVisionAssist()
+                }
                 return true
             }
             android.view.KeyEvent.KEYCODE_F4 -> {
@@ -1321,13 +1356,15 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     /** The pill: the live value, lit while zoomed in so 1X reads at a glance. A tap snaps
      *  back to 1X — see onZoomTapped. */
     private fun renderZoomPill() {
+        // ⚠ FROM THE FOCAL LENGTH, NOT FROM THE RATIO KEY. See CameraFov.lastF35Mm: the ratio
+        // key's scale changed under us mid-session and put "1.5X" on the pill while the camera
+        // sat at its widest. The focal length is what actually sets the framing and it has never
+        // disagreed with the picture. The ratio key is still followed for CHANGE EVENTS — it is
+        // a fine trigger, just not a fine number.
+        val shown = com.dji.sdk.sample.tak.CameraFov.displayRatio() ?: zoomRatio
         zoomButton.setBackgroundResource(
-            if (zoomRatio > 1.05) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
-        // ONE formatting path. This used to do its own whole-number test and fall back to
-        // "%.1fX", which meant the pill had two ways to render a ratio and they disagreed at the
-        // edges — 6.9958 came out "7.0X" here and "6X" through the adoption path. ZoomLadder.label
-        // now owns the whole question.
-        zoomButton.text = ZoomLadder.label(zoomRatio)
+            if (shown > 1.05) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        zoomButton.text = ZoomLadder.label(shown)
     }
 
     /**
@@ -3304,6 +3341,79 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         pill.alpha = if (state == null) 0.75f else 1f
     }
 
+    /**
+     * THE VISION-ASSIST VIEW — the aircraft's obstacle-sensing cameras, sharing the mini-map's
+     * slot. R3 swaps between them.
+     *
+     * ⚠ IT IS ENABLED WHENEVER THE AIRCRAFT OFFERS IT, not when the pilot looks at it. Enabling
+     * is a WRITE, done once here on screen entry and never on a timer (safety rule 3). Keeping
+     * the stream warm is what makes the R3 swap instant — the alternative, starting it on the
+     * swap, would put the measured start-up delay in front of a pilot who has just asked to see
+     * something. Measured 2026-08-24: no effect on the main video feed. ⚠ If range testing ever
+     * shows the two streams competing, `ICameraStreamManager.setStreamPriority` and
+     * `setStreamEncoderBitrate` are the levers, and enabling on demand is the fallback.
+     *
+     * ⚠ NOTHING STREAMS ON THE GROUND. The vision system does not produce frames until the
+     * aircraft is airborne, so a blank view before takeoff is correct and must not be reported
+     * as unavailable.
+     */
+    private fun setupVisionAssist() {
+        visionAssistView = findViewById(R.id.flightVisionAssist)
+        visionAssistLabel = findViewById(R.id.flightVisionAssistLabel)
+        visionAssistView.onFirstFrame = { w, h ->
+            AppLog.i(TAG, "vision assist stream is live at ${w}x$h")
+            runOnUiThread { renderVisionAssistLabel() }
+        }
+        VisionAssist.onChanged = { renderVisionAssistLabel() }
+        VisionAssist.start()
+        VisionAssist.setEnabled(true) { ok, why ->
+            if (!ok) AppLog.w(TAG, "vision assist unavailable: ${why ?: "no reason given"}")
+        }
+        // AUTO is DJI's own follow-the-direction-of-travel mode. There is no direction control on
+        // the screen: a pilot who wants a particular side flies that way, and a manual direction
+        // is a setting that can be left wrong.
+        VisionAssist.setDirection(VisionAssistDirection.AUTO)
+        renderVisionAssistLabel()
+    }
+
+    /**
+     * Swaps the corner between the map and the vision view. R3.
+     *
+     * ⚠ IT REFUSES RATHER THAN SHOWING A DEAD BOX when the aircraft has no vision assist — an
+     * empty grey square with no explanation is worse than the map the pilot already had.
+     */
+    private fun toggleVisionAssist() {
+        if (!::visionAssistView.isInitialized) return
+        val showingVision = visionAssistView.visibility == View.VISIBLE
+        if (!showingVision && VisionAssist.available.isEmpty()) {
+            AppLog.i(TAG, "R3: this aircraft offers no vision assist")
+            showNotice("This aircraft has no vision assist view", refused = true)
+            return
+        }
+        visionAssistView.visibility = if (showingVision) View.GONE else View.VISIBLE
+        mapView.visibility = if (showingVision) View.VISIBLE else View.GONE
+        // The map's own WIDE/NEAR control belongs to the map, not to the corner.
+        findViewById<TextView>(R.id.flightMapZoomButton)?.visibility =
+            if (showingVision) View.VISIBLE else View.GONE
+        AppLog.i(TAG, "R3: corner shows ${if (showingVision) "the map" else "vision assist"}")
+        renderVisionAssistLabel()
+    }
+
+    private fun renderVisionAssistLabel() {
+        if (!::visionAssistLabel.isInitialized) return
+        val showingVision = visionAssistView.visibility == View.VISIBLE
+        // One word and an arrowhead, exactly like the L1/L2/L3 chips. The word names what is in
+        // the corner right now; "R3" is gone because the arrow points at the button, which is
+        // what the arrow is FOR.
+        visionAssistLabel.text = when {
+            !showingVision -> "MAP ▶"
+            // ⚠ On the ground the vision system sends nothing, so an empty box would read as a
+            // fault. This says which it is without claiming a picture that is not there.
+            visionAssistView.frames == 0L -> "WAITING ▶"
+            else -> "VISION ▶"
+        }
+    }
+
     private fun renderWarning() {
         val d = FlightWarnings.display()
         if (d == null) {
@@ -3838,6 +3948,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // broadcasting behind it. Closing the PANEL deliberately does not stop a message — a
         // bounded message should finish — but the screen dying is different.
         SpeakerBroadcast.reset()
+        // ⚠ Turned OFF with the screen. Leaving a second video stream running on the aircraft's
+        // radio link with nobody watching it is exactly the waste this is meant to avoid.
+        VisionAssist.setEnabled(false)
+        VisionAssist.stop()
+        com.dji.sdk.sample.tak.CameraFov.onFovChanged = null
         // The accessory state belongs to the AIRFRAME that is plugged in, not to this
         // application, and AircraftAccessories is a process-wide object. Dropping it here stops
         // the next flight screen opening on the last aircraft's answers — including which key
