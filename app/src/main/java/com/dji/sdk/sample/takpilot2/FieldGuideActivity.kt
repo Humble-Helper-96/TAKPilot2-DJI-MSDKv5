@@ -231,8 +231,12 @@ class FieldGuideActivity : AppCompatActivity() {
             "broadcast ID and the login. Select the quality: Standard, or Low if the " +
             "connection is weak. You can change the quality in flight.")
 
-        body("Active server selects between two servers, each with its own address, login, " +
-            "quality and codec. Select the codec H.264: more clients can show it.")
+        body("Active server selects between two servers. Touch Configure Video Servers to set " +
+            "the address, the login and the codec of each one. Select the codec H.264: more " +
+            "clients can show it.")
+        body("The video has two protocols: RTSP and SRT. RTSP gives the lowest delay on a " +
+            "reliable network. SRT gives a low delay on a less reliable network, for example " +
+            "a cellular network.")
         body("If your team cannot see the video and this screen shows no fault, select H.264. " +
             "A client that cannot show H.265 gives no error that you can see here.")
         body("These settings do not start the video. Use the LIVE button in flight.")
