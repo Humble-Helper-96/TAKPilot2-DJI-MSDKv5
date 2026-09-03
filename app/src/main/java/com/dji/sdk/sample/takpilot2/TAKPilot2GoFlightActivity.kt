@@ -2262,13 +2262,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private fun onClearAllMarkersTapped(onCleared: () -> Unit) {
         val ownCount = TakDropMarkers.listPins().size
         val sharedCount = com.dji.sdk.sample.tak.TakMapMarkers.listShared().size
+        // No figure here, for the reason given at onDeleteMarkerTapped.
         val body = buildString {
             append("Remove ")
             append(if (ownCount == 1) "1 marker you dropped" else "$ownCount markers you dropped")
             append(" and ")
             append(if (sharedCount == 1) "1 shared marker" else "$sharedCount shared markers")
             append(" from your map?\n\nThis is local only. Your own markers stay on the TAK ")
-            append("server until they go stale (72h) and may still show on other clients. ")
+            append("server until they go stale and may still show on other clients. ")
             append("Shared markers come back if the team sends them again.")
         }
         AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
@@ -2409,10 +2410,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     private fun onDeleteMarkerTapped(pin: TakDropMarkers.PinInfo) {
+        // ⚠ THE LIFETIME IS DELIBERATELY NOT STATED. It is CotBuilder.MARKER_STALE_DURATION_MS,
+        // which is private and lives in shared taklite code. This dialog said 14h for seven
+        // releases after that constant was raised, because a copied figure cannot follow its
+        // source. Describe the behaviour; do not restate the number.
         AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Delete Marker")
             .setMessage("Remove '${pin.name}' from your map? This is local-only — the marker " +
-                "stays on the TAK server until it goes stale (14h) and may reappear on other " +
+                "stays on the TAK server until it goes stale and may reappear on other " +
                 "clients' pictures until then.")
             .setPositiveButton("Delete") { _, _ ->
                 AppLog.i(TAG, "marker delete: ${pin.key}")
