@@ -229,8 +229,15 @@ android {
         //      comment said to delete it when versionName lost its -dev suffix; the suffix went
         //      and the warning did not. Caught by the operator on release day. A false safety
         //      notice at the top of the guide teaches a pilot to discount the true ones below it.
-        versionCode 107
-        versionName "1.2.0"
+        // 108: v1.2.1. Marker dialogs (Delete, Clear All) stop restating a copied "14h" stale
+        //      figure; the real value is CotBuilder.MARKER_STALE_DURATION_MS (72h, raised
+        //      2026-08-02) and the dialogs now describe the behaviour instead of a number that
+        //      can drift from the constant it was copied from. Commit fa1af2f (2026-09-03) had
+        //      been built without a versionCode bump and its mapping never left a local build
+        //      directory; this release gives that fix an actual versionCode and a real
+        //      signedReleases entry. Not yet flown.
+        versionCode 109
+        versionName "1.2.1"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

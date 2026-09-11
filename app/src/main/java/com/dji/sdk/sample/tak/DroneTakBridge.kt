@@ -519,34 +519,49 @@ class DroneTakBridge(
             lastBatteryMaxMah, lastBatteryRemainMah, lastVoltageMv / 1000.0)
     }
 
-    /**
-     * The PILOT's marker — the operator on the ground, at the controller's own position.
-     * Returns without sending when there is no fix: no marker is better than a marker in
-     * the wrong place.
-     */
-    // Transition flags for the two pilot-fix failure modes below — logged on change, not on
-    // every 2s tick.
+    // Transition flags for the two pilot-fix states below — logged on change, not on every
+    // 2s tick.
     @Volatile private var pilotFixMissing = false
     @Volatile private var pilotFixOldLogged = false
 
+    /**
+     * The PILOT's marker — the operator on the ground, at the controller's own position.
+     *
+     * ## With no fix, the marker still goes out (2026-09-10, from the Autel tree)
+     *
+     * Before this date the method stopped when the controller had no fix. Thus the application
+     * published no pilot marker, and the controller was not in the CONTACT LIST of the other
+     * clients. Nobody can send a marker to a client that is not in their list. A controller
+     * indoors, or with a cold GPS receiver, could not receive markers. That is a worse condition
+     * than an unknown position.
+     *
+     * The behaviour, and its cost, live in the shared core: `TakManager.sendPilotPLI` takes a
+     * null location and sends the "position not known" form (`how="h-g-i-g-o"`, 0,0, `hae`,
+     * `ce` and `le` not known, no track, no GPS source). Read the note there. This method only
+     * decides what to log, once, at each change of state.
+     */
     private fun pushPilotPli() {
         val fix = OperatorLocation.latest
         if (fix == null) {
-            // ⚠ THE ONE LINE THAT EXPLAINS A DISAPPEARING PILOT MARKER (V36, audit 2026-08-20;
-            // the sibling's 2026-08-15 incident). Publishing stops here, and nothing else in
-            // the application says so — silence at this point is what makes the marker go
-            // stale on the team's map minutes later with no trace in the log.
+            // ⚠ THE ONE LINE THAT EXPLAINS A PILOT MARKER WITH NO POSITION. The message on the
+            // wire shows it too: how="h-g-i-g-o" and ce not known, where a real fix carries
+            // how="m-g" and the true ce.
             if (!pilotFixMissing) {
                 pilotFixMissing = true
-                AppLog.w(TAG, "pilot marker SUSPENDED — the controller has no position fix. " +
-                    "Nothing more is published for it, thus it goes stale on the team's map. " +
-                    "See OperatorLocation for what feeds this.")
+                AppLog.w(TAG, "the controller has no position fix — the pilot marker goes out " +
+                    "in the \"position not known\" form (0,0). It stays in the contact list " +
+                    "of the team, thus you can still send markers to this controller. The " +
+                    "real position replaces it at the first fix. See OperatorLocation for " +
+                    "what feeds this.")
             }
+            // The age test below needs a real fix. Send, then stop here.
+            sendPilotPli(null)
             return
         }
         if (pilotFixMissing) {
             pilotFixMissing = false
-            AppLog.i(TAG, "pilot marker resumed — the controller has a fix again")
+            AppLog.i(TAG, "the controller has a fix — the pilot marker publishes a real " +
+                "position and no longer publishes 0,0")
         }
 
         // AGE OF THE FIX, not just its presence. A fix that stops refreshing keeps being
@@ -569,6 +584,11 @@ class DroneTakBridge(
             AppLog.i(TAG, "pilot position is fresh again")
         }
 
+        sendPilotPli(fix)
+    }
+
+    /** Sends one pilot PLI. [fix] is null when the controller has no position. */
+    private fun sendPilotPli(fix: android.location.Location?) {
         runCatching {
             tak.sendPilotPLI(fix, droneCallsign, "Team Member", pilotBatteryPct(), videoUrl)
         }.onFailure { AppLog.w(TAG, "pilot PLI failed: ${it.message}") }

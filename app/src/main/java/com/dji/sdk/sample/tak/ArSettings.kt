@@ -140,10 +140,21 @@ object ArSettings {
         return parts.size >= 3 && parts[0] == "a" && parts[2] == "G"
     }
 
-    fun categoryFor(uid: String?, type: String?): Category {
+    /**
+     * Which category an inbound contact belongs to. Most-specific first: weather by uid, then
+     * aircraft by type, then a LIVE CLIENT — a person or a machine that reports its own
+     * position is a POSITION, whatever its type. The parser sets that flag
+     * (CotParser.isLiveClient). Without the test a CloudTAK user (`a-f-G-E-V-C`) passed the
+     * marker test below and went into the markers layer while the overlay drew it as a team
+     * dot: the Markers switch hid live teammates and the Positions switch did not (review,
+     * 2026-09-10). The frame-or-dot test in ArOverlayView uses the same flag, thus the layer a
+     * contact is in and the way it is drawn cannot disagree.
+     */
+    fun categoryFor(uid: String?, type: String?, liveClient: Boolean): Category {
         if (uid != null && uid.startsWith(METAR_UID_PREFIX)) return Category.WEATHER
         val parts = type?.split("-").orEmpty()
         if (parts.size >= 3 && parts[0] == "a" && parts[2] == "A") return Category.AIRCRAFT
+        if (liveClient) return Category.OTHER_POSITIONS
         return if (TakMapMarkers.milMarkerRes(type) != null) {
             Category.OTHER_MARKERS
         } else {

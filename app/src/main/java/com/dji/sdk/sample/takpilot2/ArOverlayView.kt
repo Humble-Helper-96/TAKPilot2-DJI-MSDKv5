@@ -6,6 +6,8 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -135,6 +137,14 @@ class ArOverlayView @JvmOverloads constructor(
     private val d get() = resources.displayMetrics.density
 
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+
+    /** [iconPaint] for a STALE 2525 frame: grey and faded, the same treatment the map gives
+     *  it in TakMapMarkers.makeMilIcon and the same the dots get below. One paint, applied at
+     *  draw time, so the bitmap cache stays keyed on the resource alone. */
+    private val staleIconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        alpha = TakMapMarkers.STALE_ALPHA
+    }
 
     /** R45: filled in place per label. The `Paint.fontMetrics` PROPERTY allocates a fresh object
      *  on every read, and drawLabel reads it once per label per frame — the same trap
@@ -320,7 +330,7 @@ class ArOverlayView @JvmOverloads constructor(
 
             // Category decides BOTH whether this is drawn and how far out it stays relevant —
             // air traffic is worth seeing well past the range a ground marker is.
-            val category = ArSettings.categoryFor(u.uid, u.type)
+            val category = ArSettings.categoryFor(u.uid, u.type, u.isLiveClient)
             if (!ArSettings.isEnabled(context, category)) { skipped++; continue }
             // High-altitude traffic is clutter for a UAS below 400ft — see the ceiling's doc.
             // Shared with the map so both views show the same picture (V27).
@@ -529,7 +539,9 @@ class ArOverlayView @JvmOverloads constructor(
             drawAircraft(canvas, x, y, u, dzMeters, dzIsTrusted, withLabel)
             return
         }
-        // A live client is a position, not a placed marker — the same rule the map follows.
+        // A live client is a position and not a placed marker. It takes a dot, never a frame.
+        // The parser decides what is a live client — see CotParser.isLiveClient. Same rule as
+        // the map.
         val milRes = if (u.isLiveClient) null else TakMapMarkers.milMarkerRes(u.type)
         if (milRes != null) {
             val size = (ICON_DP * d).toInt()
@@ -539,7 +551,8 @@ class ArOverlayView @JvmOverloads constructor(
                     return
                 }
             }
-            canvas.drawBitmap(bmp, x - size / 2f, y - size / 2f, iconPaint)
+            canvas.drawBitmap(bmp, x - size / 2f, y - size / 2f,
+                if (u.isStale) staleIconPaint else iconPaint)
             if (withLabel) drawLabel(canvas, x, y + size / 2f, label)
         } else {
             val r = 7f * d
