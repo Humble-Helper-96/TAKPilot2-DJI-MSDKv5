@@ -431,6 +431,35 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             if (AppLog.resourceMonitor) View.VISIBLE else View.GONE
 
         mapContainer = findViewById(R.id.flightMapContainer)
+        // ROUND THE MAP ITSELF, not just its frame. Specification §4.9.
+        //
+        // bg_map_outline is the container's FOREGROUND: it draws the border over the map but
+        // clips nothing, so rounding that drawable alone leaves square tiles filling the corners
+        // the border has curved away from. The clip has to happen here.
+        //
+        // ⚠ THIS WORKS ONLY BECAUSE THE MAP IS IN TEXTURE MODE. A SurfaceView-backed map is
+        // composited separately and a parent's outline clip does not touch it. See the note on
+        // mapbox_renderTextureMode in the layout — that flag is load-bearing for these corners.
+        //
+        // ⚠ THE CLIP RADIUS IS NOT THE FRAME'S RADIUS. A shape's stroke is centred on a path
+        // inset by half its width, so a frame declaring hud_pill_radius presents an OUTER edge
+        // of (radius + stroke/2), which curves away from the corner faster than a bare-radius
+        // clip does — clipping at the bare radius leaves a sliver of map outside the border on
+        // every corner. Clipping at (radius + stroke) puts the map's cut edge on the MIDDLE of
+        // the stroke, giving half the stroke of tolerance on each side, because two
+        // independently anti-aliased edges do not have to agree to the pixel.
+        //
+        // Both dimens are per-device, thus this is computed rather than written down as a third
+        // number that would drift. The outline is rebuilt from the view's CURRENT size on every
+        // call, so the map's size toggle needs nothing here.
+        val mapFrameStroke = resources.getDimension(R.dimen.hud_text_outline_width)
+        val mapClipRadius = resources.getDimension(R.dimen.hud_pill_radius) + mapFrameStroke
+        mapContainer.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, mapClipRadius)
+            }
+        }
+        mapContainer.clipToOutline = true
         // Bound here, ahead of the map gestures below, because the corner's double-tap handler
         // is attached to both views. setupVisionAssist() re-finds it harmlessly.
         visionAssistView = findViewById(R.id.flightVisionAssist)
@@ -1363,7 +1392,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // a fine trigger, just not a fine number.
         val shown = com.dji.sdk.sample.tak.CameraFov.displayRatio() ?: zoomRatio
         zoomButton.setBackgroundResource(
-            if (shown > 1.05) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+            if (shown > 1.05) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill)
         zoomButton.text = ZoomLadder.label(shown)
     }
 
@@ -1800,7 +1829,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         val on = arOverlay.isRunning
         arButton.alpha = if (on) 1f else 0.45f
         arButton.setBackgroundResource(
-            if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
+            if (on) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill
         )
         arButton.setTextColor(
             if (on) ContextCompat.getColor(applicationContext, R.color.tp_state_go) else android.graphics.Color.WHITE
@@ -2793,7 +2822,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      */
     private fun renderIrButtons() {
         irButton.setBackgroundResource(
-            if (irOn) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+            if (irOn) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill)
         irButton.setTextColor(
             if (irOn) ContextCompat.getColor(applicationContext, R.color.tp_state_go)
             else android.graphics.Color.WHITE)
@@ -2810,11 +2839,57 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * reported by the toast on every touch-and-hold, and a second state light on a 46dp pill
      * was rejected as clutter.
      */
+    /**
+     * Draws the exterior-lights button from the AIRCRAFT's reported lamp state.
+     *
+     * Plain bulb = lit, slashed bulb = dark, matching the IR button's convention that the icon
+     * shows the state of the hardware rather than what the next tap would do.
+     *
+     * ⚠ **THE PILL COLOUR IS THE STATE, AND THE GLYPH ONLY AGREES WITH IT.** Specification
+     * §6.7. This button sits in the actions capsule beside AR and IR, and those two have always
+     * said ON with a green pill. The lights said it with a glyph alone, so three toggles in one
+     * capsule carried two conventions — and the odd one out was the only one reporting a state
+     * of the AIRCRAFT.
+     *
+     * The third state is the one AR and IR do not have. The lamps are read BACK from the
+     * aircraft, thus "we have not been told" is real and is AMBER — never collapsed into off,
+     * which is the rule for every state readout in this application (§4.6).
+     *
+     * ⚠ **DO NOT BRING BACK THE 50 % ALPHA THAT CARRIED UNKNOWN BEFORE 2026-09-13.** Dimming
+     * reads as disabled, and this button genuinely disables itself — with no colour change —
+     * while a write is in flight (see the click and long-press handlers). One appearance for
+     * two meanings.
+     *
+     * ⚠ **TINT ONLY THE LIT BULB, NEVER THE SLASHED ONE.** ic_led_off draws its slash TWICE,
+     * dark under white, so that it reads as a gap cut through the glass. A tint is applied to
+     * every path of a vector, thus it would flatten both passes to one colour and the slash
+     * would disappear into the bulb. This is safe as written because the slashed bulb is shown
+     * ONLY for the dark state, which is the one state that takes the colourless idle pill. Keep
+     * those two facts together: if the dark state ever gains a colour, the icon has to gain a
+     * second drawable first.
+     *
+     * ⚠ The flag here is `motorLedsOn`, so TRUE means LIT — the inverse of the Autel sibling's
+     * `isDark`. Read the branches, do not pattern-match them against that tree.
+     */
     private fun renderLightsButton() {
         val on = AircraftLights.motorLedsOn
         lightsButton.setImageResource(
             if (on == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
-        lightsButton.alpha = if (on == null) 0.5f else 1f
+        lightsButton.setBackgroundResource(when (on) {
+            true -> R.drawable.bg_pill_active    // lit
+            false -> R.drawable.bg_zoom_pill     // dark
+            null -> R.drawable.bg_pill_unknown   // the aircraft has not answered
+        })
+        lightsButton.imageTintList = when (on) {
+            true -> androidx.core.content.ContextCompat.getColorStateList(this, R.color.tp_state_go)
+            null -> androidx.core.content.ContextCompat.getColorStateList(this, R.color.tp_state_unknown)
+            false -> null
+        }
+        lightsButton.contentDescription = when (on) {
+            true -> "Exterior lights are on"
+            false -> "Exterior lights are off"
+            null -> "Exterior lights, state unknown"
+        }
     }
 
     private fun refreshBatteryBands() {
@@ -3324,7 +3399,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
         hintL2.text = "◀ ACC ● $label"
         hintL2.setBackgroundResource(
-            if (green) R.drawable.bg_ar_pill_active else R.drawable.bg_pill_unknown)
+            if (green) R.drawable.bg_pill_active else R.drawable.bg_pill_unknown)
     }
 
     private fun renderStatePill(pill: TextView, state: Boolean?) {
@@ -3336,7 +3411,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         pill.setTag(R.id.accessoryPanel, key)
         pill.setBackgroundResource(
             when (state) {
-                true -> R.drawable.bg_ar_pill_active
+                true -> R.drawable.bg_pill_active
                 false -> R.drawable.bg_zoom_pill
                 null -> R.drawable.bg_pill_unknown
             }
@@ -3731,7 +3806,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // That is 5dp and 12dp of slack. The weighted spacer absorbs nothing at this point, and
         // overflow CLIPS THE MAP SILENTLY — no warning, no log. If a line has to be added here,
         // take the height from @dimen/flight_map_size first.
-        val overlayText = buildString {
+        // ⚠ A SPANNABLE, NOT A PLAIN STRING, since 2026-09-13: the height figure is large and
+        // its unit small (specification §4.4), and that is carried by RelativeSizeSpans rather
+        // than by separate views. OutlinedTextView draws the text layout twice, so each run is
+        // outlined at its OWN size — an implementation that re-renders the string would lose it.
+        val overlayText = android.text.SpannableStringBuilder().apply {
             // LINE ORDER IS DELIBERATE, and matches the Autel sibling so a pilot reads the same
             // block in the same order on either aircraft (operator, 2026-08-02):
             //   1 callsign + speed   2 height   3 lat/lon   4 home
@@ -3746,13 +3825,31 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             // point) — labelling an uncorrected figure AGL is exactly the inaccuracy the terrain
             // correction exists to remove, so the label moves with it. MSL is computed
             // separately and can be present while the first still reads ALT. See TerrainAgl.
-            if (hud != null && hud.hasFix) {
-                append("%s %s".format(
+            val heightStart = length
+            val heightText = if (hud != null && hud.hasFix) {
+                "%s %s".format(
                     Units.feet(aglReading.meters),
                     if (aglReading.terrainCorrected) "AGL" else "ALT",
-                ))
+                )
             } else {
-                append("— ft AGL")
+                "— ft AGL"
+            }
+            append(heightText)
+            // THE FIGURE IS LARGE AND THE UNIT IS SMALL. Height is the number a pilot checks
+            // most, and at one size it was lost among its neighbours.
+            //
+            // Split at the FIRST space: Units.feet is "<number> ft", so everything before it is
+            // the figure and everything after is the unit and the label. Guarded, because a
+            // format with no space would otherwise span the whole line at the large size and
+            // blow this column's height budget — which on this device is about 14dp.
+            val unitAt = heightText.indexOf(' ')
+            if (unitAt > 0) {
+                setSpan(android.text.style.RelativeSizeSpan(HEIGHT_FIGURE_SCALE),
+                    heightStart, heightStart + unitAt,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.RelativeSizeSpan(HEIGHT_UNIT_SCALE),
+                    heightStart + unitAt, length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             // AGL AND MSL GET THEIR OWN LINES, never "AGL · MSL" on one.
             //
@@ -3767,11 +3864,17 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             val msl = aglReading.mslMeters
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
             append('\n')
+            // The coordinates recede. They are the line a pilot reads only when somebody asks
+            // for them, and making them smaller is what lets the height stand out WITHOUT the
+            // block growing — the unit and this line give back most of what the figure takes.
+            val coordStart = length
             if (hud != null && hud.hasFix) {
                 append("%.4f, %.4f".format(java.util.Locale.US, hud.lat, hud.lon))
             } else {
                 append("—, —")
             }
+            setSpan(android.text.style.RelativeSizeSpan(REFERENCE_SCALE),
+                coordStart, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             // NO FLIGHT TIMER HERE ANY MORE, and no home line — home moved to its own view
             // beneath the RTH height, where the two related numbers sit together.
             //
@@ -3785,9 +3888,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // only by building the string first), but skipping the TextView assignment when the
         // result is byte-for-byte the same as last tick avoids an invalidate/relayout for
         // static telemetry — landed, hovering dead-still, or between fix updates.
-        if (overlayText != lastOverlayText) {
+        // ⚠ COMPARE THE PLAIN TEXT, NOT THE SPANNABLE. SpannableStringBuilder does not override
+        // equals, so comparing the builder itself is an identity check that is ALWAYS false —
+        // which would silently defeat this whole optimisation and assign on every tick. The
+        // spans are a pure function of the text, so equal text means equal spans.
+        val overlayPlain = overlayText.toString()
+        if (overlayPlain != lastOverlayText) {
             fpvOverlayText.text = overlayText
-            lastOverlayText = overlayText
+            lastOverlayText = overlayPlain
         }
 
         if (hud == null || !hud.hasFix) return
@@ -4160,6 +4268,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     companion object {
+        // TELEMETRY SIZE HIERARCHY — specification §4.4. The height figure is large, its unit
+        // and the position line are small. Values are the Autel sibling's, and they are RATIOS
+        // rather than sizes, so they carry across a tree that draws readouts at 12sp where the
+        // sibling draws them at 18sp.
+        //
+        // ⚠ THE UNIT AND THE POSITION LINE ARE NOT DECORATION — they are what pays for the
+        // figure. Raising HEIGHT_FIGURE_SCALE without lowering the other two grows the block by
+        // the full increase, and this column has about 14dp of slack on this device.
+        private const val HEIGHT_FIGURE_SCALE = 1.55f
+        private const val HEIGHT_UNIT_SCALE = 0.80f
+        private const val REFERENCE_SCALE = 0.85f
+
         /** Flight-screen lifecycle + toolbar actions (RTH, zoom, TAK toggle, LIVE, nav). */
         private const val TAG = "TP2Flight"
         /** Camera capture operations specifically — recording and stills. */

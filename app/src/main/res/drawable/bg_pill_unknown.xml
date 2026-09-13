@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- UNKNOWN state of a pill: the aircraft has not said whether the thing is on or off.
-     Specification §4.6 — unknown is its OWN state and is never collapsed into "off". Same
-     geometry as bg_zoom_pill and bg_ar_pill_active so a control never changes size as its state
-     changes; only the colour moves. Amber #FFB74D, the app's tp_state_unknown. -->
+<!-- "THE AIRCRAFT HAS NOT ANSWERED" for a toggle pill. Amber, which is this application's colour
+     for UNKNOWN and not for caution — specification §4.6 and §6.7.
+
+     ⚠ DO NOT EXPRESS THIS STATE AS ALPHA. Dimming reads as DISABLED, and a control that writes
+     to the aircraft really does disable itself while the write is in flight, with no colour
+     change. One appearance for two meanings. The Autel sibling carried a 45 % alpha for exactly
+     this and it was removed on 2026-09-12.
+
+     ⚠ SAME GEOMETRY AS bg_zoom_pill — see that file. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <corners android:radius="8dp" />
-    <solid android:color="#4DFFB74D" />
-    <stroke android:width="1.5dp" android:color="#FFFFB74D" />
+    <corners android:radius="@dimen/hud_pill_radius" />
+    <solid android:color="@color/tp_pill_unknown_fill" />
+    <stroke android:width="@dimen/hud_pill_stroke" android:color="@color/tp_state_unknown" />
 </shape>

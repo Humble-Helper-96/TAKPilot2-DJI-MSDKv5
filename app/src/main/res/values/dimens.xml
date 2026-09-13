@@ -30,7 +30,25 @@
 
          against 411dp of screen, so 9dp of slack. The conformance note on the D1 fix
          names exactly this remedy: take the height from flight_map_size, never by re-joining
-         the readout lines. **This is arithmetic, not a measurement.** -->
+         the readout lines. **This is arithmetic, not a measurement.**
+
+         ⚠ RE-COUNTED 2026-09-13 FOR THE HUD REFRESH, AND IT CAME OUT LEVEL:
+
+             - 2 panels x 8dp of vertical padding      -16dp   (the panels are gone; §4.3)
+             + 7 outlined views x about 1.6dp          +11dp   (OutlinedTextView's own padding)
+             + the height size hierarchy               + 4dp   (§4.4, net of the smaller unit
+                                                                and position line)
+                                                       =======
+                                                       -1dp
+
+         The panels were paying for the outline and did not know it. The vertical 4dp they
+         supplied is DELIBERATELY NOT restored on the blocks — see the flight layout — because
+         that is the 16dp above, and without it this refresh would not fit on this device.
+
+         ⚠ THIS IS STILL ARITHMETIC AND STILL NOT A MEASUREMENT, and it is now a tighter piece
+         of arithmetic than before. MEASURE IT with `dumpsys activity top` on the RC Plus 2
+         before this tree is released. The failure mode is the mini-map clipped SILENTLY at the
+         bottom of the column. Adding ONE more outlined readout costs about 1.6dp. -->
     <!-- ⚠ 148dp, NOT 110dp, since 2026-08-19. This is the COLUMN width, thus it is also the
          width the aircraft's latitude and longitude have to print in. At 110dp the pair wrapped
          onto two lines on the RC Plus 2 (operator). The coordinate line is about 18 characters
@@ -83,4 +101,34 @@
          changed no pixel; it exists so a controller can raise it (conformance D7).
          On a sunlight-readable screen at arm's length 12sp is too small. -->
     <dimen name="flight_readout_text_size">12sp</dimen>
+
+    <!-- HUD CHROME DIMENSIONS — specification §7, ported from the Autel sibling 2026-09-13.
+
+         ⚠ THE BASE BUCKET IS THE RC PLUS 2's BUCKET. This tree has one target and no phone to
+         share with, so these ARE its per-device values. They are NOT the sibling's numbers:
+         that controller draws readouts at 18sp and this one at 12sp. -->
+
+    <!-- The one edge weight the whole HUD shares — readouts, EV slider, map frame. About an
+         EIGHTH of the readout text size, which is 12sp here against the sibling's 18sp.
+         ⚠ TOO WIDE AND THE READOUTS TURN TO BLACK BLOBS: the stroke is CENTRED on the glyph
+         edge, so half of it falls inside the letter and is covered by the fill. -->
+    <dimen name="hud_text_outline_width">1.5dp</dimen>
+
+    <!-- The shape of every toggle pill: AR, zoom, re-sync, LIVE, REC, and the mini-map's zoom
+         button. The mini-map's corners take hud_pill_radius too.
+         ⚠ 8dp IS NOT hud_control_radius. The capsule is the container and takes the large
+         radius; the pills INSIDE it take the small one, and so does the map, which is read
+         rather than pressed. -->
+    <dimen name="hud_pill_radius">8dp</dimen>
+    <dimen name="hud_pill_stroke">1.5dp</dimen>
+
+    <!-- The floating toolbar capsules. Large radius: "you touch this". -->
+    <dimen name="hud_control_radius">20dp</dimen>
+
+    <!-- ⚠ A MINIMUM FOR BOTH TOOLBAR CAPSULES, NEVER A FIXED HEIGHT. The two clusters hold
+         different things — icons and small text against full-size touch targets — so they
+         measure differently, and two capsules that begin on one line would end on another. A
+         minimum can only make a capsule taller, thus it can never clip its own content. -->
+    <dimen name="hud_capsule_height">40dp</dimen>
+
 </resources>

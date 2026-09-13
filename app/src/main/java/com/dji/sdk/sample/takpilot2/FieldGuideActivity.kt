@@ -998,13 +998,13 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun live(state: LiveToggleView.State): View =
         LiveToggleView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(82), dp(34))
+            layoutParams = LinearLayout.LayoutParams(dp(66), dp(34))
             setState(state)
         }
 
     private fun rec(recording: Boolean): View =
         RecordToggleView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(74), dp(34))
+            layoutParams = LinearLayout.LayoutParams(dp(66), dp(34))
             setRecording(recording)
         }
 
@@ -1022,7 +1022,7 @@ class FieldGuideActivity : AppCompatActivity() {
     private fun arPill(on: Boolean): View = TextView(this).apply {
         text = "AR"
         gravity = Gravity.CENTER
-        setBackgroundResource(if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        setBackgroundResource(if (on) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill)
         setTextColor(if (on) connectedGreen else Color.WHITE)
         alpha = if (on) 1f else 0.45f
         textSize = 12f
@@ -1037,20 +1037,45 @@ class FieldGuideActivity : AppCompatActivity() {
     private fun irPill(on: Boolean): View = TextView(this).apply {
         text = "IR"
         gravity = Gravity.CENTER
-        setBackgroundResource(if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        setBackgroundResource(if (on) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill)
         setTextColor(if (on) connectedGreen else Color.WHITE)
         textSize = 12f
         setTypeface(null, android.graphics.Typeface.BOLD)
         layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
     }
 
-    /** The motor-LEDs icon in each state, the same drawables and dimming
-     *  renderLightsButton() uses. `on == null` (unknown) renders as the "on" icon at half
-     *  alpha, matching renderLightsButton() exactly — there is no separate "unknown" drawable. */
+    /**
+     * The exterior-lights pill in all THREE of its states, built from the same drawables and the
+     * same colours renderLightsButton() uses.
+     *
+     * It drew the bare icon with HALF ALPHA for unknown until 2026-09-13, because that is what
+     * the button did. The button now says its state with COLOUR like the pills beside it
+     * (specification §6.7), so an icon-only legend would disagree with the screen the pilot is
+     * holding — and the amber state is the reason this is worth a pill rather than a tint: it is
+     * the only control on the flight screen that can say "the aircraft has not answered", and a
+     * pilot who has never been shown it has no way to read it at night.
+     *
+     * ⚠ The lit and unknown states share the PLAIN bulb and take a tint; the dark state keeps
+     * the slashed bulb UNTINTED. See renderLightsButton() for why those two facts must stay
+     * together.
+     */
     private fun ledIcon(on: Boolean?): View = ImageView(this).apply {
         setImageResource(if (on == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
-        alpha = if (on == null) 0.5f else 1f
-        layoutParams = iconParams()
+        setBackgroundResource(when (on) {
+            true -> R.drawable.bg_pill_active
+            false -> R.drawable.bg_zoom_pill
+            null -> R.drawable.bg_pill_unknown
+        })
+        imageTintList = when (on) {
+            true -> androidx.core.content.ContextCompat.getColorStateList(
+                this@FieldGuideActivity, R.color.tp_state_go)
+            null -> androidx.core.content.ContextCompat.getColorStateList(
+                this@FieldGuideActivity, R.color.tp_state_unknown)
+            false -> null
+        }
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        setPadding(dp(4), dp(4), dp(4), dp(4))
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
