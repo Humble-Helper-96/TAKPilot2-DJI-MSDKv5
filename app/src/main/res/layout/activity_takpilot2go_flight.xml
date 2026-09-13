@@ -563,10 +563,21 @@
         android:layout_gravity="top"
         android:orientation="horizontal"
         android:paddingHorizontal="8dp"
-        android:paddingTop="6dp">
+        android:paddingTop="8dp">
 
         <!-- STATUS, left. Specification §4.2 fixes the order: back, TAK, battery, signal, GPS,
-             RTH. The capsule is what separates these from the video now. -->
+             RTH. The capsule is what separates these from the video now.
+
+             ⚠ THE HORIZONTAL PADDING IS 8dp HERE AND 10dp IN THE OTHER TWO TREES, AND THAT IS
+             DELIBERATE. §4.2's 10dp is per-device for the same reason the pill widths are: this
+             bar is on a 768dp screen and had about 34dp of slack, where the Autel controller has
+             1024dp and the phone 914dp. Two capsules at 10dp cost 8dp more than at 8dp, and this
+             bar's overflow runs the last control off the right edge SILENTLY, still touchable
+             where it is drawn.
+
+             The VERTICAL padding and the band's paddingTop DO match the siblings at 3dp and 8dp
+             — those cost height, not width, and this band has the room. Do not "finish the job"
+             by taking the horizontal 10dp as well without measuring the bar on an RC Plus 2. -->
         <LinearLayout
             android:id="@+id/flightToolbarStatus"
             android:layout_width="wrap_content"
@@ -576,7 +587,7 @@
             android:minHeight="@dimen/hud_capsule_height"
             android:orientation="horizontal"
             android:paddingHorizontal="8dp"
-            android:paddingVertical="2dp">
+            android:paddingVertical="3dp">
 
         <ImageButton
             android:id="@+id/flightBackButton"
@@ -717,7 +728,7 @@
             android:minHeight="@dimen/hud_capsule_height"
             android:orientation="horizontal"
             android:paddingHorizontal="8dp"
-            android:paddingVertical="2dp">
+            android:paddingVertical="3dp">
 
         <!-- Drop-pin heads the right-hand cluster and is deliberately the LARGEST control in the
              bar: it is the most-used action on this screen, and a pilot reaching for it is
