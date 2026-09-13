@@ -165,6 +165,7 @@ class FieldGuideActivity : AppCompatActivity() {
         sectionOne()
         sectionTwo()
         sectionThree()
+        sectionAimOffsets()
         sectionFour()
 
         divider()
@@ -434,15 +435,21 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             // Was emptyList() from before this pass — a field report ("Lights is missing its
-            // icon graphic") caught it. ledIcon() is renderLightsButton()'s own drawables.
-            listOf(ledIcon(false) to "Off", ledIcon(true) to "On", ledIcon(null) to "Unknown"),
+            // icon graphic") caught it. lightsPill() is renderLightsButton()'s own drawables.
+            // Order and labels match the Autel sibling: on, off, then not known.
+            listOf(
+                lightsPill(true) to "Lights on",
+                lightsPill(false) to "Lights off",
+                lightsPill(null) to "Not known",
+            ),
             "Lights: the motor lights and the beacon",
             "Touch to turn the lights at the motors on or off. This includes the red and " +
                 "green lights that show the status of the aircraft.\n\n" +
                 "Touch and hold to turn the beacon on or off. A message tells you if the " +
                 "beacon is on or off.\n\n" +
-                "The button shows what the AIRCRAFT does, not what you asked for. If the " +
-                "aircraft refuses, a message tells you and the button does not change.",
+                "The button shows what the AIRCRAFT reports, not what you asked for. If the " +
+                "aircraft refuses, a message tells you and the button does not change. Amber " +
+                "means the aircraft has not answered yet: do not read it as off.",
         )
 
         entry(
@@ -707,10 +714,53 @@ class FieldGuideActivity : AppCompatActivity() {
         )
     }
 
-    // ---------------------------------------------------------------- Section 4
+    /**
+     * How to calibrate Aim Offsets, ported from the Autel sibling 2026-09-13.
+     *
+     * ⚠ **THE AR ENTRY IN SECTION 3 ALREADY SAYS WHAT AIM OFFSETS DOES. THIS SECTION IS THE
+     * PROCEDURE, WHICH IT DID NOT HAVE** — when to do it, what second device you need, how to
+     * find the point to watch, and how to tell that a change has taken effect. That is the part
+     * a pilot needs in the field and the part this guide was missing.
+     *
+     * Nothing here is airframe-specific. It is a method for lining up the camera look point
+     * against a known object on a second TAK client, and this application sends the same SPI
+     * the sibling does.
+     *
+     * ⚠ **THE AUTEL GUIDE'S CAMERA FACTS WERE DELIBERATELY NOT PORTED WITH IT.** That tree's
+     * guide also says a lens cannot be changed while the aircraft records, and that one shutter
+     * press saves both sensors. Both were established from an EVO II 640T's own card and logs.
+     * This aircraft switches its video STREAM SOURCE rather than a display mode, and nothing
+     * here has been measured — see onIrTapped. Do not copy those sentences across.
+     */
+    private fun sectionAimOffsets() {
+        section("4. How to correct the position of a marker")
+
+        body("If the aim of the camera has a small error, the markers go to a position that " +
+            "is not correct. \"Aim Offsets\" corrects this. The error belongs to the " +
+            "aircraft, not to the app: a gimbal can move after a hard landing or a repair.")
+
+        body("Do this one time for each aircraft. Do it again after a hard landing, after a " +
+            "repair of the gimbal or the camera, or when you use a different aircraft.")
+
+        body("You need a second device with iTAK, ATAK, TAK Aware or CloudTAK that can see " +
+            "the markers of the aircraft.")
+
+        sub("Before you start")
+        bullet("Select a target that you see clearly in the video and can find on the map of " +
+            "the second device. Center the reticle of the controller on that object. A mark " +
+            "on a road or a corner of a building is good. The aircraft sends its camera look " +
+            "point to TAK about two times each second. On the second TAK device, find that " +
+            "point. Its name ends with \"-SPI\" and its icon looks like the reticle. Watch " +
+            "the SPI while you change the offsets on the controller. Change the offsets until " +
+            "the SPI on the map lines up with the object the reticle points at in the video.")
+        bullet("The point moves a few seconds after each change. Change one control at a " +
+            "time. Stop when the point is on the target.")
+    }
+
+    // ---------------------------------------------------------------- Section 5
 
     private fun sectionFour() {
-        section("4. Flight path records")
+        section("5. Flight path records")
         body("The app records each flight automatically, with no switch and no TAK server. " +
             "It starts when the aircraft leaves the ground and stops when it is down for 10 " +
             "seconds, thus a short touch does not divide the record.")
@@ -1059,7 +1109,7 @@ class FieldGuideActivity : AppCompatActivity() {
      * the slashed bulb UNTINTED. See renderLightsButton() for why those two facts must stay
      * together.
      */
-    private fun ledIcon(on: Boolean?): View = ImageView(this).apply {
+    private fun lightsPill(on: Boolean?): View = ImageView(this).apply {
         setImageResource(if (on == false) R.drawable.ic_led_off else R.drawable.ic_led_on)
         setBackgroundResource(when (on) {
             true -> R.drawable.bg_pill_active
