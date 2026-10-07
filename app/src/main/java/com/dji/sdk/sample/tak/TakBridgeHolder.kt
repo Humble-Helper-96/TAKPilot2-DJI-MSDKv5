@@ -162,12 +162,10 @@ object TakBridgeHolder {
      */
     fun currentHFov(): Double {
         val d = cameraDFovDeg ?: return Double.NaN
-        // Diagonal -> horizontal under the live aspect: tanH = tanD * w/sqrt(w*w+h*h) —
-        // then narrowed by the display crop, which zooms exactly as a real gear does.
-        val a = videoAspect
-        val f = a / Math.sqrt(a * a + 1.0)
-        val h = 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(d / 2.0)) * f))
-        return cropFov(h)
+        // Diagonal -> horizontal under the live aspect (hFovFromDiagonal, shared with the
+        // thermal fallback) — then narrowed by the display crop, which zooms exactly as a
+        // real gear does.
+        return cropFov(hFovFromDiagonal(d, videoAspect))
     }
 
     /**
@@ -191,6 +189,45 @@ object TakBridgeHolder {
 
     val hasCameraFov: Boolean get() = cameraDFovDeg != null
 
+    /**
+     * The lens whose picture is on the screen. Set by [CameraFov.refresh], the one place that
+     * already knows which source is live, so the field the overlay projects with and the
+     * `<sensor>` cone publishes follow the lens — see [publishedHFov].
+     */
+    @Volatile var activeLens: CameraLens = CameraLens.EO
+
+    /**
+     * The thermal lens's DIAGONAL field, degrees, for the fallback before the camera has
+     * answered. From the focal length MEASURED on the bench 2026-08-20 — `KeyCameraIRFocalLength`
+     * 527, a 52.7 mm equivalent — through the same equivalence [CameraFov] uses:
+     * `2·atan(43.27 / (2·52.7))`. DJI publishes 45 for this lens. The horizontal derives under
+     * the live aspect in [irHFov], the same way the live figure does.
+     */
+    const val IR_DFOV = 44.6
+
+    /** The thermal fallback as a HORIZONTAL field under the live picture shape. */
+    val irHFov: Double get() = hFovFromDiagonal(IR_DFOV, videoAspect)
+
+    /**
+     * The geoid separation N (`hae − msl`, metres) as the aircraft's receiver applies it, or
+     * null when nothing has reported it. The Autel sibling reads it from its GPS struct's two
+     * altitudes (fault 7 of the 2026-09-14 AR audit) and a contact's `hae` comes into the DTED
+     * frame through it — see `reportedHaeToMsl`.
+     *
+     * ⚠ UNKNOWN ON THIS SDK (2026-10-07). MSDKv5 publishes height above TAKEOFF
+     * (`KeyAltitude`, `KeyAircraftLocation3D.altitude`) and the takeoff point's AMSL
+     * (`KeyTakeoffLocationAltitude`, EGM96 by DJI's own account); nothing in the surveyed
+     * surface carries an ellipsoid height for a non-RTK aircraft. `KeyRTKTakeoffAltitudeInfo`
+     * is the one candidate and it has not been read on the aircraft. Until one is, this stays
+     * null and a reported `hae` is used as it came — the datum mix the Autel tree measured at
+     * 12.2 m remains, and the overlay says so once per pass. Mark it UNKNOWN, never guess a
+     * constant: a wrong N moves every non-ground contact by a fixed angle.
+     */
+    @Volatile var geoidSeparationM: Double? = null
+        private set
+
+    fun setGeoidSeparation(n: Double) { geoidSeparationM = n }
+
     fun setHFovBase(hDeg: Double) {
         hFovBase = hDeg.coerceIn(MIN_FOV, MAX_FOV)
     }
@@ -204,7 +241,7 @@ object TakBridgeHolder {
      *  projection derive it exactly one way. */
     fun vFovFor(hDeg: Double): Double {
         val aspect = videoAspect.takeIf { it > 0.0 } ?: FALLBACK_ASPECT
-        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(hDeg / 2.0)) / aspect))
+        return vFovForAspect(hDeg, aspect)
     }
 
 

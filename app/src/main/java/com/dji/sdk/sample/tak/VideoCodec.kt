@@ -34,8 +34,11 @@ import android.media.MediaCodecInfo
  * `ffprobe -v error -show_entries stream=codec_name "rtsp://…"`. If that reads the stream, the
  * push and the credentials are good and the fault is in the receiver.
  *
- * The codec applies to the TRANSCODE paths (screen capture and the decode-transcode fallback).
- * Passthrough ("original") sends the aircraft's own H.264 untouched and ignores this choice.
+ * The codec applies to the TRANSCODE paths (screen capture and the decode-transcode fallback),
+ * which is every live stream this application makes. Passthrough ("original") was a v4-era
+ * profile that ledger R22 deleted; no screen can select it and no path honours it, so the
+ * choice here is never ignored. Original quality is the aircraft's own recording to the SD
+ * card, which is a separate function.
  */
 enum class VideoCodec(val mime: String, val label: String) {
     /**

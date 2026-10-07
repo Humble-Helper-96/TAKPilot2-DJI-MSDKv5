@@ -242,6 +242,20 @@ object DjiSdkBridge {
     var diagnostics: List<String> = emptyList()
         private set
 
+    /**
+     * The aircraft's own severity rank for each line of [diagnostics] (see [severityRank]:
+     * WARNING is 3). The rendered line carries no level, and the flight screen needs one
+     * to decide whether a dismissed line may stay dismissed — see
+     * `FlightWarnings.mute` and the night-operations report of 2026-10-07.
+     */
+    @Volatile
+    var diagnosticRanks: Map<String, Int> = emptyMap()
+        private set
+
+    /** The rank at or above which a dismissed line comes BACK when it clears and returns:
+     *  WARNING and SERIOUS. Below it (NOTICE, CAUTION) the aircraft is advising, not alarming. */
+    const val RANK_WARNING = 3
+
     /** Notified (on DJI's callback thread — marshal to the UI yourself) whenever [diagnostics]
      *  changes. Single slot: the flight screen owns it while it's up. */
     @Volatile
@@ -281,8 +295,10 @@ object DjiSdkBridge {
         // aircraft does NOT send them worst-first: on the bench it led with a NOTICE about the
         // memory card while two CAUTIONs sat behind it (2026-08-19). sortedByDescending is
         // stable, so faults of equal severity keep the aircraft's own order.
+        val ranks = HashMap<String, Int>()
         val readable = items.sortedByDescending { severityRank(it.warningLevel()?.toString()) }
             .mapNotNull { d ->
+            val rank = severityRank(d.warningLevel()?.toString())
             val code = d.informationCode()?.toString()
             // Not in front of the pilot if the OEM does not put it there either. The full list
             // is already in the log line above, thus nothing is lost to a post-flight read.
@@ -292,7 +308,7 @@ object DjiSdkBridge {
             // keep and the "never re-word" rule protects nothing — it only leaves the pilot
             // with a warning they cannot read. The code stays on the line, so the aircraft's
             // own wording is always one lookup away.
-            FAULT_ENGLISH[code]?.let { return@mapNotNull "$it ($code)" }
+            FAULT_ENGLISH[code]?.let { return@mapNotNull "$it ($code)".also { t -> ranks[t] = rank } }
             humanReason(d.title())?.let { r ->
                 val fix = humanReason(d.description())
                 val text = when {
@@ -313,9 +329,11 @@ object DjiSdkBridge {
                 // Not translated, and not English. Keep the aircraft's own words — that rule
                 // still holds for anything not in the table — but append the code, so an
                 // unreadable warning is at least a warning the pilot can look up.
-                if (code != null && hasCjk(text) && !text.contains(code)) "$text ($code)" else text
+                (if (code != null && hasCjk(text) && !text.contains(code)) "$text ($code)" else text)
+                    .also { t -> ranks[t] = maxOf(rank, ranks[t] ?: 0) }
             }
         }.distinct()
+        diagnosticRanks = ranks
         diagnostics = readable
         runCatching { onDiagnostics?.invoke(readable) }
     }

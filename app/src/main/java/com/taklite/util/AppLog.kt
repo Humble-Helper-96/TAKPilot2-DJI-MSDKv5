@@ -132,7 +132,7 @@ object AppLog {
      */
     @JvmStatic
     var verbose: Boolean
-        get() = initialized && prefs.getBoolean(KEY_VERBOSE, false)
+        get() = enabled && prefs.getBoolean(KEY_VERBOSE, false)
         set(value) {
             if (initialized) prefs.edit().putBoolean(KEY_VERBOSE, value).apply()
         }
@@ -162,7 +162,7 @@ object AppLog {
      */
     @JvmStatic
     var obstacleLogging: Boolean
-        get() = initialized && prefs.getBoolean(KEY_OBSTACLE, false)
+        get() = enabled && prefs.getBoolean(KEY_OBSTACLE, false)
         set(value) {
             if (initialized) prefs.edit().putBoolean(KEY_OBSTACLE, value).apply()
         }
@@ -192,7 +192,10 @@ object AppLog {
      */
     @JvmStatic
     var resourceMonitor: Boolean
-        get() = initialized && prefs.getBoolean(KEY_RESOURCE_MONITOR, false)
+        // Gated on [enabled] (2026-09-15, v2.3.1): the options under the log switch are OPTIONS
+        // OF the log, and a checked box with the switch off still showed the resource row on
+        // the flight screen. Off means off for all of them.
+        get() = enabled && prefs.getBoolean(KEY_RESOURCE_MONITOR, false)
         set(value) {
             if (initialized) prefs.edit().putBoolean(KEY_RESOURCE_MONITOR, value).apply()
         }

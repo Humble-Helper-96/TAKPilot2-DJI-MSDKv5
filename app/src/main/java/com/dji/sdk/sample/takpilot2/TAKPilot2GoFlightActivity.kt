@@ -394,7 +394,20 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // second gesture on the text, because the text's tap already means "expand" and a
         // long-press to close would be a third hidden gesture on one control.
         flightDiagnosticsClose.setOnClickListener {
-            warningDismissedSignature = FlightWarnings.display()?.all?.joinToString("\n")
+            val closing = FlightWarnings.display()?.all?.let { FlightWarnings.dismissable(it) }
+            // Lines the aircraft ranks BELOW warning stay closed for the session (night
+            // operations, 2026-10-07: the low-light advisory returned over the video on every
+            // flap). Warnings and worse keep the one-set rule and come back if they return.
+            val ranks = DjiSdkBridge.diagnosticRanks
+            val advisories = closing.orEmpty().filter { line ->
+                ranks[line]?.let { it < DjiSdkBridge.RANK_WARNING } == true
+            }
+            if (advisories.isNotEmpty()) {
+                AppLog.i(TAG, "closing advisory line(s) for the session (rank below warning): " +
+                    advisories.joinToString(" · ") { "$it [rank ${ranks[it]}]" })
+                FlightWarnings.mute(advisories)
+            }
+            warningDismissedSignature = closing?.joinToString("\n")
             warningExpanded = false
             AppLog.i(TAG, "warning banner closed by pilot: $warningDismissedSignature")
             renderWarning()
@@ -3509,12 +3522,29 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
         // Closed by the pilot, and the aircraft still says the SAME thing. Any change to the
         // set falls through here and repaints — see [warningDismissedSignature].
-        val signature = d.all.joinToString("\n")
-        if (signature == warningDismissedSignature) {
-            flightDiagnosticsRow.visibility = View.GONE
+        //
+        // The closable part of the banner is the aircraft's lines. DEBUG LOG ON is never
+        // closed (operator, 2026-09-15): with the rest dismissed it stands alone, amber, until
+        // the log is turned off; a banner that is ONLY that line has nothing for the ✕ to do.
+        val closable = FlightWarnings.dismissable(d.all)
+        val signature = closable.joinToString("\n")
+        val debugLine = d.all.firstOrNull { it !in closable }
+        if (closable.isEmpty() || signature == warningDismissedSignature) {
+            if (debugLine == null) {
+                flightDiagnosticsRow.visibility = View.GONE
+                return
+            }
+            flightDiagnostics.text = debugLine
+            // Nothing left to close, so no ✕ — a control that does nothing teaches the pilot
+            // that the banner does not mean what it says.
+            flightDiagnosticsClose.visibility = View.GONE
+            flightDiagnosticsRow.background?.setTint(
+                ContextCompat.getColor(applicationContext, R.color.tp_warn_banner_amber))
+            flightDiagnosticsRow.visibility = View.VISIBLE
             return
         }
         warningDismissedSignature = null
+        flightDiagnosticsClose.visibility = View.VISIBLE
         // Collapsed: the worst warning and a count. Expanded: every warning on its own line,
         // worst first. The arrow is the only hint that the banner opens at all, so it is on the
         // line whenever there is something behind the count.
@@ -3670,6 +3700,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // Same reasoning as the marker tick: the warning banner's hold and its queue advance
         // with the clock, not only when a warning changes, so it has to be re-asked. Also above
         // the no-GPS-fix early return — losing the fix is itself a condition worth showing.
+        //
+        // "DEBUG LOG ON" goes through the WARNING BANNER (operator, 2026-09-15): the file log
+        // costs the screen some jitter, and a pilot who did not turn it on must be made to
+        // look and go and turn it off. Read on the tick so a change on the Debug screen shows
+        // within half a second of coming back; renderWarning() draws it.
+        FlightWarnings.debugLogOn = AppLog.enabled
         renderWarning()
         logResourcesPeriodically()
         updateResourceRow()

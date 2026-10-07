@@ -18,6 +18,11 @@ import android.view.View
 import com.dji.sdk.sample.tak.ArSettings
 import com.dji.sdk.sample.tak.CameraSlantPoint
 import com.dji.sdk.sample.tak.DroneTakBridge
+import com.dji.sdk.sample.tak.DtedIndex
+import com.dji.sdk.sample.tak.TerrainAgl
+import com.dji.sdk.sample.tak.cameraFrameAngles
+import com.dji.sdk.sample.tak.pinHeightAboveAircraft
+import com.dji.sdk.sample.tak.reportedHaeToMsl
 import com.dji.sdk.sample.tak.TakBridgeHolder
 import com.dji.sdk.sample.tak.TakDropMarkers
 import com.dji.sdk.sample.tak.TakMapMarkers
@@ -54,6 +59,14 @@ import com.dji.sdk.sample.R
  *    Same rect [CrosshairView] already uses, fed the same way.
  * 3. **Pitch sign.** DJI reports gimbal pitch negative when looking down; screen Y grows
  *    downward. Both conventions are handled once, in [project], rather than at each call site.
+ * 4. **The world's angles are rotated into the camera's frame first** (2026-10-07, from the
+ *    Autel tree's 2026-09-14 AR audit, fault 3). A bearing difference is a rotation about the
+ *    VERTICAL axis; once the gimbal pitches down it is only partly sideways in the camera's
+ *    tilted frame — up to 15° wrong at −75°. [cameraFrameAngles] does the rotation and
+ *    [project] takes the camera-frame azimuth and elevation, never the world differences.
+ *    Faults 4, 5 and 7 of the same audit (a pin with no elevation placed at sea level, no
+ *    takeoff reference meaning the flat plane, and a contact's `hae` differenced against MSL)
+ *    are in `ElevationPolicy.kt`.
  *
  * Accuracy is bounded by gimbal bearing accuracy and by telemetry lagging the video — markers
  * will swim during fast gimbal movement. This is a "which of those buildings" tool, not a
@@ -202,7 +215,9 @@ class ArOverlayView @JvmOverloads constructor(
         // Aircraft altitude in the same reference the pins carry (DTED MSL). Without a terrain
         // reference we can't difference two real elevations, so both pins and contacts fall
         // back to a flat-ground assumption below — degraded, not disabled.
-        val aircraftMsl = com.dji.sdk.sample.tak.TerrainAgl.reading(context, hud).mslMeters
+        // With DTED under the aircraft but no takeoff reference, the ground under it stands in
+        // (fault 5 of the Autel tree's 2026-09-14 audit) — see estimateAircraftMsl.
+        val aircraftMsl = TerrainAgl.reading(context, hud).mslMeters
         // Loud, because without it EVERY vertical angle silently degrades: reported altitudes
         // cannot be differenced against anything, and both pins and contacts fall back to a
         // flat-plane assumption. That failure looks like "AR works but heights are wrong"
@@ -229,6 +244,17 @@ class ArOverlayView @JvmOverloads constructor(
             mslMissingLogged = false
             AppLog.i(TAG, "aircraft MSL available again — terrain-corrected elevations restored")
         }
+        // The geoid separation the aircraft's receiver applies — a contact's hae comes into the
+        // DTED frame through it (Autel fault 7). UNKNOWN on this SDK today (see
+        // TakBridgeHolder.geoidSeparationM): then the old datum mix remains and is said so
+        // once, on the transition, like the MSL warning above.
+        val geoidN = TakBridgeHolder.geoidSeparationM
+        if (geoidN == null && aircraftMsl != null && !geoidMissingLogged) {
+            geoidMissingLogged = true
+            AppLog.w(TAG, "no geoid separation from the aircraft — reported contact heights " +
+                "carry the hae/MSL offset (about 12 m in Anchorage); ground contacts are " +
+                "unaffected, they take the terrain")
+        }
 
         for (pin in pins) {
             // Ground (great-circle) distance — what the label shows, matching the home-distance
@@ -244,23 +270,15 @@ class ArOverlayView @JvmOverloads constructor(
             val dBearing = ((bearing - pose.bearingDeg + 540.0) % 360.0) - 180.0
 
             // Height of the pin relative to the aircraft; negative = below, the normal case.
-            val dz = if (aircraftMsl != null) {
-                pin.alt - aircraftMsl
-            } else {
-                // No DTED reference for the AIRCRAFT's own position — pin.alt itself is 0.0 in
-                // this state too (CameraSlantPoint's "unknown, assume sea level" fallback; see
-                // DroneTakBridge.lookPoint), so there is no real elevation on either side of
-                // this subtraction to use. Fall back to the SAME flat-ground assumption
-                // CameraSlantPoint used to place this pin's lat/lon in the first place, and that
-                // drawContacts() below already uses for inbound contacts without DTED: the pin
-                // sits at the aircraft's own takeoff-relative ground level, i.e. straight down
-                // by however far the aircraft has climbed. A hard 0.0 here (always level with
-                // the aircraft) ignored the actual look angle the moment the aircraft wasn't at
-                // ground level — the SPoI never had this gap because it always used this exact
-                // fallback for the math that placed the pin to begin with; AR just wasn't
-                // reusing it.
-                -hud.alt
-            }
+            // A pin with no elevation of its own (NaN: dropped or restored without DTED
+            // coverage) sits on the terrain under it, like a ground contact; only with nothing
+            // to difference does it fall to the flat plane — the SAME flat-ground assumption
+            // CameraSlantPoint used to place its lat/lon, and that drawContacts() uses for
+            // inbound contacts without DTED. See pinHeightAboveAircraft for the sea-level
+            // fault this replaced (the pin used to carry 0.0 for "unknown").
+            val terrainUnderPin = if (pin.alt.isFinite() || aircraftMsl == null) null
+                else DtedIndex.elevationAt(context, pin.lat, pin.lon)
+            val dz = pinHeightAboveAircraft(pin.alt, terrainUnderPin, aircraftMsl, hud.alt)
 
             // Reject on SLANT range, never on ground distance. Aiming steeply down — which is
             // exactly how a marker gets dropped on something beneath the aircraft — drives
@@ -273,12 +291,14 @@ class ArOverlayView @JvmOverloads constructor(
             // Depression angle: rise over run against the ground distance, so straight-down
             // correctly approaches -90 degrees.
             val elevDeg = Math.toDegrees(atan2(dz, groundDist))
-            val dElev = elevDeg - pose.pitchDeg
+            // INTO THE CAMERA'S FRAME before anything becomes a pixel — see cameraFrameAngles
+            // for why the world's bearing and elevation differences are not the camera's.
+            val (azCam, elCam) = cameraFrameAngles(dBearing, elevDeg, pose.pitchDeg)
 
-            val xy = project(dBearing, dElev)
-            if (logThisPass) diag(pin, pose, groundDist, dz, bearing, dBearing, elevDeg, dElev, xy)
+            val xy = project(azCam, elCam)
+            if (logThisPass) diag(pin, pose, groundDist, dz, bearing, dBearing, elevDeg, azCam, elCam, xy)
             if (xy == null) {
-                drawEdgeArrow(canvas, dBearing, dElev, ARROW_COLOR_PIN)
+                drawEdgeArrow(canvas, azCam, elCam, ARROW_COLOR_PIN)
                 continue
             }
             drawPin(canvas, xy.first, xy.second, pin)
@@ -315,6 +335,9 @@ class ArOverlayView @JvmOverloads constructor(
             ?.map { it to CameraSlantPoint.distanceMeters(hud.lat, hud.lon, it.lat, it.lon) }
             ?.sortedBy { it.second }
             ?: return
+        // The geoid separation the aircraft's receiver applies, read once per pass — see the
+        // note in onDraw. Null (always, on this SDK today); then a reported hae is used as it came.
+        val geoidN = TakBridgeHolder.geoidSeparationM
         var drawn = 0
         var offFrame = 0
         var skipped = 0
@@ -364,8 +387,11 @@ class ArOverlayView @JvmOverloads constructor(
                 // V5's flat-plane assumption.
                 -hud.alt
             }
-            val reported = u.alt
-            val dzReported = if (aircraftMsl != null && isUsableAltitude(reported)) {
+            // The contact's hae, brought into the DTED frame when the aircraft has given us
+            // the separation (Autel fault 7). Ground contacts still prefer terrain below; this
+            // is for everything that is NOT on the ground.
+            val reported = reportedHaeToMsl(u.alt, geoidN)
+            val dzReported = if (aircraftMsl != null && isUsableAltitude(u.alt)) {
                 reported - aircraftMsl
             } else {
                 null
@@ -414,9 +440,9 @@ class ArOverlayView @JvmOverloads constructor(
 
             val bearing = CameraSlantPoint.initialBearingDeg(hud.lat, hud.lon, lat, lon)
             val dBearing = ((bearing - pose.bearingDeg + 540.0) % 360.0) - 180.0
-            val dElev = Math.toDegrees(atan2(dz, groundDist)) - pose.pitchDeg
+            val (azCam, elCam) = cameraFrameAngles(dBearing, Math.toDegrees(atan2(dz, groundDist)), pose.pitchDeg)
 
-            val xy = project(dBearing, dElev)
+            val xy = project(azCam, elCam)
 
             // Trace the first few in detail, showing BOTH height methods side by side. The
             // whole point is that "reported" and "terrain" disagree by the geoid offset, and
@@ -444,7 +470,7 @@ class ArOverlayView @JvmOverloads constructor(
 
             if (xy == null) {
                 offFrame++
-                drawEdgeArrow(canvas, dBearing, dElev, TakMapMarkers.teamColor(u.team))
+                drawEdgeArrow(canvas, azCam, elCam, TakMapMarkers.teamColor(u.team))
                 continue
             }
             // Label budget: icons stay (they're the position information), but past this many
@@ -566,6 +592,10 @@ class ArOverlayView @JvmOverloads constructor(
     /**
      * Angular offset from the camera axis → pixel, or null if outside the frame.
      *
+     * ⚠ The two angles are the CAMERA-FRAME azimuth and elevation from [cameraFrameAngles],
+     * never the world bearing and elevation differences — those were handed in here until
+     * 2026-10-07 and were wrong by up to 15° on a pitched camera (Autel fault 3).
+     *
      * Gnomonic (true perspective) rather than the reference's linear mapping: screen offset is
      * proportional to `tan` of the angle, normalised by `tan` of the half-FOV.
      *
@@ -585,6 +615,14 @@ class ArOverlayView @JvmOverloads constructor(
         val x = videoRect.centerX() + (nx * videoRect.width() / 2.0).toFloat()
         // Screen Y grows downward, camera elevation grows upward — hence the subtraction.
         val y = videoRect.centerY() - (ny * videoRect.height() / 2.0).toFloat()
+
+        // TWO DIFFERENT TESTS (ledger D23, from the Autel tree). The check above asks "is this
+        // inside the camera's FIELD OF VIEW", against videoRect, the whole video frame. This one
+        // asks "can the pilot actually SEE it". On this tree FpvTextureView letterboxes, so the
+        // rect lies inside the view and the two agree today — but a fill crop would make the
+        // rect overflow the view, and a target in the cropped band would then be drawn
+        // invisibly instead of becoming the edge arrow it should be. Kept so that cannot start.
+        if (x < 0f || y < 0f || x > width || y > height) return null
         return x to y
     }
 
@@ -670,12 +708,19 @@ class ArOverlayView @JvmOverloads constructor(
         // invisible. Reported from the field 2026-07-27: air traffic directly overhead produced
         // an above-frame arrow the pilot could never see, which is the one case the indicator
         // matters most.
+        //
+        // CLAMP TO THE VIEW, NOT ONLY TO videoRect (ledger D23, 2026-10-07): the rect can
+        // overflow the view under a fill crop, and an arrow clamped to a rect edge off the
+        // screen is an arrow the pilot never sees. Intersect with the view first, then the
+        // chrome rules. clampOrCentre keeps this from throwing when the insets invert the band.
         val x = clampOrCentre(
             cx + nx.toFloat() * (videoRect.width() / 2f - margin),
-            videoRect.left + margin, videoRect.right - chromeInsetRight - margin)
+            maxOf(videoRect.left, 0f) + margin,
+            minOf(videoRect.right, width.toFloat()) - chromeInsetRight - margin)
         val y = clampOrCentre(
             cy + ny.toFloat() * (videoRect.height() / 2f - margin),
-            videoRect.top + chromeInsetTop + margin, videoRect.bottom - margin)
+            maxOf(videoRect.top, 0f) + chromeInsetTop + margin,
+            minOf(videoRect.bottom, height.toFloat()) - margin)
 
         val angle = atan2((y - cy).toDouble(), (x - cx).toDouble())
         val r = 7f * d
@@ -756,15 +801,16 @@ class ArOverlayView @JvmOverloads constructor(
         bearing: Double,
         dBearing: Double,
         elevDeg: Double,
-        dElev: Double,
+        azCam: Double,
+        elCam: Double,
         xy: Pair<Float, Float>?,
     ) {
         AppLog.d(
             TAG,
             "pin='${pin.name}' gDist=%.1fm dz=%.1fm | camBrg=%.1f pinBrg=%.1f dBrg=%.1f | " .format(
                 groundDist, dz, pose.bearingDeg, bearing, dBearing,
-            ) + "camPitch=%.1f pinElev=%.1f dElev=%.1f | fov=%.0fx%.0f | %s".format(
-                pose.pitchDeg, elevDeg, dElev,
+            ) + "camPitch=%.1f pinElev=%.1f | cam az=%.1f el=%.1f | fov=%.0fx%.0f | %s".format(
+                pose.pitchDeg, elevDeg, azCam, elCam,
                 // EFFECTIVE fov, zoom included — printing the 1x base while zoomed is
                 // actively misleading during calibration, which is when this gets read.
                 DroneTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
@@ -781,6 +827,8 @@ class ArOverlayView @JvmOverloads constructor(
     private var lastDiagMs = 0L
     /** Transition guard for the missing-MSL warning — see its use. */
     private var mslMissingLogged = false
+    /** Transition guard for the missing-geoid warning — see its use. */
+    private var geoidMissingLogged = false
 
     private fun skipped(reason: String) {
         if (lastSkipReason != reason) {

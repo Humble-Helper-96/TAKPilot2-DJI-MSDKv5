@@ -899,13 +899,22 @@ class DroneTakBridge(
         // zoom — the hybrid focal length is live — so the nominal-rung division below is
         // only the fallback for a camera that has not reported. That fallback is known-wrong
         // above 1x (the tele lens is a different focal length); the report is not.
-        fun hFovDeg(zoom: Double = 1.0) =
-            if (TakBridgeHolder.hasCameraFov) TakBridgeHolder.currentHFov()
-            else zoomedFov(TakBridgeHolder.currentHFovBase, zoom)
+        //
+        // THE FALLBACK FOLLOWS THE LENS (2026-10-07, parity plan step 6): in thermal, before
+        // the focal read has answered, the fallback used to be the calibrated VISIBLE base
+        // across a picture half as wide. publishedHFov holds the rule and LensFovPolicyTest
+        // pins it. ONE accessor for the overlay's projection AND the published <sensor> cone,
+        // so the screen and the wire cannot disagree (the Autel tree's fault 2).
+        fun hFovDeg(zoom: Double = 1.0) = publishedHFov(
+            lens = TakBridgeHolder.activeLens,
+            liveHFov = if (TakBridgeHolder.hasCameraFov) TakBridgeHolder.currentHFov() else null,
+            calibratedHFov = zoomedFov(TakBridgeHolder.currentHFovBase, zoom),
+            irHFov = TakBridgeHolder.irHFov,
+        )
 
-        fun vFovDeg(zoom: Double = 1.0) =
-            if (TakBridgeHolder.hasCameraFov) TakBridgeHolder.vFovFor(TakBridgeHolder.currentHFov())
-            else zoomedFov(TakBridgeHolder.currentVFovBase, zoom)
+        /** The vertical that pairs with [hFovDeg] — derived from THAT horizontal, never from
+         *  the calibrated base on its own (the Autel tree's fault 1). */
+        fun vFovDeg(zoom: Double = 1.0) = TakBridgeHolder.vFovFor(hFovDeg(zoom))
 
         private fun zoomedFov(baseDeg: Double, zoom: Double): Double {
             if (!zoom.isFinite() || zoom <= 1.0) return baseDeg

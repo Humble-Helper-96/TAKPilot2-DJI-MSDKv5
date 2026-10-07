@@ -21,6 +21,8 @@ public class TakUser {
     private double sensorAzimuth = -1;
     private double sensorRange = -1;
     private boolean drone;
+    /** A UAS: the sender said so with a &lt;vehicle&gt; or &lt;_uastool&gt; block. See CotParser. */
+    private boolean uas;
     private String operatorUid;
     private String type;   // raw CoT type (e.g. a-f-G-U-C, b-m-p-s-m), for map symbol resolution
     /**
@@ -56,7 +58,18 @@ public class TakUser {
         this.staleTime = staleTime;
     }
 
+    /**
+     * True when the sender's stale time has passed. A renderer draws a stale item grey.
+     *
+     * A PERSISTENT item never reports stale (operator, 2026-09-16). The stale sweep already
+     * ignores the sender's window for a placed marker, because senders put useless windows on
+     * them: CloudTAK about four seconds, TAK Aware ten minutes. The colour then trusted the same
+     * window the sweep distrusted, and a marker shared through TAK Aware turned grey ten minutes
+     * after it was placed while it stayed on the map for 72 hours. A placed marker keeps its
+     * colour until it is deleted or evicted. Live clients and air tracks grey as before.
+     */
     public boolean isStale() {
+        if (persistent) return false;
         return System.currentTimeMillis() > staleTime;
     }
 
@@ -110,6 +123,9 @@ public class TakUser {
     public double getSensorRange() { return sensorRange; }
     public void setSensorRange(double sensorRange) { this.sensorRange = sensorRange; }
     public boolean hasSensorFov() { return sensorFov >= 0 && sensorAzimuth >= 0 && sensorRange > 0; }
+    public boolean isUas() { return uas; }
+    public void setUas(boolean uas) { this.uas = uas; }
+
     public boolean isDrone() { return drone; }
     public void setDrone(boolean drone) { this.drone = drone; }
     public String getOperatorUid() { return operatorUid; }

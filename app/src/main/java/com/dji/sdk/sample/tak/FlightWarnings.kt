@@ -70,6 +70,10 @@ object FlightWarnings {
         AT_MAX_ALTITUDE(false, "AT ALTITUDE LIMIT"),
         AT_MAX_RANGE(false, "AT DISTANCE LIMIT"),
         NO_HOME_POINT(false, "NO HOME POINT"),
+        /** App-side, not from the aircraft: the file log is on. Merged into the active set at
+         *  display time from [debugLogOn], so it shows with no aircraft too. Last, because
+         *  it is the one warning that is never about flight safety. */
+        DEBUG_LOG(false, "DEBUG LOG ON"),
     }
 
     /** What the banner should show right now, or null for hidden. */
@@ -94,6 +98,11 @@ object FlightWarnings {
      */
     private const val LIMIT_MARGIN_FRACTION = 0.05
     private const val LIMIT_MARGIN_MIN_M = 5.0
+
+    /** Set from the flight screen's HUD tick from `AppLog.enabled`. Read in [displayAt], not
+     *  from the diagnostics feed: that feed speaks only when the aircraft does, and this must
+     *  show on the bench with nothing linked (operator, 2026-09-15, Autel v2.3.1). */
+    @Volatile var debugLogOn: Boolean = false
 
     private val lock = Any()
     private var active: Set<Warning> = emptySet()
@@ -136,8 +145,50 @@ object FlightWarnings {
      * The aircraft's own fault list, already de-duplicated and made readable by [DjiSdkBridge].
      * Shown verbatim — never re-worded, never filtered.
      */
+    /**
+     * Aircraft lines the pilot has closed and that stay closed for the session.
+     *
+     * The ✕ hides ONE SET of faults and the banner returns the moment the live set differs —
+     * that rule is what makes a close safe, and it stays the rule for anything the aircraft
+     * ranks WARNING or above. It had a cost at night (field report, 2026-10-07): the vision
+     * system's low-ambient-light advisory clears and returns at the callback rate, and every
+     * return was a "different set", so the banner came back over the video all night. A line
+     * the aircraft itself ranks BELOW warning (NOTICE, CAUTION — advice, not alarm) may be
+     * muted here once the pilot has read and closed it; the flight screen decides which lines
+     * qualify from `DjiSdkBridge.diagnosticRanks`. Muted lines are filtered at the source in
+     * [onDiagnostics], so they count in no "+N" and sit in no open list. Cleared by [reset],
+     * i.e. per bridge session, never persisted. Logged on both ends.
+     */
+    @Volatile private var muted: Set<String> = emptySet()
+
+    /** Lines muted this session — for the test and the log. */
+    val mutedLines: Set<String> get() = muted
+
+    fun mute(lines: Collection<String>) {
+        if (lines.isEmpty()) return
+        synchronized(lock) {
+            muted = muted + lines
+            AppLog.i(TAG, "warning lines muted for the session by the pilot: " +
+                lines.joinToString(" · "))
+            // Re-apply to what is standing: the lines go now, not at the next report.
+            applyDiagnostics(lastRawDiagnostics)
+        }
+    }
+
+    /** The aircraft's list as it arrived, before the mute filter — so a mute can re-apply. */
+    private var lastRawDiagnostics: List<String> = emptyList()
+
     fun onDiagnostics(items: List<String>) {
         synchronized(lock) {
+            lastRawDiagnostics = items
+            applyDiagnostics(items)
+        }
+    }
+
+    /** Must hold [lock]. */
+    private fun applyDiagnostics(raw: List<String>) {
+        run {
+            val items = if (muted.isEmpty()) raw else raw.filterNot { it in muted }
             val text = items.joinToString(" · ")
             if (text == faultText) return
             faultText = text
@@ -301,12 +352,22 @@ object FlightWarnings {
             heldFaults().firstOrNull() ?: "aircraft fault"
         } else w.label
 
+    /**
+     * The lines of a banner the pilot's ✕ may hide. `DEBUG LOG ON` is not one of them
+     * (operator, 2026-09-15): the whole point of that warning is to be looked at until the log
+     * is turned off, so a ✕ on a banner that carries it hides the aircraft's warnings and
+     * leaves that one line standing. Pure, so the rule is pinned by [FlightWarningsTest].
+     */
+    fun dismissable(all: List<String>): List<String> = all.filter { it != Warning.DEBUG_LOG.label }
+
     /** Polled from the flight screen's HUD tick. */
     fun display(): Display? = displayAt(System.currentTimeMillis())
 
     /** [display] with an injectable clock, so tests can step time. Same logic, one body. */
     internal fun displayAt(now: Long): Display? {
         synchronized(lock) {
+            // The app-side warning joins the aircraft's here — see [debugLogOn].
+            val active = if (debugLogOn) this.active + Warning.DEBUG_LOG else this.active
             val worst = active.minOrNull()
             val cur = shown
             val held = cur != null && now - shownAtMs < HOLD_MS
@@ -375,6 +436,9 @@ object FlightWarnings {
             lastFaultList = emptyList()
             shown = null
             shownAtMs = 0L
+            lastRawDiagnostics = emptyList()
+            if (muted.isNotEmpty()) AppLog.i(TAG, "session mutes cleared: ${muted.size} line(s)")
+            muted = emptySet()
         }
     }
 

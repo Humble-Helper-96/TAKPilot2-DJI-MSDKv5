@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
@@ -32,21 +33,111 @@
         <LinearLayout style="@style/homeCard">
             <TextView style="@style/homeCardTitle" android:text="Options" />
 
+            <!-- The WHOLE ROW is the target (Autel v2.3.1, 2026-09-15): a switch invites a tap
+                 on its words, and a tap on the label did nothing. Same for the option rows. -->
             <LinearLayout
+                android:id="@+id/debugLoggingRow"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingTop="6dp">
+                <!-- A SWITCH, not a check box (operator, 2026-09-15): this is the one control
+                     on the screen that starts and stops something — the file sink refuses every
+                     line the moment it is off, and the setter flushes and closes the file. The
+                     options below are greyed while it is off. -->
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/debugLoggingToggle"
+                    android:layout_width="wrap_content" android:layout_height="48dp"
+                    android:layout_marginEnd="10dp" android:clickable="false" android:focusable="false"
+                    app:thumbTint="@color/tp_btn_info" app:trackTint="@color/tp_pill_idle_stroke" />
+                <TextView android:id="@+id/debugLoggingLabel"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Logging Enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+            </LinearLayout>
+
+            <!-- The rows below are OPTIONS OF the log (operator, 2026-09-15): indented under
+                 the switch, and greyed while it is off, because none of them does anything
+                 without it. The switch SETS them — on checks all, off clears all. This tree
+                 keeps two options the Autel tree does not have: the detail level, and the
+                 resource LOG line (distinct from the on-screen resource row). The captions
+                 that used to sit under each row are gone (Autel v2.3.1); the Field Guide
+                 carries the explanations. -->
+
+            <LinearLayout
+                android:id="@+id/debugVerboseRow"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
-                android:paddingTop="6dp">
-                <CheckBox android:id="@+id/debugLoggingToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingTop="4dp" android:paddingStart="28dp">
+                <CheckBox android:id="@+id/debugVerboseToggle" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Logging enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
-                <!-- SRT LATENCY. Deliberately here and not on Pre-Flight (operator, 2026-08-29):
+                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/debugTakRow"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingTop="4dp" android:paddingStart="28dp">
+                <CheckBox android:id="@+id/debugTakToggle" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/debugObstacleRow"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingTop="4dp" android:paddingStart="28dp">
+                <CheckBox android:id="@+id/debugObstacleToggle" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Include obstacle distance logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/debugResourceRow"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingTop="4dp" android:paddingStart="28dp">
+                <CheckBox android:id="@+id/debugResourceToggle" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Include system resource logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/debugResourceMonitorRow"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingTop="4dp" android:paddingStart="28dp">
+                <CheckBox android:id="@+id/debugResourceMonitorToggle" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+            </LinearLayout>
+
+            <!-- SRT LATENCY. Deliberately here and not on Pre-Flight (operator, 2026-08-29):
                  the right value is a property of the NETWORK a pilot is on, not a flight
                  decision, and it is set once by whoever knows the RTT to the server.
 
                  It is on a screen at all, rather than a constant, because 500 ms is a starting
                  point from ONE ground test. Field experience must be actionable without
-                 pushing a build to aircraft that are flying. -->
+                 pushing a build to aircraft that are flying.
+
+                 It used to sit INSIDE the "Logging enabled" row's horizontal LinearLayout —
+                 an unclosed tag, found during the 2026-10-07 switch port. It is its own block now. -->
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="16dp"
@@ -62,6 +153,8 @@
                     android:layout_width="120dp"
                     android:layout_height="wrap_content"
                     android:inputType="number"
+                    android:maxLines="1"
+                    android:imeOptions="actionDone"
                     android:textColor="@color/tp_text_bright"
                     android:textSize="15sp" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -82,100 +175,9 @@
                 android:text="How long SRT has to recover a lost packet, and the delay it adds. Use three to four times the round-trip time to your video server. RTSP does not use this value."
                 android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
-        </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical"
-                android:paddingTop="4dp">
-                <CheckBox android:id="@+id/debugVerboseToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical"
-                android:paddingTop="4dp">
-                <CheckBox android:id="@+id/debugTakToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="Clear this box to hide the TAK messages and show only the app."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
-            <!-- Obstacle-distance filter, ported from the Autel build's radar toggle. The vision
-                 sensors report continuously, so these are the highest-volume lines the app
-                 writes; off by default. The help text promises that avoidance changes and
-                 warnings survive the filter — that promise is kept structurally, by putting the
-                 noisy readout on its own log tag (see AppLog.OBSTACLE_TAGS). -->
-            <LinearLayout
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical"
-                android:paddingTop="4dp">
-                <CheckBox android:id="@+id/debugObstacleToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include obstacle distance logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="The sensors fill the log. Select this box only to examine obstacle avoidance. Avoidance changes and warnings stay in the log."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
-            <!-- ON by default, unlike the obstacle filter. One line every 30 seconds, and it is
-                 the watchdog for the fault that OOM-killed the sibling in the air. See
-                 AppLog.resourceLogging. -->
-            <LinearLayout
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical"
-                android:paddingTop="4dp">
-                <CheckBox android:id="@+id/debugResourceToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include system resource logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="One line each 30 seconds with the memory, the CPU and the number of TAK contacts. Keep this box selected. Use the line to find a problem before a crash."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
-            <!-- The OVERLAY, distinct from the log switch above. Off by default: it covers
-                 live video, which a log line does not. -->
-            <LinearLayout
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical"
-                android:paddingTop="4dp">
-                <CheckBox android:id="@+id/debugResourceMonitorToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="Puts the same numbers in a bar at the bottom of the flight screen. The bar covers part of the video. Use it to watch the system during a flight."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/debugExportButton"
-                style="@style/TakButton.Primary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="Export Log"
-                />
+            <!-- "Export Log" was here until 2026-10-07 (operator, matching Autel 2026-08-16).
+                 Every log is already written to Downloads/TAKPilot2 Logs as it is produced, so
+                 the button offered a second route to a file the pilot already has. -->
             <Button
                 android:id="@+id/debugClearButton"
                 style="@style/TakButton.Neutral"

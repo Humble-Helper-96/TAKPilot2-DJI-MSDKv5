@@ -21,8 +21,10 @@ import java.nio.ByteBuffer
  * pilot-facing LIVE flow has been the screen-capture path since Phase 5 shipped.
  *
  * The [VideoConfig.profile] quality ladder ("low"/"standard"/"high") still selects the
- * encoder's resolution/fps/bitrate via [StreamProfile]. "original"
- * (passthrough) no longer exists; a saved "original" profile encodes at "standard".
+ * encoder's resolution/fps/bitrate via [StreamProfile]. "original" (passthrough) no longer
+ * exists; a saved "original" profile encodes at "standard". A live stream is therefore always
+ * a reduced stream, and its path always carries `-Low` — see [StreamPath]. Original quality is
+ * the aircraft's own recording to the SD card, which never comes through this class.
  */
 class DroneVideoStreamer(
     private val context: Context,
@@ -86,13 +88,27 @@ class DroneVideoStreamer(
         val profile: String = "standard",   // "original" | "low" | "standard" | "high"
         // The outbound codec ("h264" | "h265") — a Pre-Flight choice, see [VideoCodec].
         val codec: String = VideoCodec.H264.prefValue,
+        /**
+         * Put the per-process random token in the stream path. OFF keeps the path exactly as
+         * every earlier version built it. See [StreamPath] for the shape, the token's lifetime
+         * and the reason. Read from [StreamPath.PREF_RANDOMIZE].
+         */
+        val randomizePath: Boolean = false,
     ) {
-        val isTranscode: Boolean get() = profile != "original"
-        // Transcoded output is published to a "-Low" path (e.g. Feed-A -> Feed-A-Low): it
-        // tells the media server this stream is ALREADY reduced/keyframed, so it passes it
-        // through to clients instead of running its own transcode on it. Flows through
-        // push/advertise/preview URLs alike since they all build on path().
-        private fun path(): String = streamId.trim('/') + if (isTranscode) "-Low" else ""
+        /**
+         * THE path. One name flows through the push, the advertisement and the masked preview
+         * alike, so the CoT always points at the stream that is live. It is composed in ONE
+         * place, [StreamPath.compose] — the `-Low` suffix, the sanitizing and the optional token
+         * are all there. Nothing in this class builds a path by hand.
+         *
+         * The suffix tells the media server this stream is ALREADY reduced/keyframed, so it
+         * passes it through to clients instead of running its own transcode on it. It is
+         * UNCONDITIONAL: a live stream is always a reduced stream (operator, 2026-10-07), and
+         * the `isTranscode` flag that used to gate it tested for the `"original"` passthrough
+         * profile that ledger R22 deleted. [StreamPath] holds the full reasoning, including the
+         * two faults that gate was hiding.
+         */
+        fun streamPath(): String = StreamPath.compose(streamId, randomizePath)
         /**
          * Where the video goes OUT.
          *
@@ -105,10 +121,10 @@ class DroneVideoStreamer(
          * of the stream id and there is no escape. [start] logs a warning. RTSP is unaffected.
          */
         fun pushUrl(): String = when (transport) {
-            VideoTransport.RTSP -> "rtsp://$host:$rtspPort/${path()}"
+            VideoTransport.RTSP -> "rtsp://$host:$rtspPort/${streamPath()}"
             VideoTransport.SRT ->
-                if (username.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                else "srt://$host:$srtPort/publish:${path()}:$username:$password"
+                if (username.isEmpty()) "srt://$host:$srtPort/publish:${streamPath()}"
+                else "srt://$host:$srtPort/publish:${streamPath()}:$username:$password"
         }
 
         /** The port the PUSH uses. The login is [username] either way. */
@@ -129,7 +145,7 @@ class DroneVideoStreamer(
             val h = advertiseHost.ifEmpty { host }
             val cred = if (advertiseUser.isNotEmpty())
                 "${enc(advertiseUser)}:${enc(advertisePass)}@" else ""
-            return "rtsp://$cred$h:$advertisePort/${path()}?tcp"
+            return "rtsp://$cred$h:$advertisePort/${streamPath()}?tcp"
         }
         /**
          * The URL preview shown in Pre-Flight, with the password masked.
@@ -148,10 +164,10 @@ class DroneVideoStreamer(
             }
             val who = if (username.isEmpty()) "" else "$username:$secret@"
             return when (transport) {
-                VideoTransport.RTSP -> "rtsp://$who$host:$rtspPort/${path()}?tcp"
+                VideoTransport.RTSP -> "rtsp://$who$host:$rtspPort/${streamPath()}?tcp"
                 VideoTransport.SRT ->
-                    if (username.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                    else "srt://$host:$srtPort/publish:${path()}:$username:$secret"
+                    if (username.isEmpty()) "srt://$host:$srtPort/publish:${streamPath()}"
+                    else "srt://$host:$srtPort/publish:${streamPath()}:$username:$secret"
             }
         }
         private fun enc(s: String): String =
@@ -548,9 +564,13 @@ object VideoStreamerHolder {
      * streams the SCREEN and has no passthrough path, so a saved "original" — which no current
      * UI can write, but which survives untouched through Pre-Flight migration — used to route
      * the pilot into a dead start with no projection. It is treated as "standard", which is
-     * what [StreamProfile.fromPref] already resolves it to; normalising
-     * here as well keeps `isTranscode` (and with it the "-Low" publish path) in agreement,
-     * instead of silently publishing a legacy install to a different URL.
+     * what [StreamProfile.fromPref] already resolves it to; normalising here as well keeps the
+     * stored string honest for the quality readouts.
+     *
+     * It no longer has anything to do with the publish path: the `-Low` suffix is unconditional
+     * (operator, 2026-10-07), so a legacy value cannot move the URL any more. It could before,
+     * and the pre-flight card read this pref RAW while this function normalised it — the card
+     * showed a path the server never saw. See [StreamPath].
      */
     private fun normalizeProfile(saved: String?): String =
         if (saved.isNullOrEmpty() || saved == "original") "standard" else saved
@@ -584,6 +604,7 @@ object VideoStreamerHolder {
             advertiseUser = p.getString("video_adv_user", "") ?: "",
             advertisePass = p.getString("video_adv_pass", "") ?: "",
             profile = normalizeProfile(p.getString("video_profile", "standard")),
+            randomizePath = p.getBoolean(StreamPath.PREF_RANDOMIZE, false),
             codec = p.getString("video_codec", VideoCodec.H264.prefValue)
                 ?: VideoCodec.H264.prefValue,
         )

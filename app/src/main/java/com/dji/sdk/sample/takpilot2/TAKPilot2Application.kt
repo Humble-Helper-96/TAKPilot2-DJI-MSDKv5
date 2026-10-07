@@ -40,5 +40,8 @@ class TAKPilot2Application : Application() {
         // thread, stalling the flight screen for the length of the read. It warms on its own
         // worker and is safe when nothing has been downloaded.
         UasfmIndex.preload(this)
+        // The stream path this process will publish under, once. This is also where the
+        // per-process token is made when the random path is on — see StreamPath.
+        com.dji.sdk.sample.tak.StreamPath.logSessionPath(this)
     }
 }

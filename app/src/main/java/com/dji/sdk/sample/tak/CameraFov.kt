@@ -61,6 +61,10 @@ object CameraFov {
 
     fun refresh(irLive: Boolean, zoomRatio: Double) {
         lastRatio = zoomRatio
+        // The lens is told here, where every source change already arrives, so the FOV
+        // fallback follows it at once — before the read below has answered, and even if the
+        // aircraft refuses it. See TakBridgeHolder.activeLens.
+        TakBridgeHolder.activeLens = if (irLive) CameraLens.IR else CameraLens.EO
         when {
             irLive -> {
                 KeyManager.getInstance().getValue(

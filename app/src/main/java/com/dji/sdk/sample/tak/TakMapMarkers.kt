@@ -688,7 +688,9 @@ object TakMapMarkers {
         // entry per bucket rather than one per aircraft. That matters here: near busy airspace
         // the contact list runs to a hundred aircraft, and one bitmap each would be the same
         // unbounded growth this file's retention work exists to stop.
-        if (isAirTrack(user.type)) {
+        // A UAS is NOT keyed here: it draws a 2525 frame with its callsign under it, so it
+        // takes the ordinary key below like every other framed contact.
+        if (isAirTrack(user.type) && !user.isUas) {
             return if (user.hasCourse()) "air|${courseBucket(user.course)}" else "air|nocourse"
         }
         val team = (user.team ?: "Cyan").lowercase()
@@ -696,7 +698,8 @@ object TakMapMarkers {
         val drone = if (user.isDrone) "D" else "U"
         // A live client never takes a 2525 frame, whatever its type says — see iconFor.
         val mil = if (user.isLiveClient) 0 else milMarkerRes(user.type) ?: 0
-        return "$team|$stale|$drone|$mil|${user.callsign}"
+        val uas = if (user.isUas) milAirMarkerRes(user.type) ?: 0 else 0
+        return "$team|$stale|$drone|$mil|$uas|${user.callsign}"
     }
 
     /**
@@ -757,6 +760,31 @@ object TakMapMarkers {
     }
 
     /**
+     * MIL-STD-2525 affiliation → AIR frame drawable, for a UAS reported by another TAK client.
+     *
+     * ⚠ **ADS-B TRAFFIC MUST NOT COME THROUGH HERE.** The caller gates on [TakUser.isUas], which
+     * the parser sets only when the sender put a `<vehicle>` or `<_uastool>` block on its own
+     * report — see CotParser. A manned aircraft from a gateway keeps the white silhouette, which
+     * is the whole point of the split: the pilot must be able to tell the other aircraft of the
+     * flight from the airliner above it (operator, 2026-09-14).
+     *
+     * The frames are the top halves of the ground frames, open at the bottom — the 2525 air
+     * shape, and what TAK Aware and CloudTAK draw. Null for a type with no affiliation letter
+     * this application knows; the caller then falls back to the silhouette.
+     */
+    fun milAirMarkerRes(type: String?): Int? {
+        val parts = type?.split("-").orEmpty()
+        if (parts.size < 3 || parts[0] != "a" || parts[2] != "A") return null
+        return when (parts[1]) {
+            "f" -> R.drawable.marker_air_friendly
+            "h" -> R.drawable.marker_air_hostile
+            "n" -> R.drawable.marker_air_neutral
+            "u" -> R.drawable.marker_air_unknown
+            else -> null
+        }
+    }
+
+    /**
      * TAK team-name → colour, identical to taklite's getTeamColor().
      *
      * ⚠ DELIBERATELY NOT TOKENISED, and this is not an oversight. These are the TAK PROTOCOL's
@@ -790,6 +818,20 @@ object TakMapMarkers {
     private fun iconBitmapFor(user: TakUser): Bitmap {
         // Checked BEFORE milMarkerRes so an air track can never fall through to the plain team
         // dot, which is what made ADS-B traffic indistinguishable from a TAK client.
+        // A UAS FROM ANOTHER TAK CLIENT TAKES THE 2525 AIR FRAME AND ITS CALLSIGN, not the
+        // silhouette. Checked before the silhouette branch, and gated on isUas so ADS-B traffic
+        // falls through to it unchanged. The label is kept although the silhouette drops it:
+        // there are one or two of these in a sortie, not a dozen, and WHICH aircraft it is was
+        // the pilot's actual question. It is a framed symbol with a label, so it takes the same
+        // centerOnSymbol treatment as the ground frames — see milIconBitmap.
+        if (isAirTrack(user.type) && user.isUas) {
+            milAirMarkerRes(user.type)?.let { res ->
+                return centerOnSymbol(
+                    makeMilIcon(res, user.callsign ?: user.uid, user.isStale),
+                    symbolHeightPx(true),
+                )
+            }
+        }
         if (isAirTrack(user.type)) {
             // Already symmetric about its own centre — no label to offset, so it skips
             // centerOnSymbol, which would be a no-op anyway.

@@ -15,6 +15,7 @@ import com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconSize
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
+import com.taklite.client.tak.CotBuilder
 import com.taklite.client.tak.TakManager
 import com.taklite.util.AppLog
 import org.json.JSONArray
@@ -224,6 +225,12 @@ object TakDropMarkers {
 
     // ---- Placement ----
 
+    /** What goes on the wire for a pin's height: the elevation when known, else CoT's own
+     *  "not known" value, which a receiver draws on its terrain. Never NaN and never 0.0 — the
+     *  first is not XML and the second is sea level (Autel fault 4, 2026-09-14). */
+    private fun cotAltitude(alt: Double): Double =
+        if (alt.isFinite()) alt else CotBuilder.UNKNOWN.toDouble()
+
     /**
      * Place a pin, draw it, persist it, and broadcast it to TAK. [name] is used verbatim; pass
      * the string from [nextAutoName] unchanged to also consume the auto-name counter.
@@ -261,7 +268,7 @@ object TakDropMarkers {
         val uid = pin.cotUid ?: TakManager.newMarkerUid()
         val feed = TakMissionManager.joinedFeed
         val sent = tak.sendMarkerWithUid(
-            uid, pin.lat, pin.lon, pin.alt, pin.affiliation.id, pin.name, "", feed)
+            uid, pin.lat, pin.lon, cotAltitude(pin.alt), pin.affiliation.id, pin.name, "", feed)
         if (sent == null) {
             AppLog.w(TAG, "pin ${pin.key} send failed")
             ui?.toast("Pin saved locally — send failed")
@@ -317,7 +324,7 @@ object TakDropMarkers {
             }
             // Same uid, current values: this is an UPDATE, not a second marker. Reads whatever the
             // pin holds NOW, so a rename or move inside the delay window is carried too.
-            tak.sendMarkerWithUid(uid, live.lat, live.lon, live.alt, live.affiliation.id,
+            tak.sendMarkerWithUid(uid, live.lat, live.lon, cotAltitude(live.alt), live.affiliation.id,
                 live.name, "", TakMissionManager.joinedFeed)
             AppLog.i(TAG, "rebroadcast \"${live.name}\" uid=$uid (catches late-joining clients)")
         }, REBROADCAST_DELAY_MS)
@@ -476,7 +483,9 @@ object TakDropMarkers {
             val arr = JSONArray()
             for (p in pins.values) {
                 arr.put(JSONObject().apply {
-                    put("key", p.key); put("lat", p.lat); put("lon", p.lon); put("alt", p.alt)
+                    put("key", p.key); put("lat", p.lat); put("lon", p.lon)
+                    // JSONObject refuses NaN: an unknown elevation is simply absent.
+                    if (p.alt.isFinite()) put("alt", p.alt)
                     put("aff", p.affiliation.id); put("name", p.name)
                     p.cotUid?.let { put("uid", it) }
                     // Only written when set: an absent key reads back as false, so pins saved
@@ -516,8 +525,13 @@ object TakDropMarkers {
                             "loading it as Unknown")
                     }
                     val key = o.getString("key")
+                    // Absent, or the 0.0 that older files wrote for "unknown", both read as
+                    // unknown. A pin genuinely at 0 m MSL loses nothing: the overlay looks up
+                    // the terrain under an unknown pin, which is 0 there too.
+                    val alt = o.optDouble("alt", Double.NaN).takeIf { it.isFinite() && it != 0.0 }
+                        ?: Double.NaN
                     pins[key] = Pin(
-                        key, o.getDouble("lat"), o.getDouble("lon"), o.optDouble("alt", 0.0),
+                        key, o.getDouble("lat"), o.getDouble("lon"), alt,
                         aff ?: Affiliation.UNKNOWN, o.optString("name", "Marker"),
                         o.optString("uid", "").takeIf { it.isNotEmpty() },
                         o.optBoolean("quick", false),

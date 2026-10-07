@@ -24,7 +24,10 @@ import org.junit.Test
 class FlightWarningsTest {
 
     @Before
-    fun clean() = FlightWarnings.reset()
+    fun clean() {
+        FlightWarnings.reset()
+        FlightWarnings.debugLogOn = false
+    }
 
     // ---- Display policy ----
 
@@ -117,6 +120,65 @@ class FlightWarningsTest {
         assertNull(FlightWarnings.displayAt(1_000L))
     }
 
+    // ---- The debug log line (Autel v2.3.1, ported) ----
+
+    @Test
+    fun theDebugLogShowsWithNoAircraftAndBehindEveryAircraftWarning() {
+        // No aircraft at all: the app-side warning still shows (the bench case).
+        FlightWarnings.debugLogOn = true
+        val alone = FlightWarnings.displayAt(1_000L)!!
+        assertEquals("DEBUG LOG ON", alone.text)
+        assertFalse(alone.red)
+        // With an aircraft fault it is the one behind, listed last.
+        FlightWarnings.onDiagnostics(listOf("Compass error"))
+        val both = FlightWarnings.displayAt(1_001L)!!
+        assertEquals("Compass error  +1", both.text)
+        assertTrue(both.red)
+        assertEquals(listOf("Compass error", "DEBUG LOG ON"), both.all)
+        // Off: gone at once.
+        FlightWarnings.debugLogOn = false
+        assertEquals(listOf("Compass error"), FlightWarnings.displayAt(1_002L)!!.all)
+    }
+
+    @Test
+    fun theDebugLogLineIsTheOneLineThePilotCannotClose() {
+        assertEquals(listOf("Compass error"),
+            FlightWarnings.dismissable(listOf("Compass error", "DEBUG LOG ON")))
+        assertEquals(emptyList<String>(), FlightWarnings.dismissable(listOf("DEBUG LOG ON")))
+    }
+
+    // ---- Session mutes (night operations, 2026-10-07) ----
+
+    @Test
+    fun aMutedLineLeavesAtOnceAndDoesNotComeBackWhenItReturns() {
+        FlightWarnings.onDiagnostics(listOf("Compass error", "Low ambient light"))
+        assertEquals(listOf("Compass error", "Low ambient light"), FlightWarnings.displayAt(0L)!!.all)
+        // The pilot closes it. It goes now, not at the next report, and the count follows.
+        FlightWarnings.mute(listOf("Low ambient light"))
+        assertEquals(listOf("Compass error"), FlightWarnings.displayAt(1L)!!.all)
+        assertEquals("Compass error", FlightWarnings.displayAt(2L)!!.text)
+        // It clears and returns, the way the vision system reports at night. Still gone.
+        FlightWarnings.onDiagnostics(listOf("Compass error"))
+        FlightWarnings.onDiagnostics(listOf("Compass error", "Low ambient light"))
+        assertEquals(listOf("Compass error"), FlightWarnings.displayAt(3L)!!.all)
+        // A line that was NOT muted still arrives.
+        FlightWarnings.onDiagnostics(listOf("Compass error", "Low ambient light", "IMU error"))
+        assertEquals(listOf("Compass error", "IMU error"), FlightWarnings.displayAt(4L)!!.all)
+        // Alone, a muted line is no banner at all once its hold is over.
+        FlightWarnings.onDiagnostics(listOf("Low ambient light"))
+        assertNull(FlightWarnings.displayAt(60_000L))
+    }
+
+    @Test
+    fun aMuteIsForTheSessionOnly() {
+        FlightWarnings.mute(listOf("Low ambient light"))
+        assertEquals(setOf("Low ambient light"), FlightWarnings.mutedLines)
+        FlightWarnings.reset()
+        assertTrue(FlightWarnings.mutedLines.isEmpty())
+        FlightWarnings.onDiagnostics(listOf("Low ambient light"))
+        assertEquals("Low ambient light", FlightWarnings.displayAt(0L)!!.text)
+    }
+
     // ---- Limit band ----
 
     @Test
@@ -161,5 +223,7 @@ class FlightWarningsTest {
         val lastRed = order.indexOfLast { it.red }
         val firstAmber = order.indexOfFirst { !it.red }
         assertTrue("reds must all precede ambers", lastRed < firstAmber)
+        // The app-side line is the least of all: never ahead of anything the aircraft says.
+        assertEquals(FlightWarnings.Warning.DEBUG_LOG, order.last())
     }
 }
