@@ -107,9 +107,14 @@
          as the exception. This is as far as it should go without a check over a BRIGHT scene:
          the lower the alpha, the more the red washes toward the background, and white text on
          washed-out red is the hardest thing on the screen to read at the moment it matters.
-         If it must go lower, verify against a white or sunlit background first, not indoors. -->
-    <color name="tp_warn_banner_red">#CCB71C1C</color>
-    <color name="tp_warn_banner_amber">#CCC15D00</color>
+         If it must go lower, verify against a white or sunlit background first, not indoors.
+
+         ⚠ LOWERED AGAIN TO 99 (60 %) on 2026-10-07 (operator, in flight, over gravel and a
+         white house): the banner sits bottom-left over the picture now and the pilot asked
+         to see through it. The caveat above stands — not yet checked over snow or a sunlit
+         white roof; if the text drowns there, 99 is the number to raise. -->
+    <color name="tp_warn_banner_red">#99B71C1C</color>
+    <color name="tp_warn_banner_amber">#99C15D00</color>
 
     <!-- FLIGHT-TUNED HUD COLOURS — specification §6.1. These were chosen against live video
          with the aircraft flying. Tokenising them must not re-tune them, and changing one

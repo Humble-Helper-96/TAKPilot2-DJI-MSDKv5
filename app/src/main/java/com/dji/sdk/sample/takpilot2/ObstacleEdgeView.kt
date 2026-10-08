@@ -79,19 +79,48 @@ class ObstacleEdgeView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
+    /** Fills the gradient band. The shader carries the colour; [Paint.setAlpha] modulates it. */
+    private val washPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    /**
+     * ⚠ TWO SHADERS, BUILT ONCE, REUSED FOR EVER (Autel v2.0.8, ported 2026-10-07). Each is a
+     * unit-length horizontal ramp for one colour; the LOCAL MATRIX stretches it to the band's
+     * depth and points it at the right edge. Rebuilding a LinearGradient per face per frame
+     * would allocate on a view that redraws at the sensor's push rate. Three stops, not two:
+     * a straight ramp to transparent BANDS visibly over live video; the middle stop bends the
+     * falloff so the dense part hugs the edge and the tail fades out of notice.
+     */
+    private val washShaders = HashMap<Int, android.graphics.LinearGradient>(2)
+    private val washMatrix = android.graphics.Matrix()
+
+    /**
+     * ⚠ AMBER ON RED, NOT THE HUD'S WHITE ON BLACK (Autel, operator 2026-09-13). Every other
+     * readout is white text with a black outline, and the obstacle distance read as one more
+     * of them — on the one display whose job is to be told apart at a glance. The pair is
+     * FIXED and does not follow the state: the band behind it carries amber-or-red already.
+     * Sized with the warning banner's text (this panel's 11sp, by proportion), so the two
+     * warning texts on the screen are one size.
+     */
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = ContextCompat.getColor(context, R.color.tp_hud_obstacle_warn)
         textAlign = Paint.Align.CENTER
         isFakeBoldText = true
+        textSize = resources.getDimension(R.dimen.flight_warning_text_size)
     }
-    private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val rect = RectF()
+    private val textOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.tp_hud_obstacle_danger)
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+        style = Paint.Style.STROKE
+        strokeWidth = resources.getDimension(R.dimen.hud_text_outline_width)
+        strokeJoin = Paint.Join.ROUND
+        textSize = resources.getDimension(R.dimen.flight_warning_text_size)
+    }
 
     // Reused across draws. This view redraws at the sensor's push rate, so onDraw must not
     // allocate: the chevron Path is reset and refilled, and one FontMetrics is filled in place
     // (the `fontMetrics` property allocates a fresh object on every read).
     private val chevronPath = Path()
-    private val fontMetrics = Paint.FontMetrics()
 
     override fun onDraw(canvas: Canvas) {
         if (videoRect.isEmpty || faces.isEmpty()) return
@@ -104,45 +133,73 @@ class ObstacleEdgeView @JvmOverloads constructor(
 
     private enum class Side { LEFT, RIGHT }
 
+    /**
+     * One side face, as a GRADIENT bleeding in from its edge (Autel v2.0.8, ported 2026-10-07;
+     * it was an arc here until then — ledger D24's "arc, not a gradient" was the Autel's own
+     * state on 2026-09-13 and the Autel reversed it the same week).
+     *
+     * Two things move with the distance and they are the whole design: DEPTH — the band
+     * reaches further toward the centre as the obstacle gets closer, the part a pilot reads
+     * without looking — and OPACITY. Colour keeps the flight-validated meaning the arc had:
+     * amber beyond [DANGER_M], red inside it, a hard step rather than a blend, because "you
+     * are now close" is a different statement from "something is there".
+     *
+     * ⚠ DEPTH RUNS ON t SQUARED (Autel, measured). A linear ramp spent its travel in the far
+     * field — 5 % of the screen at 39 ft to 19 % at 13 ft, then only 19 % to 25 % across the
+     * ENTIRE danger range, so 7 ft and 1.6 ft read as the same severity. Squaring puts the
+     * travel where a pilot needs it. ALPHA STAYS LINEAR: the far-field hint must still show.
+     *
+     * The band spans the WHOLE edge of the VIEW, not 0.62 of the video rect: a wash needs no
+     * ends to read, a full edge says "this side" plainly, and from the view edge it looks like
+     * it comes from outside the frame — which under the fill-crop it does. The depth is a
+     * fraction of the width, so it reads the same on every screen (§7).
+     */
     private fun drawEdge(canvas: Canvas, meters: Float, side: Side) {
         if (meters > WARN_M) return                      // nothing worth showing
-
-        // Nearer = more opaque, thicker and redder. A binary red/not-red gives the pilot no sense
-        // of closing rate, which is the thing they actually steer on.
         val t = (1f - (meters / WARN_M)).coerceIn(0f, 1f)
-        arcPaint.style = Paint.Style.STROKE
-        arcPaint.color = if (meters <= DANGER_M) COLOR_DANGER else COLOR_WARN
-        arcPaint.alpha = (90 + 165 * t).toInt().coerceAtMost(255)
-        arcPaint.strokeWidth = dp(5f) + dp(9f) * t
-
-        val bow = dp(26f) + dp(30f) * t                  // how far the arc bows inward
-        val inset = dp(4f)
-        val span = 0.62f                                 // fraction of the edge the arc covers
-        val h = videoRect.height()
-        val len = h * span
-        val cyMid = videoRect.centerY()
-
-        // The VISIBLE edges of the picture: the rect overflows the view under a fill-crop.
-        val visLeft = maxOf(videoRect.left, 0f)
-        val visRight = minOf(videoRect.right, width.toFloat())
+        val danger = meters <= DANGER_M
+        val color = if (danger) COLOR_DANGER else COLOR_WARN
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val depth = w * (MIN_DEPTH_FRAC + (MAX_DEPTH_FRAC - MIN_DEPTH_FRAC) * t * t)
+        washPaint.shader = washShader(danger, color).also { sh ->
+            washMatrix.reset()
+            when (side) {
+                Side.LEFT -> washMatrix.setScale(depth, 1f)
+                Side.RIGHT -> { washMatrix.setScale(-depth, 1f); washMatrix.postTranslate(w, 0f) }
+            }
+            sh.setLocalMatrix(washMatrix)
+        }
+        washPaint.alpha = (MIN_WASH_ALPHA + (MAX_WASH_ALPHA - MIN_WASH_ALPHA) * t).toInt()
         val cx: Float
         when (side) {
             Side.LEFT -> {
-                rect.set(visLeft + inset - bow, cyMid - len / 2f,
-                         visLeft + inset + bow, cyMid + len / 2f)
-                canvas.drawArc(rect, -70f, 140f, false, arcPaint)
-                // Beside the column when the column stands here; at the arc otherwise.
-                cx = maxOf(visLeft + inset + bow + dp(20f), leftInset + dp(28f))
+                canvas.drawRect(0f, 0f, depth, h, washPaint)
+                // Beside the actions column when it stands here; at the edge otherwise.
+                cx = maxOf(dp(LABEL_INSET), leftInset + dp(28f))
             }
             Side.RIGHT -> {
-                rect.set(visRight - inset - bow, cyMid - len / 2f,
-                         visRight - inset + bow, cyMid + len / 2f)
-                canvas.drawArc(rect, 110f, 140f, false, arcPaint)
-                cx = visRight - inset - bow - dp(20f)
+                canvas.drawRect(w - depth, 0f, w, h, washPaint)
+                cx = w - dp(LABEL_INSET)
             }
         }
-        drawLabel(canvas, cx, cyMid, meters)
+        washPaint.shader = null
+        // The chevrons still use arcPaint's colour for their own label passes — set it here
+        // so a side label drawn through drawLabel carries the band's colour semantics too.
+        arcPaint.color = color
+        drawLabel(canvas, cx, h / 2f, meters)
     }
+
+    /** Cached per colour — see [washShaders]. */
+    private fun washShader(danger: Boolean, color: Int): android.graphics.LinearGradient =
+        washShaders.getOrPut(if (danger) 1 else 0) {
+            android.graphics.LinearGradient(
+                0f, 0f, 1f, 0f,
+                intArrayOf(color, color and 0x00FFFFFF or (0x66 shl 24), color and 0x00FFFFFF),
+                floatArrayOf(0f, MID_STOP, 1f),
+                android.graphics.Shader.TileMode.CLAMP,
+            )
+        }
 
     /**
      * Forward and rear proximity, as captioned chevrons rather than edge arcs.
@@ -216,18 +273,11 @@ class ObstacleEdgeView @JvmOverloads constructor(
         drawLabel(canvas, cx, cy, meters, if (forward) "FWD " else "REAR ")
     }
 
-    /** Distance in feet on a filled pill, matching Explorer's readout. */
+    /** Distance in feet, amber outlined in red — see [textPaint]. The pill it sat on went
+     *  with the arcs (2026-10-07): outlined text needs no box measured around it. */
     private fun drawLabel(canvas: Canvas, cx: Float, cy: Float, meters: Float, caption: String = "") {
         val text = caption + "%.0fft".format(Locale.US, meters * FEET_PER_METRE)
-        textPaint.textSize = dp(15f)
-        val tw = textPaint.measureText(text)
-        val padH = dp(8f); val padV = dp(5f)
-        val fm = fontMetrics.also { textPaint.getFontMetrics(it) }
-        rect.set(cx - tw / 2f - padH, cy - (-fm.ascent) - padV,
-                 cx + tw / 2f + padH, cy + fm.descent + padV)
-        labelBg.color = arcPaint.color
-        labelBg.alpha = 235
-        canvas.drawRoundRect(rect, dp(5f), dp(5f), labelBg)
+        canvas.drawText(text, cx, cy, textOutline)
         canvas.drawText(text, cx, cy, textPaint)
     }
 
@@ -250,5 +300,13 @@ class ObstacleEdgeView @JvmOverloads constructor(
          *  the forward one clears the toolbar. */
         private const val REAR_LIFT = 118f
         private const val FORE_DROP = 96f
+        /** The wash (Autel v2.0.8): depth as a fraction of the width, opacity 0..255. */
+        private const val MIN_DEPTH_FRAC = 0.05f
+        private const val MAX_DEPTH_FRAC = 0.26f
+        private const val MIN_WASH_ALPHA = 50f
+        private const val MAX_WASH_ALPHA = 185f
+        private const val MID_STOP = 0.5f
+        /** dp from the view edge to the side label's centre. */
+        private const val LABEL_INSET = 34f
     }
 }

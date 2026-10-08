@@ -236,7 +236,7 @@ android {
         //      been built without a versionCode bump and its mapping never left a local build
         //      directory; this release gives that fix an actual versionCode and a real
         //      signedReleases entry. Not yet flown.
-        versionCode 125
+        versionCode 132
         versionName "1.2.1"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""

@@ -33,11 +33,11 @@
                 android:layout_weight="1"
                 android:text="Video Servers"
                 android:textColor="@color/tp_text_primary"
-                android:textSize="22sp" android:textStyle="bold" />
+                android:textSize="17sp" android:textStyle="bold" />
             <TextView
                 android:id="@+id/vsLockNotice"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:textColor="@color/tp_text_secondary" android:textSize="13sp"
+                android:textColor="@color/tp_text_secondary" android:textSize="11sp"
                 android:text="Locked in Pre-Flight"
                 android:visibility="gone" />
         </LinearLayout>
@@ -70,13 +70,13 @@
                     android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="18sp" android:textStyle="bold"
+                    android:textSize="14sp" android:textStyle="bold"
                     android:text="Server 1" />
                 <TextView
                     android:id="@+id/vs1Active"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:textColor="@color/tp_state_go"
-                    android:textSize="12sp" android:textStyle="bold"
+                    android:textSize="11sp" android:textStyle="bold"
                     android:text="ACTIVE"
                     android:visibility="gone" />
             </LinearLayout>
@@ -104,7 +104,7 @@
             <CheckBox android:id="@+id/vs1RandomPath"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:buttonTint="@color/tp_btn_info"
-                android:textColor="@color/tp_text_primary" android:textSize="13sp"
+                android:textColor="@color/tp_text_primary" android:textSize="11sp"
                 android:text="Randomize stream path (new token each app launch)" />
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -117,7 +117,7 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:background="@color/tp_bg_screen"
                 android:padding="8dp"
-                android:textColor="@color/tp_state_go" android:textSize="12sp"
+                android:textColor="@color/tp_state_go" android:textSize="11sp"
                 android:textIsSelectable="true" android:fontFamily="monospace"
                 android:text="…" />
 
@@ -139,9 +139,9 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <RadioButton android:id="@+id/vs1CodecH264" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="H.264" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="H.264" />
                 <RadioButton android:id="@+id/vs1CodecH265" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="H.265" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="H.265" />
             </RadioGroup>
             <TextView android:id="@+id/vs1CodecHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -153,9 +153,9 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <RadioButton android:id="@+id/vs1TransportRtsp" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="RTSP" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="RTSP" />
                 <RadioButton android:id="@+id/vs1TransportSrt" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="SRT" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="SRT" />
             </RadioGroup>
             <TextView android:id="@+id/vs1TransportHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -199,11 +199,11 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <RadioButton android:id="@+id/vs1AdvSelf" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="This server" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="This server" />
                 <RadioButton android:id="@+id/vs1AdvOther" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="Other" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Other" />
                 <RadioButton android:id="@+id/vs1AdvOff" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="Off" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Off" />
             </RadioGroup>
             <TextView android:id="@+id/vs1AdvHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -215,7 +215,7 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:background="@color/tp_bg_screen"
                 android:padding="8dp"
-                android:textColor="@color/tp_state_go" android:textSize="12sp"
+                android:textColor="@color/tp_state_go" android:textSize="11sp"
                 android:textIsSelectable="true" android:fontFamily="monospace"
                 android:text="rtsp://…" />
         </LinearLayout>
@@ -242,13 +242,13 @@
                     android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="18sp" android:textStyle="bold"
+                    android:textSize="14sp" android:textStyle="bold"
                     android:text="Server 2" />
                 <TextView
                     android:id="@+id/vs2Active"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:textColor="@color/tp_state_go"
-                    android:textSize="12sp" android:textStyle="bold"
+                    android:textSize="11sp" android:textStyle="bold"
                     android:text="ACTIVE"
                     android:visibility="gone" />
             </LinearLayout>
@@ -276,7 +276,7 @@
             <CheckBox android:id="@+id/vs2RandomPath"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:buttonTint="@color/tp_btn_info"
-                android:textColor="@color/tp_text_primary" android:textSize="13sp"
+                android:textColor="@color/tp_text_primary" android:textSize="11sp"
                 android:text="Randomize stream path (new token each app launch)" />
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -289,7 +289,7 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:background="@color/tp_bg_screen"
                 android:padding="8dp"
-                android:textColor="@color/tp_state_go" android:textSize="12sp"
+                android:textColor="@color/tp_state_go" android:textSize="11sp"
                 android:textIsSelectable="true" android:fontFamily="monospace"
                 android:text="…" />
 
@@ -311,9 +311,9 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <RadioButton android:id="@+id/vs2CodecH264" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="H.264" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="H.264" />
                 <RadioButton android:id="@+id/vs2CodecH265" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="H.265" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="H.265" />
             </RadioGroup>
             <TextView android:id="@+id/vs2CodecHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -325,9 +325,9 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <RadioButton android:id="@+id/vs2TransportRtsp" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="RTSP" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="RTSP" />
                 <RadioButton android:id="@+id/vs2TransportSrt" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="SRT" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="SRT" />
             </RadioGroup>
             <TextView android:id="@+id/vs2TransportHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -371,11 +371,11 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <RadioButton android:id="@+id/vs2AdvSelf" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="This server" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="This server" />
                 <RadioButton android:id="@+id/vs2AdvOther" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="Other" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Other" />
                 <RadioButton android:id="@+id/vs2AdvOff" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="12sp" android:text="Off" />
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Off" />
             </RadioGroup>
             <TextView android:id="@+id/vs2AdvHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -387,7 +387,7 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:background="@color/tp_bg_screen"
                 android:padding="8dp"
-                android:textColor="@color/tp_state_go" android:textSize="12sp"
+                android:textColor="@color/tp_state_go" android:textSize="11sp"
                 android:textIsSelectable="true" android:fontFamily="monospace"
                 android:text="rtsp://…" />
         </LinearLayout>

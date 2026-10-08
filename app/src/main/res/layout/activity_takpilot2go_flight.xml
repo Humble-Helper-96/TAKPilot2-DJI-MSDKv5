@@ -234,12 +234,16 @@
          cannot see the aircraft to face it. Pilot dot at the centre, aircraft marker riding
          the arc, marker at the TOP of the arc means the antennas face the aircraft. Bottom
          centre, clear of the bottom-left radar labels and the right HUD column. Hidden until
-         the flight screen has a compass facing, an operator fix, and an aircraft fix. -->
+         the flight screen has a compass facing, an operator fix, and an aircraft fix.
+         ⚠ NOT bottom-centre any more (2026-10-07): the warning banner lives bottom-left and
+         ran under the arc. It sits in the strip between the banner's furthest edge and the
+         HUD column — see flight_antenna_arc_margin_start for the derivation. -->
     <com.dji.sdk.sample.takpilot2.AntennaAimView
         android:id="@+id/fpvAntennaArc"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="@dimen/flight_antenna_arc_margin_start"
         android:layout_marginBottom="12dp"
         android:visibility="gone" />
 

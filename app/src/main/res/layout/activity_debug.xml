@@ -26,7 +26,7 @@
             android:layout_height="wrap_content"
             android:text="Debug Log"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:layout_marginBottom="6dp" />
 
@@ -38,7 +38,7 @@
             <LinearLayout
                 android:id="@+id/debugLoggingRow"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:minHeight="48dp"
+                android:minHeight="36dp"
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:background="?android:attr/selectableItemBackground"
                 android:paddingTop="6dp">
@@ -47,12 +47,12 @@
                      line the moment it is off, and the setter flushes and closes the file. The
                      options below are greyed while it is off. -->
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/debugLoggingToggle"
-                    android:layout_width="wrap_content" android:layout_height="48dp"
+                    android:layout_width="wrap_content" android:layout_height="36dp"
                     android:layout_marginEnd="10dp" android:clickable="false" android:focusable="false"
                     app:thumbTint="@color/tp_btn_info" app:trackTint="@color/tp_pill_idle_stroke" />
                 <TextView android:id="@+id/debugLoggingLabel"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Logging Enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                    android:text="Logging Enabled" android:textColor="@color/tp_text_bright" android:textSize="12sp" />
             </LinearLayout>
 
             <!-- The rows below are OPTIONS OF the log (operator, 2026-09-15): indented under
@@ -73,7 +73,7 @@
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
                     android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_bright" android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -86,7 +86,7 @@
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
                     android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_bright" android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -99,7 +99,7 @@
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
                     android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include obstacle distance logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                    android:text="Include obstacle distance logs" android:textColor="@color/tp_text_bright" android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -112,7 +112,7 @@
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
                     android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include system resource logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                    android:text="Include system resource logs" android:textColor="@color/tp_text_bright" android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -125,7 +125,7 @@
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
                     android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_bright" android:textSize="12sp" />
             </LinearLayout>
 
             <!-- SRT LATENCY. Deliberately here and not on Pre-Flight (operator, 2026-08-29):
@@ -142,7 +142,7 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="16dp"
                 android:text="SRT video latency" android:textColor="@color/tp_text_primary"
-                android:textSize="16sp" android:textStyle="bold" />
+                android:textSize="13sp" android:textStyle="bold" />
 
             <LinearLayout
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -156,24 +156,24 @@
                     android:maxLines="1"
                     android:imeOptions="actionDone"
                     android:textColor="@color/tp_text_bright"
-                    android:textSize="15sp" />
+                    android:textSize="12sp" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:paddingStart="8dp"
                     android:text="milliseconds" android:textColor="@color/tp_text_bright"
-                    android:textSize="15sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <TextView
                 android:id="@+id/debugSrtLatencyStatus"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="11sp" />
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="4dp"
                 android:text="How long SRT has to recover a lost packet, and the delay it adds. Use three to four times the round-trip time to your video server. RTSP does not use this value."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="11sp" />
 
             <!-- "Export Log" was here until 2026-10-07 (operator, matching Autel 2026-08-16).
                  Every log is already written to Downloads/TAKPilot2 Logs as it is produced, so
@@ -225,7 +225,7 @@
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
             android:textColor="@color/tp_state_go_soft"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textIsSelectable="true"
             android:text="" />
     </ScrollView>

@@ -25,7 +25,7 @@
             android:layout_height="wrap_content"
             android:text="1. Aircraft Settings"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:paddingBottom="8dp" />
 
@@ -66,7 +66,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:textColor="@color/tp_state_caution"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:visibility="gone"
             android:text="" />
 
@@ -100,7 +100,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textColor="@color/tp_state_go_soft"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:paddingTop="4dp" />
             </LinearLayout>
 
@@ -125,7 +125,7 @@
                     android:layout_height="wrap_content"
                     android:text="Stick mode changes what the sticks do. Mode 2 is usual. Sent only when you press Apply."
                     android:textColor="@color/tp_text_tertiary"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:paddingTop="4dp" />
             </LinearLayout>
         </LinearLayout>
@@ -146,7 +146,7 @@
             android:layout_height="wrap_content"
             android:text="What the aircraft does on its own if it loses the link, or if this app stops. Return Home is recommended."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingBottom="6dp" />
 
         <RadioGroup
@@ -176,7 +176,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingTop="6dp" />
 
         <!-- Obstacle avoidance. Unlike everything above it, these are ENFORCED on the aircraft at
@@ -203,14 +203,14 @@
             android:layout_height="wrap_content"
             android:text="Sent at every connect, so you fly these settings and not another app's."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <TextView
             android:id="@+id/avoidStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingTop="2dp" />
 
         <!-- One row of columns, not three rows — the sibling's shape. They are read together
@@ -235,7 +235,7 @@
                     android:layout_height="wrap_content"
                     android:text="System"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="15sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -254,7 +254,7 @@
                     android:layout_height="wrap_content"
                     android:text="During Return to Home"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="15sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -273,7 +273,7 @@
                     android:layout_height="wrap_content"
                     android:text="Landing protection"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="15sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -319,7 +319,7 @@
                     android:buttonTint="@color/tp_accent"
                     android:text="Lock battery levels"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="14sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -331,7 +331,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_warn"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingTop="4dp"
             android:visibility="gone" />
 
@@ -363,7 +363,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingTop="6dp"
             android:text="Not sent yet." />
 
@@ -381,7 +381,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/tp_state_go_soft"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingTop="4dp" />
 
         <View
@@ -395,7 +395,7 @@
             android:layout_height="wrap_content"
             android:text="2. Video Streaming"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
@@ -416,21 +416,21 @@
                 android:id="@+id/videoProfileLow"
                 style="@style/takColumnRadio"
                 android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:text="Low" />
 
             <RadioButton
                 android:id="@+id/videoProfileStandard"
                 style="@style/takColumnRadio"
                 android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:text="Standard" />
 
             <RadioButton
                 android:id="@+id/videoProfileHigh"
                 style="@style/takColumnRadio"
                 android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:text="High" />
 
         </RadioGroup>
@@ -456,14 +456,14 @@
                     android:id="@+id/videoServer1"
                     style="@style/takColumnRadio"
                     android:buttonTint="@color/tp_btn_info"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:text="Server 1" />
 
                 <RadioButton
                     android:id="@+id/videoServer2"
                     style="@style/takColumnRadio"
                     android:buttonTint="@color/tp_btn_info"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:text="Server 2" />
 
             </RadioGroup>
@@ -476,7 +476,7 @@
                     android:buttonTint="@color/tp_accent"
                     android:text="Lock configuration"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="14sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -489,7 +489,7 @@
             android:layout_height="wrap_content"
             android:paddingTop="6dp"
             android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
+            android:textSize="11sp"
             android:text="" />
 
         <Button
@@ -511,7 +511,7 @@
             android:layout_height="wrap_content"
             android:text="3. TAK Server Connection"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="16dp" />
@@ -543,7 +543,7 @@
                     android:buttonTint="@color/tp_accent"
                     android:text="Lock configuration"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="14sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -624,7 +624,7 @@
                 android:layout_height="wrap_content"
                 android:text="Send the camera look-point to TAK"
                 android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <Button
@@ -655,7 +655,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:textColor="@color/tp_text_secondary"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:text="" />
 
         <View
@@ -675,14 +675,14 @@
             android:text="My Channels"
             android:textColor="@color/tp_text_primary"
             android:textStyle="bold"
-            android:textSize="16sp" />
+            android:textSize="13sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="The TAK server holds these channels. A change here goes to the server."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <TextView
             android:id="@+id/takChannelsStatus"
@@ -690,7 +690,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
+            android:textSize="11sp"
             android:text="" />
 
         <LinearLayout
@@ -713,7 +713,7 @@
             android:layout_height="wrap_content"
             android:text="4. Elevation Data (DTED)"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
@@ -723,7 +723,7 @@
             android:layout_height="wrap_content"
             android:text="Improves marker position accuracy. Import one .zip per area; re-importing replaces it."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingBottom="8dp" />
 
         <LinearLayout
@@ -747,7 +747,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Clean Unused Tiles"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="@color/tp_text_primary"
                 android:backgroundTint="@color/tp_btn_neutral" />
         </LinearLayout>
@@ -765,7 +765,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
+            android:textSize="11sp"
             android:text="" />
 
         <View
@@ -781,7 +781,7 @@
             android:layout_height="wrap_content"
             android:text="5. FAA Airspace Ceilings (UASFM)"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
@@ -791,7 +791,7 @@
             android:layout_height="wrap_content"
             android:text="FAA altitude ceilings, shown on the flight screen. Download on wifi before you travel.\n\n⚠ Advice only — NOT an authorisation, and it does not change the aircraft’s altitude limit."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingBottom="10dp" />
 
         <LinearLayout style="@style/takFormRow">
@@ -836,7 +836,7 @@
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
                 android:text="Use My Location"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="@color/tp_text_primary"
                 android:backgroundTint="@color/tp_btn_neutral" />
             <Button
@@ -846,7 +846,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Check Size"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="@color/tp_text_primary"
                 android:backgroundTint="@color/tp_btn_neutral" />
         </LinearLayout>
@@ -873,7 +873,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Clear Data"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="@color/tp_text_primary"
                 android:backgroundTint="@color/tp_btn_danger" />
         </LinearLayout>
@@ -885,7 +885,7 @@
             android:layout_marginTop="8dp"
             android:layout_marginBottom="24dp"
             android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
+            android:textSize="11sp"
             android:text="" />
 
         <View
@@ -900,7 +900,7 @@
             android:layout_height="wrap_content"
             android:text="6. Map Display"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
@@ -945,7 +945,7 @@
             android:layout_height="wrap_content"
             android:text="Hybrid = satellite + streets."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:paddingTop="2dp" />
 
         <TextView style="@style/takLabelStyle"
@@ -978,7 +978,7 @@
             android:paddingTop="10dp"
             android:text="7. Speaker Messages"
             android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
+            android:textSize="17sp"
             android:textStyle="bold" />
 
         <TextView
@@ -987,7 +987,7 @@
             android:paddingTop="2dp"
             android:text="Three messages the aircraft can play in flight, from the L2 panel. Record each one here, in your own words. A short message goes out sooner: the aircraft receives it in about one second for every ten seconds of speech."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <!-- Slot 1. Three explicit blocks rather than an <include> used three times: the ids
              inside an include collide, and three slots is not a list worth building dynamically. -->
@@ -1016,7 +1016,7 @@
             android:paddingTop="2dp"
             android:text="Not recorded."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <LinearLayout style="@style/takFormRow" android:layout_marginTop="6dp">
             <Button
@@ -1054,7 +1054,7 @@
                 android:padding="6dp"
                 android:text="Export file"
                 android:textColor="@color/tp_accent"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
             <TextView
                 android:id="@+id/speakerMsg1Import"
                 android:layout_width="wrap_content"
@@ -1063,7 +1063,7 @@
                 android:padding="6dp"
                 android:text="Import file"
                 android:textColor="@color/tp_accent"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <!-- Slot 2. Three explicit blocks rather than an <include> used three times: the ids
@@ -1093,7 +1093,7 @@
             android:paddingTop="2dp"
             android:text="Not recorded."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <LinearLayout style="@style/takFormRow" android:layout_marginTop="6dp">
             <Button
@@ -1131,7 +1131,7 @@
                 android:padding="6dp"
                 android:text="Export file"
                 android:textColor="@color/tp_accent"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
             <TextView
                 android:id="@+id/speakerMsg2Import"
                 android:layout_width="wrap_content"
@@ -1140,7 +1140,7 @@
                 android:padding="6dp"
                 android:text="Import file"
                 android:textColor="@color/tp_accent"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <!-- Slot 3. Three explicit blocks rather than an <include> used three times: the ids
@@ -1170,7 +1170,7 @@
             android:paddingTop="2dp"
             android:text="Not recorded."
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <LinearLayout style="@style/takFormRow" android:layout_marginTop="6dp">
             <Button
@@ -1208,7 +1208,7 @@
                 android:padding="6dp"
                 android:text="Export file"
                 android:textColor="@color/tp_accent"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
             <TextView
                 android:id="@+id/speakerMsg3Import"
                 android:layout_width="wrap_content"
@@ -1217,7 +1217,7 @@
                 android:padding="6dp"
                 android:text="Import file"
                 android:textColor="@color/tp_accent"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <TextView
@@ -1227,7 +1227,7 @@
             android:paddingTop="10dp"
             android:text=""
             android:textColor="@color/tp_text_secondary"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
     </LinearLayout>
 </ScrollView>

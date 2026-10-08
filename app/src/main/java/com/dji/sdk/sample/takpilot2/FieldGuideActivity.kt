@@ -134,6 +134,12 @@ import com.taklite.util.AppLog
  * sibling, take the facts and drop the airframe. The same rule applies to "phone": this build
  * runs on a smart controller.
  */
+/*
+ * SIZES SCALED TO THIS PANEL 2026-10-07 (operator): title 24 -> 18, section 20 -> 15, sub and
+ * entry titles 15 -> 12, body and lede 14 -> 12, caveats and entry bodies 13 -> 11, captions
+ * stay 11. The same three-quarters as every other screen, floored at 11sp. The handout
+ * (tools/generate_field_guide_md.py) carries no sizes and is unaffected.
+ */
 class FieldGuideActivity : AppCompatActivity() {
 
     private lateinit var content: LinearLayout
@@ -847,13 +853,13 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun title(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(Color.WHITE); textSize = 24f
+        setTextColor(Color.WHITE); textSize = 18f
         setTypeface(null, android.graphics.Typeface.BOLD)
     })
 
     private fun lede(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)); textSize = 14f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)); textSize = 12f
         setPadding(0, dp(6), 0, dp(4))
     })
 
@@ -861,7 +867,7 @@ class FieldGuideActivity : AppCompatActivity() {
         divider()
         content.addView(TextView(this).apply {
             this.text = text
-            setTextColor(Color.WHITE); textSize = 20f
+            setTextColor(Color.WHITE); textSize = 15f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setPadding(0, dp(4), 0, dp(8))
         })
@@ -869,22 +875,22 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun sub(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_accent)); textSize = 15f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_accent)); textSize = 12f
         setTypeface(null, android.graphics.Typeface.BOLD)
         letterSpacing = 0.03f
-        setPadding(0, dp(18), 0, dp(6))
+        setPadding(0, dp(12), 0, dp(4))
     })
 
     private fun body(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 14f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 12f
         setLineSpacing(dp(3).toFloat(), 1f)
         setPadding(0, 0, 0, dp(8))
     })
 
     private fun bullet(text: String) = content.addView(TextView(this).apply {
         this.text = "•  $text"
-        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 14f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 12f
         setLineSpacing(dp(3).toFloat(), 1f)
         setPadding(dp(8), 0, 0, dp(6))
     })
@@ -918,7 +924,7 @@ class FieldGuideActivity : AppCompatActivity() {
         })
         row.addView(TextView(this).apply {
             this.text = text
-            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_dim)); textSize = 13f
+            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_dim)); textSize = 11f
             setLineSpacing(dp(3).toFloat(), 1f)
             setPadding(dp(12), dp(10), dp(12), dp(10))
         })
@@ -1029,13 +1035,13 @@ class FieldGuideActivity : AppCompatActivity() {
 
         card.addView(TextView(this).apply {
             text = name
-            setTextColor(Color.WHITE); textSize = 15f
+            setTextColor(Color.WHITE); textSize = 12f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setPadding(0, 0, 0, dp(5))
         })
         card.addView(TextView(this).apply {
             text = what
-            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 13f
+            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 11f
             setLineSpacing(dp(3).toFloat(), 1f)
         })
         for (c in caveats) {

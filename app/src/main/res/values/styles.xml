@@ -161,12 +161,18 @@
     </style>
 
     <!-- TAKPilot2 Go connect screen -->
+    <!-- THE FORM KIT IS SCALED TO THIS PANEL (operator, 2026-10-07, the pass that began on
+         Home): labels 13 -> 11sp with 8dp above instead of 12, fields 15 -> 12sp on 8dp
+         padding, radios 13 -> 11, the AR checks 15 -> 12 on 32dp rows, the FOV stepper
+         40dp/18sp -> 32dp/14sp, its value 16 -> 13. The same three-quarters as the flight
+         screen, floored at 11sp. The screens' own literals took the same map:
+         22 -> 17, 18 -> 14, 16 -> 13, 15 -> 12, 14 -> 12, 13 -> 11, 12 -> 11; 48dp -> 36dp. -->
     <style name="takLabelStyle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tp_text_secondary</item>
-        <item name="android:textSize">13sp</item>
-        <item name="android:paddingTop">12dp</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:paddingTop">8dp</item>
         <item name="android:paddingBottom">4dp</item>
     </style>
 
@@ -193,18 +199,18 @@
         <item name="android:layout_weight">1</item>
         <item name="android:textColor">@color/tp_text_primary</item>
         <item name="android:buttonTint">@color/tp_accent</item>
-        <item name="android:textSize">13sp</item>
+        <item name="android:textSize">11sp</item>
     </style>
 
     <!-- FOV calibration stepper (dialog_ar_fov). Compact so the row fits on a phone in
          landscape with the dialog over live video. -->
     <style name="takFovStepButton">
         <item name="android:layout_width">44dp</item>
-        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_height">32dp</item>
         <item name="android:minWidth">0dp</item>
         <item name="android:minHeight">0dp</item>
         <item name="android:padding">0dp</item>
-        <item name="android:textSize">18sp</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:textColor">@color/tp_text_primary</item>
         <item name="android:backgroundTint">@color/tp_btn_neutral</item>
@@ -214,7 +220,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:gravity">center</item>
         <item name="android:textColor">@color/tp_text_primary</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">13sp</item>
         <item name="android:textStyle">bold</item>
     </style>
 
@@ -224,10 +230,10 @@
     <style name="takArCheck">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">40dp</item>
+        <item name="android:minHeight">32dp</item>
         <item name="android:textColor">@color/tp_text_primary</item>
         <item name="android:buttonTint">@color/tp_accent</item>
-        <item name="android:textSize">15sp</item>
+        <item name="android:textSize">12sp</item>
         <item name="android:paddingStart">8dp</item>
     </style>
 
@@ -237,8 +243,8 @@
         <item name="android:textColor">@color/tp_text_primary</item>
         <item name="android:textColorHint">@color/tp_text_disabled</item>
         <item name="android:background">@color/tp_surface_field</item>
-        <item name="android:padding">12dp</item>
-        <item name="android:textSize">15sp</item>
+        <item name="android:padding">8dp</item>
+        <item name="android:textSize">12sp</item>
         <!-- ⚠ flagNoExtractUi IS LOAD-BEARING ON A PHONE, not a nicety.
              Every screen in this app is locked to landscape, and in landscape the IME defaults
              to fullscreen "extract" mode: it covers the window with its own edit box. On the
@@ -258,14 +264,14 @@
         <!-- 10dp/8dp since 2026-08-20, cut from 14dp/12dp to fit the RC Plus 2's home
              screen without scrolling. See the height budget on the ScrollView in
              activity_takpilot2go_home.xml. -->
-        <item name="android:padding">10dp</item>
-        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:padding">8dp</item>
+        <item name="android:layout_marginTop">6dp</item>
     </style>
     <style name="homeCardTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tp_text_caption</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:textSize">10sp</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>
     </style>
@@ -273,7 +279,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tp_text_primary</item>
-        <item name="android:textSize">18sp</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:paddingTop">2dp</item>
     </style>
@@ -281,7 +287,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tp_text_secondary</item>
-        <item name="android:textSize">13sp</item>
+        <item name="android:textSize">11sp</item>
     </style>
 
     <!-- Dropped-marker dialogs (drop / markers list / row actions / inbound-hide) — same dark
@@ -371,6 +377,14 @@
          carries only the role colours. -->
     <style name="TakButton">
         <item name="android:textColor">@color/tp_text_primary</item>
+        <!-- THE CARD KIT IS SCALED TO THIS PANEL (operator, 2026-10-07, Home beside the
+             Autel's): the Autel's values on a 1024 x 720dp screen; this one is 768 x 416dp
+             with the bars (Home is not immersive). The same proportion the flight screen
+             took — about three quarters, floors at 11sp — on the buttons, the card titles,
+             values and subtitles, so Home, Debug and Video Servers move together. The
+             platform button is 48dp/14sp; this is the column pill's height and text. -->
+        <item name="android:minHeight">36dp</item>
+        <item name="android:textSize">13sp</item>
     </style>
     <style name="TakButton.Primary">
         <item name="android:backgroundTint">@color/tp_btn_primary</item>

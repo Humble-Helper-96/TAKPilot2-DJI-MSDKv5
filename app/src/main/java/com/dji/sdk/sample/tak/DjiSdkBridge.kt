@@ -372,6 +372,10 @@ object DjiSdkBridge {
     private val FAULT_ENGLISH: Map<String, String> = mapOf(
         "0x1900D004" to "Consistency check failed",
         "0x1AFC0140" to "Crash logs stored on the aircraft. Download and clear them before flight test",
+        // The night-operations line (operator, 2026-10-07): the aircraft's own text is two
+        // sentences and a "fly with caution" the banner's colour already says. This is the
+        // ONE place re-wording is allowed — a verified English line for an exact code.
+        "0x1A420BC5" to "Upward light too low — upward obstacle sensing off",
     )
 
     /** True when the text holds Chinese characters, thus it was never localised. */
@@ -417,6 +421,15 @@ object DjiSdkBridge {
         // Cautions DJI files in its records screen and never raises in flight.
         "1900d004",  // consistency check failed
         "1afc0140",  // stored crash logs — delete this line to put it back on the banner
+        // The gimbal reached its pitch stop (operator, 2026-10-07): the GIMBAL readout already
+        // shows the angle, and the line flashed red for three seconds at every power-on.
+        "1d050002",
+        // Upward ambient light too low / upward obstacle sensing unavailable (operator,
+        // 2026-10-07, after a night of it returning on every flap). The aircraft's own
+        // upward sensing is what it reports on, and the wash in ObstacleEdgeView shows the
+        // faces that ARE sensing. The verified English line in FAULT_ENGLISH stays so that
+        // deleting this one line puts it back on the banner, short.
+        "1a420bc5",
     )
 
     /** Normalised for lookup: the aircraft reports "0x1AFC0140", the set holds "1afc0140". */
@@ -446,11 +459,19 @@ object DjiSdkBridge {
      * one of them. Both of those are repetition, not a second fact.
      */
     private fun repeats(a: String, b: String): Boolean {
-        val na = a.filter { it.isLetterOrDigit() }.lowercase()
-        val nb = b.filter { it.isLetterOrDigit() }.lowercase()
+        // ⚠ THE FAULT CODE COMES OUT FIRST (flight, 2026-10-07 18:23). The aircraft put it in
+        // the MIDDLE of the description — "…too low (0x1A420BC5). Upward obstacle…" — so with
+        // the code left in, neither string contained the other and the banner printed the
+        // whole sentence twice, four lines deep over the video. A code is never a second
+        // fact; it is kept by the caller choosing the longer string, not by this compare.
+        val na = FAULT_CODE.replace(a, "").filter { it.isLetterOrDigit() }.lowercase()
+        val nb = FAULT_CODE.replace(b, "").filter { it.isLetterOrDigit() }.lowercase()
         if (na.isEmpty() || nb.isEmpty()) return true
         return na.contains(nb) || nb.contains(na)
     }
+
+    /** A DJI fault code as the aircraft writes it into its own text, with or without brackets. */
+    private val FAULT_CODE = Regex("""\(?0[xX][0-9A-Fa-f]{6,}\)?""")
 
     private fun humanReason(reason: String?): String? {
         val raw = reason?.trim().orEmpty()

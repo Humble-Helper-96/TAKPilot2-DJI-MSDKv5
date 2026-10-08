@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SCALED TO THIS PANEL 2026-10-07 (operator, beside the Autel): Home keeps the system
+     bars, so it has 768 x 416dp. Every size below is the Autel's times about three quarters,
+     text floored at 11sp: title 22 -> 17, version 13 -> 11, logo 64 -> 48; the flight card
+     26 -> 20, 15 -> 12, rows 13 -> 11, dots 10 -> 8, its padding 24 -> 16. The card kit's
+     own sizes are in styles.xml (homeCard*, TakButton). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
     android:background="@color/tp_bg_home"
-    android:padding="14dp"
+    android:padding="12dp"
     android:baselineAligned="false">
 
     <!-- LEFT: logo + status + Quick Controls. Scrolls instead of silently squashing the last
@@ -69,8 +74,8 @@
             android:gravity="center_vertical"
             android:layout_marginBottom="6dp">
             <ImageView
-                android:layout_width="64dp"
-                android:layout_height="64dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:src="@drawable/takpilot2_logo"
                 android:layout_marginEnd="12dp" />
             <LinearLayout
@@ -85,7 +90,7 @@
                     android:maxLines="1"
                     android:text="@string/sample_app_name"
                     android:textColor="@color/tp_text_primary"
-                    android:textSize="22sp"
+                    android:textSize="17sp"
                     android:textStyle="bold" />
                 <!-- Which exact build this phone is running. Build TIME, not just version, so
                      two sideloads made minutes apart in a debugging session can be told apart.
@@ -98,7 +103,7 @@
                     android:layout_marginTop="6dp"
                     android:text="v— · built —"
                     android:textColor="@color/tp_text_secondary"
-                    android:textSize="13sp" />
+                    android:textSize="11sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -169,7 +174,7 @@
         android:background="@drawable/home_flight_card_clickable"
         android:clickable="true"
         android:focusable="true"
-        android:padding="24dp">
+        android:padding="16dp">
 
         <View android:layout_width="0dp" android:layout_height="0dp" />
 
@@ -186,7 +191,7 @@
             android:layout_height="wrap_content"
             android:text="ENTER FLIGHT"
             android:textColor="@color/tp_text_primary"
-            android:textSize="26sp"
+            android:textSize="20sp"
             android:textStyle="bold"
             android:letterSpacing="0.05" />
 
@@ -195,7 +200,7 @@
             android:layout_height="wrap_content"
             android:text="Live FPV · Telemetry · TAK"
             android:textColor="@color/tp_accent"
-            android:textSize="15sp"
+            android:textSize="12sp"
             android:layout_marginTop="6dp" />
 
         <!-- TAK connection status — moved here from under the app name. This card is what a
@@ -209,8 +214,8 @@
             android:layout_marginTop="10dp">
             <View
                 android:id="@+id/homeTakDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
                 android:layout_marginEnd="6dp"
                 android:background="@drawable/tak_status_dot" />
             <TextView
@@ -219,7 +224,7 @@
                 android:layout_height="wrap_content"
                 android:text="TAK: Disconnected"
                 android:textColor="@color/tp_text_secondary"
-                android:textSize="13sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <!-- Network state, directly under the TAK line it explains. The TAK dot alone cannot
@@ -234,8 +239,8 @@
             android:layout_marginTop="4dp">
             <View
                 android:id="@+id/homeNetworkDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
                 android:layout_marginEnd="6dp"
                 android:background="@drawable/tak_status_dot" />
             <TextView
@@ -244,7 +249,7 @@
                 android:layout_height="wrap_content"
                 android:text="Network: —"
                 android:textColor="@color/tp_text_secondary"
-                android:textSize="13sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <!-- Aircraft info, centered under the title -->
@@ -326,7 +331,7 @@
             android:layout_marginBottom="4dp"
             android:text="TAP TO ENTER ›"
             android:textColor="@color/tp_accent"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:letterSpacing="0.08" />
     </LinearLayout>
