@@ -179,21 +179,39 @@ class FpvTextureView @JvmOverloads constructor(
         // about what the pilot is looking at. It changes with the lens: the thermal camera is
         // 640x512 (5:4), the visible one 16:9.
         com.dji.sdk.sample.tak.TakBridgeHolder.setVideoAspect(videoAspect.toDouble())
-        val rect = if (videoAspect >= viewAspect) {
-            // Video is wider: full width, letterboxed top/bottom.
+        // FILL-CROP FOR A WIDER-THAN-THE-SCREEN PICTURE (operator, 2026-10-07; the Autel
+        // tree's method). The 16:9 stream fitted to this 16:10 panel's width left 120px =
+        // 48dp of no picture, parked at the top under the band. The picture now fills the
+        // HEIGHT and overflows the width by about 107px a side, which is cropped: a strip of
+        // picture lost at each edge, no bar. DJI still letterboxes INTO the surface
+        // (CENTER_INSIDE above), so the fill is this view's own transform — the texture is
+        // magnified about the VIEW CENTRE by `fill`, which is also the frame centre, so the
+        // crosshair keeps aiming at the same pixel and a marker dropped there still lands
+        // under it. The rect handed to the overlays is where the WHOLE frame is at that
+        // scale: it deliberately overflows the view, so a target cropped off screen projects
+        // outside the view and becomes an edge arrow (ArOverlayView.project, ledger D23).
+        //
+        // ⚠ A TALLER-THAN-THE-SCREEN PICTURE STAYS PILLARBOXED. The thermal stream is 5:4;
+        // filling the height would already be the case, and filling the WIDTH would crop
+        // 13 % off the top and bottom of a thermal frame. The bars sit at the sides there.
+        val fitWider = videoAspect >= viewAspect
+        val fit = if (fitWider) {
             val h = vw / videoAspect
             RectF(0f, (vh - h) / 2f, vw, (vh + h) / 2f)
         } else {
-            // Video is taller: full height, pillarboxed left/right.
             val w = vh * videoAspect
             RectF((vw - w) / 2f, 0f, (vw + w) / 2f, vh)
         }
-
-        // Drop the image onto the bottom edge. Zero when the stream is pillarboxed instead,
-        // and zero when it already fills the height, thus this is a no-op on any screen that
-        // matches the stream's aspect ratio.
-        val dy = vh - rect.bottom
-        if (dy > 0.5f) rect.offset(0f, dy)
+        val fill = if (fitWider) vh / fit.height() else 1f
+        val rect = RectF(fit)
+        if (fill > 1.001f) {
+            val cx = vw / 2f
+            val cy = vh / 2f
+            rect.set(cx - fit.width() * fill / 2f, cy - fit.height() * fill / 2f,
+                     cx + fit.width() * fill / 2f, cy + fit.height() * fill / 2f)
+        }
+        // The old bottom-edge shift is gone with the bar: nothing is letterboxed any more.
+        val dy = 0f
 
         // setTransform touches the view, thus it goes to the UI thread — this method also
         // runs from the stream listener, which does not.
@@ -207,14 +225,16 @@ class FpvTextureView @JvmOverloads constructor(
         // stream carries the same picture the pilot sees.
         post {
             setTransform(Matrix().apply {
-                if (dy > 0.5f) setTranslate(0f, dy)
+                // The fill about the view centre, then the hybrid ladder's digital crop
+                // about the rect's centre — the same point, so the two compose as one zoom.
+                if (fill > 1.001f) setScale(fill, fill, vw / 2f, vh / 2f)
                 val c = digitalCrop
                 if (c > 1.001f) postScale(c, c, rect.centerX(), rect.centerY())
             })
         }
 
         AppLog.d(TAG, "video rect: $rect (stream ${streamW}x$streamH in view ${width}x$height," +
-            " shifted down ${dy}px)")
+            " fill x%.3f, %s)".format(fill, if (fill > 1.001f) "cropped at the sides" else "pillarboxed"))
         runCatching { onVideoRectChanged?.invoke(rect) }
     }
 }

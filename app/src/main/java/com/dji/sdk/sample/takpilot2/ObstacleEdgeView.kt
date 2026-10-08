@@ -39,7 +39,9 @@ import com.dji.sdk.sample.R
  * whose centimetre scale had to be inferred and field-validated. Feet for display is one
  * conversion at the point of drawing.
  *
- * Draws inside [videoRect], not the whole view: the video is pillarboxed to the left so the HUD
+ * Draws inside the VISIBLE part of [videoRect] — since the 2026-10-07 fill-crop the rect can
+ * overflow the view at the sides, and an arc drawn at a negative x is an arc nobody sees. The
+ * video is pillarboxed to the left so the HUD
  * and mini-map can own the right strip, and an arc on the view's right edge would sit under the
  * instrument column instead of on the picture. Same rect [CrosshairView] uses.
  */
@@ -120,20 +122,23 @@ class ObstacleEdgeView @JvmOverloads constructor(
         val len = h * span
         val cyMid = videoRect.centerY()
 
+        // The VISIBLE edges of the picture: the rect overflows the view under a fill-crop.
+        val visLeft = maxOf(videoRect.left, 0f)
+        val visRight = minOf(videoRect.right, width.toFloat())
         val cx: Float
         when (side) {
             Side.LEFT -> {
-                rect.set(videoRect.left + inset - bow, cyMid - len / 2f,
-                         videoRect.left + inset + bow, cyMid + len / 2f)
+                rect.set(visLeft + inset - bow, cyMid - len / 2f,
+                         visLeft + inset + bow, cyMid + len / 2f)
                 canvas.drawArc(rect, -70f, 140f, false, arcPaint)
                 // Beside the column when the column stands here; at the arc otherwise.
-                cx = maxOf(videoRect.left + inset + bow + dp(20f), leftInset + dp(28f))
+                cx = maxOf(visLeft + inset + bow + dp(20f), leftInset + dp(28f))
             }
             Side.RIGHT -> {
-                rect.set(videoRect.right - inset - bow, cyMid - len / 2f,
-                         videoRect.right - inset + bow, cyMid + len / 2f)
+                rect.set(visRight - inset - bow, cyMid - len / 2f,
+                         visRight - inset + bow, cyMid + len / 2f)
                 canvas.drawArc(rect, 110f, 140f, false, arcPaint)
-                cx = videoRect.right - inset - bow - dp(20f)
+                cx = visRight - inset - bow - dp(20f)
             }
         }
         drawLabel(canvas, cx, cyMid, meters)
