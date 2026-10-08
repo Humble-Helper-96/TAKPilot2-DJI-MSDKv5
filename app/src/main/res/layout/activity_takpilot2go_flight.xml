@@ -52,14 +52,14 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="64dp"
+        android:layout_marginTop="@dimen/flight_notice_margin_top"
         android:shadowColor="@color/tp_shadow"
         android:shadowDx="0"
         android:shadowDy="1"
         android:shadowRadius="3"
         android:text=""
         android:textColor="@color/tp_state_go"
-        android:textSize="13sp"
+        android:textSize="@dimen/flight_notice_text_size"
         android:textStyle="bold"
         android:visibility="gone" />
 
@@ -86,13 +86,18 @@
          text, not a hidden gesture, because the tap already means "expand".
          ⚠ A close hides ONE SET OF FAULTS. The activity remembers what was closed, and any change
          to the live set brings the banner back — see [warningDismissedSignature]. -->
+    <!-- BOTTOM-LEFT AND OPENS UPWARD (2026-10-07, parity plan step 2; Autel v2.3.1). It was
+         top-left under the band until the actions column took that corner. The margin is
+         @dimen/flight_left_chrome_clear: to the right of the column and of the L1/L2/L3 chips.
+         Collapsed, the arrow is ▴ — "more above"; open, the list stands above a ▾ that closes
+         it, worst first from the top — see renderWarning(). -->
     <LinearLayout
         android:id="@+id/flightDiagnosticsRow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginTop="64dp"
-        android:layout_marginStart="16dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginBottom="8dp"
+        android:layout_marginStart="@dimen/flight_left_chrome_clear"
         android:background="@drawable/bg_warning_banner"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -104,10 +109,10 @@
             android:layout_height="wrap_content"
             android:letterSpacing="0.03"
             android:maxWidth="@dimen/flight_warning_max_width"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp"
+            android:paddingStart="@dimen/flight_warning_padding_start"
+            android:paddingEnd="@dimen/flight_warning_padding_end"
+            android:paddingTop="@dimen/flight_warning_padding_v"
+            android:paddingBottom="@dimen/flight_warning_padding_v"
             android:text=""
             android:textColor="@color/tp_text_primary"
             android:textSize="@dimen/flight_warning_text_size"
@@ -260,9 +265,14 @@
         android:layout_gravity="end"
         android:gravity="end"
         android:orientation="vertical"
-        android:paddingTop="60dp"
+        android:paddingTop="8dp"
         android:paddingBottom="3dp"
         android:paddingEnd="4dp">
+        <!-- paddingTop is the BAND'S OWN paddingTop (operator, 2026-10-07, the Autel layout):
+             the EV slider's top is level with the status capsule's top, at the right end of
+             the band the actions left empty. It was 60dp while the actions capsule stood
+             there. The weighted spacer below keeps the map on the bottom edge, so the top
+             block rises and the column's slack grows by 52dp. -->
 
         <!-- TOP HUD PANEL: exposure controls, clock, telemetry and gimbal, on one
              translucent backing. Ported from the Autel sibling 2026-08-14 (conformance D4,
@@ -329,6 +339,17 @@
                     android:layout_weight="1" android:gravity="end" android:text="+2" />
             </LinearLayout>
 
+            <!-- THE MEDIA-MODE SWITCH (step 3, 2026-10-07; Autel v2.3.0): movie glyph left,
+                 still glyph right, the white thumb on the mode the CAMERA reports; both halves
+                 amber until it has reported (§4.6). A tap asks for the other mode and takes
+                 nothing; refused while recording. Spec §4.3: under the EV scale row, above the
+                 IR palette pill. The view measures itself from flight_readout_text_size. -->
+            <com.dji.sdk.sample.takpilot2.MediaModeView
+                android:id="@+id/fpvMediaMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="6dp" />
             <!-- Thermal palette, only while the IR camera is live: a colour change the pilot
                  cannot see is worse than no action. White hot -> black hot -> ironbow. -->
             <TextView
@@ -389,10 +410,14 @@
         <!-- BOTTOM HUD BLOCK, pinned above the map: RTH, HOME, FAA. Order is fixed by
              specification §4.3. The panel is gone here for the same reason as the top block —
              see the note there, including why the vertical padding is not restored. -->
+        <!-- PACKED (operator, 2026-10-07, on sight): the three lines sit on each other with
+             no margin and no font padding, and the block sits 2dp above the map. The old
+             2dp margins plus the font's own ~4dp of air per line spread three readouts over
+             a quarter of this short column's slack. -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
+            android:layout_marginBottom="2dp"
             android:gravity="end"
             android:orientation="vertical"
             android:paddingHorizontal="8dp">
@@ -405,7 +430,7 @@
             <com.dji.sdk.sample.takpilot2.OutlinedTextView
                 android:id="@+id/fpvRthAltitude"
                 style="@style/flightReadoutText"
-                android:layout_marginBottom="2dp"
+                android:includeFontPadding="false"
                 android:gravity="end"
                 android:text="RTH --" />
 
@@ -415,7 +440,7 @@
             <com.dji.sdk.sample.takpilot2.OutlinedTextView
                 android:id="@+id/fpvHomeDistance"
                 style="@style/flightReadoutText"
-                android:layout_marginBottom="2dp"
+                android:includeFontPadding="false"
                 android:gravity="end"
                 android:text="HOME" />
 
@@ -423,7 +448,7 @@
             <com.dji.sdk.sample.takpilot2.OutlinedTextView
                 android:id="@+id/fpvFaaCeiling"
                 style="@style/flightReadoutText"
-                android:layout_marginBottom="6dp"
+                android:includeFontPadding="false"
                 android:gravity="end"
                 android:text=""
                 android:visibility="gone" />
@@ -507,49 +532,21 @@
     </LinearLayout>
 
 
-    <!-- Instrument toolbar: TAKPilot2's blue chrome, houses status readouts + flight actions.
-         Solid bar overlaid on the video (not letterboxed space) — same overlay-on-FPV pattern
-         already used by the HUD/status bars below.
+    <!-- Instrument band: a transparent strip across the top holding the STATUS capsule only.
 
-         ⚠ THIS BAR HAS A WIDTH BUDGET. The RC Plus 2 is 768dp wide, less 4dp of padding on
-         each side, thus 760dp for the children. The bar is one horizontal LinearLayout with
-         fixed widths and ONE weighted spacer between the left status cluster and the right
-         action cluster. When the children total more than 760dp, the spacer collapses to zero
-         and the LAST children simply run off the right edge — LinearLayout does not shrink a
-         fixed-width child, and nothing reports the overflow.
+         ⚠ THE ACTIONS LEFT THIS BAND ON 2026-10-07 (parity plan step 1). They stand in a
+         vertical column at the top-left of the video — see flightToolbarActions, further down
+         in this file, and the column budget in values/dimens.xml. The band used to carry both
+         clusters with a weighted spacer between them and a WIDTH budget that overflowed
+         silently (the record toggle was cut in half at the screen edge, 2026-08-19; the
+         capsules re-counted to 756dp of 768 on 2026-09-13). The width budget is gone with
+         the actions: the status capsule is about 270dp wide on a 768dp screen.
 
-         That happened: the children totalled about 810dp, so the record toggle was cut in
-         half at the screen edge (operator, 2026-08-19).
-
-         The fix that stuck was NOT making the action controls smaller. It was stacking the
-         signal and GPS numbers under their icons instead of beside them, which returned
-         about 64dp on its own — enough to keep every control on the right at full size. The
-         bar now totals about 726dp, thus roughly 34dp sits in the spacer. Prefer that kind
-         of change: shrinking a control a pilot has to hit while flying is the last resort,
-         not the first.
-
-         BEFORE YOU ADD A CONTROL HERE, or make one wider, add up the children first. A new
-         46dp control needs 46dp taken from somewhere else. Check it on the device: the
-         failure is silent and the clipped control is still touchable where it is drawn.
-
-         ⚠ RE-COUNTED 2026-09-13 FOR THE CAPSULES. The bar is now a transparent band holding two
-         capsules, and each capsule adds padding the old bar did not have:
-
-             children                       708dp   (726 less 18dp: the pills went to two
-                                                     widths, 48 and 66, and LIVE and REC were
-                                                     82 and 74)
-             2 capsules x 16dp padding     + 32dp
-             band padding                  + 16dp
-                                            =======
-                                             756dp   of 768dp, thus about 12dp in the spacer.
-
-         ⚠ THE PILL WIDTHS ARE THIS TREE'S OWN, NOT THE SIBLING'S. Specification §4.2 gives the
-         Autel tree 54 and 66; §7 forbids transferring a dp value between trees, and 54 here
-         would have cost 24dp this bar does not have. 48dp is THIS tree's measured minimum — it
-         is what the zoom pill already used for a four-glyph label like "2.4X" at the same 14sp.
-         The RULE is two widths, each the measured minimum. The numbers are per-device. -->
-
-         The drop-pin stays the widest action control — see its own note below. -->
+         The band's HEIGHT is what matters now: it is the AR overlay's and the obstacle view's
+         top chrome inset, and the HUD column's paddingTop and the actions column's marginTop
+         are both derived from it. 8dp paddingTop + the 52dp status capsule = 60dp, measured
+         on the RC Plus 2. hud_capsule_height keeps the band at that height although the
+         tallest thing in it is now a 34dp icon — see its note in dimens.xml. -->
     <!-- ⚠ THE BAND IS TRANSPARENT AND KEEPS THE flightToolbar ID ON PURPOSE.
          The AR overlay and the obstacle-edge view read this view's HEIGHT as their top chrome
          inset, so that an edge arrow or a proximity label cannot be parked where the chrome
@@ -589,10 +586,12 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="3dp">
 
+        <!-- EVERY CHILD IS @dimen/hud_column_pill_height TALL (operator, 2026-10-07): the
+             band's controls match the column's pills, so the two capsules read as one kit. -->
         <ImageButton
             android:id="@+id/flightBackButton"
             android:layout_width="40dp"
-            android:layout_height="34dp"
+            android:layout_height="@dimen/hud_column_pill_height"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Menu (home)"
             android:padding="2dp"
@@ -606,8 +605,8 @@
              before battery/signal/GPS rather than after them. -->
         <FrameLayout
             android:id="@+id/toolbarTakButton"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
+            android:layout_width="@dimen/hud_column_pill_height"
+            android:layout_height="@dimen/hud_column_pill_height"
             android:layout_marginEnd="10dp"
             android:clickable="true"
             android:focusable="true"
@@ -618,16 +617,16 @@
                  silhouette + separate "TAK" TextView overlay is gone. -->
             <ImageView
                 android:id="@+id/toolbarTakIcon"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="@dimen/hud_column_pill_height"
+                android:layout_height="@dimen/hud_column_pill_height"
                 android:scaleType="fitCenter"
                 android:contentDescription="TAK server connection"
                 android:src="@drawable/ic_tak_logo" />
 
             <ImageView
                 android:id="@+id/toolbarTakDot"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
                 android:layout_gravity="bottom|start"
                 android:src="@drawable/bg_status_dot" />
 
@@ -635,36 +634,34 @@
 
         <com.dji.sdk.sample.takpilot2.BatteryGaugeView
             android:id="@+id/toolbarBattery"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
+            android:layout_width="@dimen/hud_column_pill_height"
+            android:layout_height="@dimen/hud_column_pill_height"
             android:layout_marginEnd="10dp"
             android:contentDescription="Battery" />
 
-        <!-- Signal and GPS put the number UNDER the icon, not beside it (operator,
-             2026-08-19). Side by side, the two cost 144dp of the bar's width budget; stacked
-             they cost 80dp. That is what buys the right-hand action cluster its full size on
-             a 768dp screen. It is also the shape the battery gauge beside them already has —
-             a number inside/under its own icon — so the status cluster now reads as one row
-             of gauges instead of three icon+label pairs.
-
-             The ids do not change, thus the Kotlin that fills them is untouched. -->
+        <!-- Signal and GPS put the number BESIDE the icon again (2026-10-07). They were
+             stacked under it from 2026-08-19 to buy the action cluster 64dp of this bar's
+             width; the actions are in their own column now and the band has about 480dp to
+             spare, while a stacked pair is 45dp tall and the band's controls are 30dp. The
+             ids do not change, thus the Kotlin that fills them is untouched. -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="10dp"
-            android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
             <com.dji.sdk.sample.takpilot2.SignalBarsView
                 android:id="@+id/toolbarSignal"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="@dimen/hud_column_pill_height"
+                android:layout_height="@dimen/hud_column_pill_height"
                 android:contentDescription="RC signal strength" />
 
             <TextView
                 android:id="@+id/toolbarSignalText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
                 android:alpha="0.4"
                 android:text="—%"
                 android:textColor="@color/tp_text_primary"
@@ -677,13 +674,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="10dp"
-            android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
             <ImageView
                 android:id="@+id/toolbarGpsIcon"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="@dimen/hud_column_pill_height"
+                android:layout_height="@dimen/hud_column_pill_height"
                 android:contentDescription="GPS satellites"
                 android:src="@drawable/ic_gps" />
 
@@ -691,6 +688,7 @@
                 android:id="@+id/toolbarGps"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
                 android:text="—"
                 android:textColor="@color/tp_text_primary"
                 android:textSize="11sp"
@@ -701,7 +699,7 @@
         <ImageButton
             android:id="@+id/flightRthButton"
             android:layout_width="40dp"
-            android:layout_height="34dp"
+            android:layout_height="@dimen/hud_column_pill_height"
             android:layout_marginEnd="8dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Return to home"
@@ -711,126 +709,120 @@
 
         </LinearLayout>
 
-        <!-- The gap. It holds the actions capsule against the right edge and leaves the middle
-             of the band as picture. See the two capsules' minHeight for why they sit level. -->
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
 
-        <!-- ACTIONS, right. Drop-pin, AR, zoom, IR, lights, LIVE, REC. -->
-        <LinearLayout
-            android:id="@+id/flightToolbarActions"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_hud_capsule"
-            android:gravity="center_vertical"
-            android:minHeight="@dimen/hud_capsule_height"
-            android:orientation="horizontal"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="3dp">
+    </LinearLayout>
 
-        <!-- Drop-pin heads the right-hand cluster and is deliberately the LARGEST control in the
-             bar: it is the most-used action on this screen, and a pilot reaching for it is
-             usually also flying, so it has to be findable and hittable without aiming. AR sits
-             immediately after it — drop-pin creates markers, AR shows them, so they read as a
-             pair either way round. -->
+    <!-- THE ACTIONS COLUMN (2026-10-07, parity plan step 1; the Autel v2.3.1 shape).
+         Drop pin · lights · AR · IR · zoom · LIVE · REC, top to bottom — the Autel order with
+         the two Autel-only slots (PIP, thermal size) absent, see spec §4.2. RTH stays in the
+         status capsule. One size for every pill; every number is in dimens.xml with its budget.
+
+         A child of the ROOT, after the band in draw order, so it is above the video and the
+         AR layers and below the hint chips and the warning banner. Its x + width is the LEFT
+         chrome inset for the obstacle-edge view and the AR edge arrows (step 2). -->
+    <LinearLayout
+        android:id="@+id/flightToolbarActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="@dimen/hud_column_margin_start"
+        android:layout_marginTop="@dimen/hud_column_margin_top"
+        android:background="@drawable/bg_hud_capsule"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/hud_column_padding_h"
+        android:paddingVertical="@dimen/hud_column_padding_v">
+
+        <!-- Drop-pin heads the column and is a PILL like the rest now (it was the bar's one
+             46x46 control): the most-used action on this screen, first under the thumb. -->
         <ImageButton
             android:id="@+id/flightDropPinButton"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:layout_marginEnd="10dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:background="@drawable/bg_zoom_pill"
             android:contentDescription="Drop a TAK marker at the camera crosshair"
-            android:padding="1dp"
+            android:padding="3dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_drop_pin" />
-
-        <!-- Tap toggles the AR overlay; long-press opens the AR options (6D-C). -->
-        <TextView
-            android:id="@+id/flightArButton"
-            android:layout_width="48dp"
-            android:layout_height="34dp"
-            android:layout_marginEnd="10dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Toggle AR marker overlay"
-            android:gravity="center"
-            android:text="AR"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <!-- THE SHUTTER PILL IS GONE (operator, 2026-08-23). The RC Plus 2 has a physical
-             shutter button and it takes the still on its own, so the pill was a second way to
-             do one thing and it cost 46dp in an action bar that has overflowed its width
-             before. The photo code stays in the activity — see [onShootPhotoTapped]; only the
-             control is removed. -->
-
-        <TextView
-            android:id="@+id/flightZoomButton"
-            android:layout_width="48dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Camera: wide or zoom lens; the dial zooms"
-            android:gravity="center"
-            android:text="1X"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <!-- THERMAL. Same pill frame and the Autel sibling's order (camera, zoom, IR,
-             lights, LIVE, REC), so a pilot changing airframe finds the same run of controls.
-             8dp margins, not the sibling's 16dp: its controller is 1024dp wide and this one
-             is 768dp, so the COMPOSITION is matched and the spacing stays per-device.
-             This slot held a video re-sync button until 2026-08-20; the sibling has no such
-             control, and its 54dp is what pays for these two pills. Re-sync moved to a
-             long-press on the FPV image. -->
-        <TextView
-            android:id="@+id/flightIrButton"
-            android:layout_width="48dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Toggle thermal (IR) camera"
-            android:gravity="center"
-            android:text="IR"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
 
         <!-- EXTERIOR LIGHTS: the beacon AND the red/green LEDs on the motor arms, as one
              dark toggle (operator, 2026-08-20). The icon reports the AIRCRAFT's state, never
              our request — see AircraftLights. -->
         <ImageButton
             android:id="@+id/flightLightsButton"
-            android:layout_width="48dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="6dp"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:layout_marginTop="@dimen/hud_column_pill_gap"
             android:background="@drawable/bg_zoom_pill"
             android:contentDescription="Navigation lights; touch and hold for the beacon"
-            android:padding="5dp"
+            android:padding="4dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_led_on" />
 
+        <!-- Tap toggles the AR overlay; long-press opens the AR options (6D-C). -->
+        <TextView
+            android:id="@+id/flightArButton"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:layout_marginTop="@dimen/hud_column_pill_gap"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Toggle AR marker overlay"
+            android:gravity="center"
+            android:text="AR"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/hud_column_pill_text"
+            android:textStyle="bold" />
+
+        <!-- THERMAL. A two-way stream-source toggle on MSDKv5 (ZOOM <-> INFRARED); the
+             read-back decides what the pill shows. C1 and L3 toggle it too (step 4). -->
+        <TextView
+            android:id="@+id/flightIrButton"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:layout_marginTop="@dimen/hud_column_pill_gap"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Toggle thermal (IR) camera"
+            android:gravity="center"
+            android:text="IR"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/hud_column_pill_text"
+            android:textStyle="bold" />
+
+        <!-- ZOOM. Keeps this tree's rules: snap-to-1X on tap, greyed while IR is live. The
+             right dial zooms in firmware (ledger V47). -->
+        <TextView
+            android:id="@+id/flightZoomButton"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:layout_marginTop="@dimen/hud_column_pill_gap"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Camera: wide or zoom lens; the dial zooms"
+            android:gravity="center"
+            android:text="1X"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/hud_column_pill_text"
+            android:textStyle="bold" />
+
+        <!-- THE SHUTTER PILL STAYS CLOSED (operator, 2026-10-07, measured): the right shoulder
+             reaches the app as BTN_TR and the left as BTN_TL — the controller has a physical
+             shutter and a physical record button. REC below records from ANY camera mode
+             (step 3), so the pill is never the only route. -->
+
         <com.dji.sdk.sample.takpilot2.LiveToggleView
             android:id="@+id/flightStreamButton"
-            android:layout_width="66dp"
-            android:layout_height="34dp"
-            android:layout_marginHorizontal="6dp"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:layout_marginTop="@dimen/hud_column_pill_gap"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Start/stop live stream (not wired yet)" />
+            android:contentDescription="Start/stop live stream" />
 
         <com.dji.sdk.sample.takpilot2.RecordToggleView
             android:id="@+id/flightRecordButton"
-            android:layout_width="66dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
+            android:layout_width="@dimen/hud_column_pill_width"
+            android:layout_height="@dimen/hud_column_pill_height"
+            android:layout_marginTop="@dimen/hud_column_pill_gap"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Start/stop recording to SD (not wired yet)" />
-
-        </LinearLayout>
+            android:contentDescription="Start/stop recording to SD" />
 
     </LinearLayout>
 

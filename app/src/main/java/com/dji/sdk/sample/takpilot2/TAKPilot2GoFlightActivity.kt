@@ -186,6 +186,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      */
     private var warningDismissedSignature: String? = null
 
+    /** The media-mode switch (step 3). Painted from the Hud's [DroneTakBridge.Hud.cameraMode]. */
+    private lateinit var fpvMediaMode: MediaModeView
+    /** The last mode painted, so a CHANGE is announced and the first answer is not. */
+    private var lastPaintedCameraMode: dji.sdk.keyvalue.value.camera.CameraMode? = null
+    private var cameraModeEverPainted = false
+
     // ---- THE ACCESSORY PANEL (L2): the AL1 light and the AS1 speaker. See AircraftAccessories.
     private lateinit var accessoryPanel: View
     private lateinit var accessoryNone: TextView
@@ -361,12 +367,18 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // both change these.
         val toolbarView = findViewById<View>(R.id.flightToolbar)
         val hudColumn = findViewById<View>(R.id.flightHudColumn)
+        val column = findViewById<View>(R.id.flightToolbarActions)
         toolbarView.viewTreeObserver.addOnGlobalLayoutListener {
             // The obstacle radar takes the same top inset the AR overlay does (V24) — its
             // forward chevrons and distance label must never sit under the toolbar.
             obstacles.setTopInset(toolbarView.height.toFloat())
+            // And the LEFT inset for the actions column (step 2, 2026-10-07): its right edge,
+            // so the left-face label and an edge arrow land beside the column, not under it.
+            val columnRight = column.x + column.width
+            obstacles.setLeftInset(columnRight)
             arOverlay.setChromeInsets(
                 top = toolbarView.height.toFloat(),
+                left = columnRight,
                 right = hudColumn.width.toFloat(),
             )
         }
@@ -423,6 +435,19 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
         fpvClock = findViewById(R.id.fpvClock)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
+        fpvMediaMode = findViewById(R.id.fpvMediaMode)
+        fpvMediaMode.onModeRequested = { wanted -> onMediaModeRequested(wanted) }
+        // C1 is a second route to the IR toggle beside L3 (step 4). The listen lives in
+        // RcButtons (one owner); this screen is fed, and only while it is up.
+        com.dji.sdk.sample.tak.RcButtons.onC1 = { runOnUiThread { if (irButton.isEnabled) onIrTapped() } }
+        // The right shoulder's shutter, through its MSDK key — see RcButtons.onShutter for why
+        // the Android key cannot be used. Stays in stills afterwards (the plan's rule): the
+        // media switch shows the mode and REC records from any mode.
+        com.dji.sdk.sample.tak.RcButtons.onShutter = { runOnUiThread { onShootPhotoTapped(stayInStills = true) } }
+        // Every still the camera finishes gets a notice, whoever took it (the firmware says
+        // nothing on screen with this application in front).
+        TakBridgeHolder.onStillTaken = { showNotice("Photo saved to aircraft SD card") }
+        com.dji.sdk.sample.tak.RcButtons.arm()
         toolbarBattery = findViewById(R.id.toolbarBattery)
         toolbarGps = findViewById(R.id.toolbarGps)
         toolbarGpsIcon = findViewById(R.id.toolbarGpsIcon)
@@ -431,6 +456,9 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         toolbarSignalText = findViewById(R.id.toolbarSignalText)
 
         resourceMonitorRow = findViewById(R.id.flightResourceMonitorRow)
+        // Drawn above the warning banner, which shares the bottom-left since step 2: the row
+        // is a debug readout the operator turned on to look at, and it is off in flight.
+        resourceMonitorRow.bringToFront()
         resourceMonitorCells = listOf(
             findViewById(R.id.flightResSys),
             findViewById(R.id.flightResApp),
@@ -1051,14 +1079,27 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             performRecordAction(CameraKey.KeyStopRecord, "Recording stopped", "Stop failed", "stopRecord")
             return
         }
+        // ⚠ REC RECORDS FROM ANY MODE (step 3, 2026-10-07; Autel v2.3.0): the pill puts the
+        // camera in video if it is not there, starts, and leaves it in video. The pill always
+        // reads REC; the media switch names the mode. Ledger D25 is superseded by this.
+        if (TakBridgeHolder.hud()?.cameraMode == CameraMode.VIDEO_NORMAL) {
+            AppLog.i(REC_TAG, "camera reports VIDEO_NORMAL — starting")
+            performRecordAction(CameraKey.KeyStartRecord, "Recording started", "Start failed", "startRecord")
+            return
+        }
         AppLog.i(REC_TAG, "starting recording — switching to VIDEO_NORMAL first")
         KeyManager.getInstance().setValue(
             KeyTools.createKey(CameraKey.KeyCameraMode, MAIN_CAM),
             CameraMode.VIDEO_NORMAL,
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
-                    AppLog.i(REC_TAG, "set video mode result: OK")
-                    performRecordAction(CameraKey.KeyStartRecord, "Recording started", "Start failed", "startRecord")
+                    AppLog.i(REC_TAG, "set video mode result: OK — waiting for the camera to report it")
+                    // ⚠ THE ACK IS NOT READINESS. The Autel tree measured a start 2 ms and
+                    // 800 ms after the ack silently ignored, and a fixed 2000 ms wait refused.
+                    // So: wait for the LISTENED mode to say VIDEO_NORMAL (poll 250 ms, limit
+                    // 6 s), settle, then start. The settle is the Autel's 1200 ms until the
+                    // M4TD is measured; the log carries the wait so it can be.
+                    runOnUiThread { startRecordWhenCameraReportsVideo(android.os.SystemClock.elapsedRealtime()) }
                 }
 
                 override fun onFailure(error: IDJIError) {
@@ -1326,6 +1367,35 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     if (irButton.isEnabled) onIrTapped()
                 }
                 return true
+            }
+            // THE SHOULDERS (measured on the bench with the M4TD, 2026-10-07). The left reaches
+            // here as BUTTON_L1 (BTN_TL), the right as BUTTON_R1 (BTN_TR).
+            //
+            // LEFT = RECORD. In VIDEO the FIRMWARE starts and stops the recording on its own
+            // (the REC pill followed KeyIsRecording with no app involvement), so the app stays
+            // out of its way there — a handler would double the start or cancel the stop. In
+            // PHOTO the firmware does nothing at all, and that is the gap ledger D25 names:
+            // the app takes the press through the same REC-from-any-mode path as the pill —
+            // VIDEO_NORMAL, wait for the camera to report it, settle, start. One rule for the
+            // pill and the button. Unknown mode counts as "not video": the path re-asserts it.
+            android.view.KeyEvent.KEYCODE_BUTTON_L1 -> {
+                if (event.repeatCount == 0) {
+                    val mode = TakBridgeHolder.hud()?.cameraMode
+                    if (mode == CameraMode.VIDEO_NORMAL) {
+                        AppLog.i(TAG, "controller LEFT shoulder — camera in VIDEO, the firmware records")
+                    } else {
+                        AppLog.i(TAG, "controller LEFT shoulder — camera in $mode, recording from any mode")
+                        onRecordToggleTapped()
+                    }
+                }
+                return true
+            }
+            // RIGHT = SHUTTER, AND THE APP CANNOT TAKE IT. The half-press (focus) and the full
+            // press arrive as the SAME key — both BTN_TR in the 2026-10-07 capture — so a
+            // handler here would take a still on every focus. The firmware owns this button;
+            // whether it shoots on a full press in PHOTO mode is the bench's to say. Logged.
+            android.view.KeyEvent.KEYCODE_BUTTON_R1 -> {
+                if (event.repeatCount == 0) AppLog.i(TAG, "controller RIGHT shoulder (BUTTON_R1) — firmware owns it (half-press is the same key)")
             }
         }
         return super.onKeyDown(keyCode, event)
@@ -2469,8 +2539,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun onShootPhotoTapped() {
-        AppLog.v(REC_TAG, "tap: shutter (photo)")
+    /**
+     * @param stayInStills true from the HARDWARE shutter (2026-10-07): the camera is left in
+     *   PHOTO_NORMAL, the mode the pilot chose by pressing it; the media switch shows it and
+     *   REC records from any mode. False restores VIDEO_NORMAL afterwards, the old pill's
+     *   behaviour, kept for any caller that still wants it.
+     */
+    private fun onShootPhotoTapped(stayInStills: Boolean = false) {
+        AppLog.v(REC_TAG, if (stayInStills) "shutter key: photo (stay in stills)" else "tap: shutter (photo)")
         if (!DjiSdkBridge.isProductConnected) {
             AppLog.w(REC_TAG, "photo ignored — aircraft not connected")
             Toast.makeText(this, "Aircraft not connected", Toast.LENGTH_SHORT).show()
@@ -2484,6 +2560,56 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
         photoSequenceActive = true
         setShutterBusy(true)
+        // The shoot itself, once the camera is in PHOTO_NORMAL. Re-pushes the same
+        // metering/exposure-mode/EV used for video onto photo mode first — photo mode has its
+        // own separately-persisted exposure state, so without this the still's EV wouldn't
+        // necessarily match what the live feed showed.
+        val shoot = {
+            ExposureController.applyExposureSettings(applicationContext) {
+                KeyManager.getInstance().performAction(
+                    KeyTools.createKey(CameraKey.KeyStartShootPhoto, MAIN_CAM),
+                    object : CommonCallbacks.CompletionCallbackWithParam<EmptyMsg> {
+                        override fun onSuccess(t: EmptyMsg?) {
+                            AppLog.i(REC_TAG, "shoot photo result: OK")
+                            runOnUiThread {
+                                Toast.makeText(this@TAKPilot2GoFlightActivity,
+                                    "Photo saved to aircraft SD card", Toast.LENGTH_SHORT).show()
+                            }
+                            if (stayInStills) endPhotoSequence() else restoreVideoModeAfterPhoto()
+                        }
+
+                        override fun onFailure(error: IDJIError) {
+                            AppLog.i(REC_TAG, "shoot photo result: ${describeError(error)}")
+                            runOnUiThread {
+                                Toast.makeText(this@TAKPilot2GoFlightActivity,
+                                    "Photo failed: ${describeError(error)}", Toast.LENGTH_SHORT).show()
+                            }
+                            if (stayInStills) endPhotoSequence() else restoreVideoModeAfterPhoto()
+                        }
+                    },
+                )
+            }
+        }
+        // ⚠ NO MODE WRITE WHEN THE CAMERA ALREADY REPORTS PHOTO_NORMAL (bench, 2026-10-07
+        // 16:56): this camera REFUSES a write of the mode it is already in, and the sequence
+        // died there twice on the hardware shutter — "set PHOTO_NORMAL mode: refused", no
+        // still taken, an error toast for a press that should have been the simplest case.
+        // The listened mode (rule 4) says whether the write is needed at all.
+        // ⚠ NOT WHILE THE CAMERA IS ALREADY SHOOTING. On the hardware shutter the firmware may
+        // take the still itself; a second KeyStartShootPhoto on top of it is refused with no
+        // reason (bench, 2026-10-07 17:18) and reaches the pilot as a failure for a still that
+        // was taken. The camera's own KeyIsShootingPhoto decides; its still gets the notice
+        // through TakBridgeHolder.onStillTaken like any other.
+        if (TakBridgeHolder.photoInProgress()) {
+            AppLog.i(REC_TAG, "photo: the camera is already shooting — not sending a second")
+            endPhotoSequence()
+            return
+        }
+        if (TakBridgeHolder.hud()?.cameraMode == CameraMode.PHOTO_NORMAL) {
+            AppLog.i(REC_TAG, "photo: camera already reports PHOTO_NORMAL — shooting")
+            shoot()
+            return
+        }
         AppLog.i(REC_TAG, "photo: switching to PHOTO_NORMAL")
         KeyManager.getInstance().setValue(
             KeyTools.createKey(CameraKey.KeyCameraMode, MAIN_CAM),
@@ -2491,34 +2617,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     AppLog.i(REC_TAG, "photo: set PHOTO_NORMAL mode: OK")
-                    // Re-push the same metering/exposure-mode/EV used for video onto photo
-                    // mode before shooting — photo mode has its own separately-persisted
-                    // exposure state, so without this the still's EV wouldn't necessarily
-                    // match what the live feed showed.
-                    ExposureController.applyExposureSettings(applicationContext) {
-                        KeyManager.getInstance().performAction(
-                            KeyTools.createKey(CameraKey.KeyStartShootPhoto, MAIN_CAM),
-                            object : CommonCallbacks.CompletionCallbackWithParam<EmptyMsg> {
-                                override fun onSuccess(t: EmptyMsg?) {
-                                    AppLog.i(REC_TAG, "shoot photo result: OK")
-                                    runOnUiThread {
-                                        Toast.makeText(this@TAKPilot2GoFlightActivity,
-                                            "Photo saved to aircraft SD card", Toast.LENGTH_SHORT).show()
-                                    }
-                                    restoreVideoModeAfterPhoto()
-                                }
-
-                                override fun onFailure(error: IDJIError) {
-                                    AppLog.i(REC_TAG, "shoot photo result: ${describeError(error)}")
-                                    runOnUiThread {
-                                        Toast.makeText(this@TAKPilot2GoFlightActivity,
-                                            "Photo failed: ${describeError(error)}", Toast.LENGTH_SHORT).show()
-                                    }
-                                    restoreVideoModeAfterPhoto()
-                                }
-                            },
-                        )
-                    }
+                    shoot()
                 }
 
                 override fun onFailure(error: IDJIError) {
@@ -2723,6 +2822,86 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     override fun onFailure(error: IDJIError) {}
                 })
         }
+    }
+
+    /** Polls the listened camera mode after a VIDEO_NORMAL write — see onRecordToggleTapped. */
+    private fun startRecordWhenCameraReportsVideo(startedAt: Long) {
+        val hud = TakBridgeHolder.hud()
+        if (hud?.isRecording == true) return                       // the camera got there itself
+        val waited = android.os.SystemClock.elapsedRealtime() - startedAt
+        when {
+            hud?.cameraMode == CameraMode.VIDEO_NORMAL -> {
+                AppLog.i(REC_TAG, "camera reports VIDEO_NORMAL after ${waited}ms — starting in ${MODE_READY_SETTLE_MS}ms")
+                handler.postDelayed({
+                    // ⚠ CHECKED AGAIN AFTER THE SETTLE (bench, 2026-10-07 16:46). From the left
+                    // shoulder in PHOTO, this path put the camera in VIDEO and the FIRMWARE then
+                    // started the recording on that same press — the pill lit red, and our own
+                    // start 1.2 s later was refused for a recording already running, which
+                    // reached the pilot as a failure toast for a recording that had started.
+                    // A recording the camera reports is the outcome asked for, whoever began it.
+                    if (TakBridgeHolder.hud()?.isRecording == true) {
+                        AppLog.i(REC_TAG, "camera already recording after the settle — the firmware started it; nothing to send")
+                        return@postDelayed
+                    }
+                    performRecordAction(CameraKey.KeyStartRecord, "Recording started", "Start failed", "startRecord")
+                }, MODE_READY_SETTLE_MS)
+            }
+            waited >= MODE_POLL_LIMIT_MS -> {
+                AppLog.w(REC_TAG, "camera never reported VIDEO_NORMAL in ${waited}ms (reports ${hud?.cameraMode}) — not starting")
+                showNotice("The camera did not switch to video. Not recording.", refused = true)
+            }
+            else -> handler.postDelayed({ startRecordWhenCameraReportsVideo(startedAt) }, MODE_POLL_MS)
+        }
+    }
+
+    /**
+     * The pilot tapped a half of the media-mode switch. Refused while recording — the camera
+     * will not change what it is writing, and the record path owns that state. Otherwise one
+     * write and nothing taken; the camera's reported mode moves the thumb.
+     */
+    private fun onMediaModeRequested(wanted: MediaModeView.Mode) {
+        if (!DjiSdkBridge.isProductConnected) { showNotice("Aircraft not connected", refused = true); return }
+        if (TakBridgeHolder.hud()?.isRecording == true) {
+            AppLog.w(REC_TAG, "media mode $wanted refused — the camera is recording")
+            showNotice("Stop the recording to change the camera mode", refused = true)
+            return
+        }
+        val target = if (wanted == MediaModeView.Mode.VIDEO) CameraMode.VIDEO_NORMAL else CameraMode.PHOTO_NORMAL
+        if (TakBridgeHolder.hud()?.cameraMode == target) return
+        AppLog.i(REC_TAG, "tap: media mode -> $target")
+        KeyManager.getInstance().setValue(
+            KeyTools.createKey(CameraKey.KeyCameraMode, MAIN_CAM), target,
+            object : CommonCallbacks.CompletionCallback {
+                override fun onSuccess() { AppLog.i(REC_TAG, "set $target: OK") }
+                override fun onFailure(error: IDJIError) {
+                    AppLog.w(REC_TAG, "set $target: ${describeError(error)}")
+                    runOnUiThread { showNotice("Camera refused $target", refused = true) }
+                }
+            },
+        )
+    }
+
+    /**
+     * Paints the switch from what the CAMERA reports. Unknown is its own state, amber (§4.6).
+     * The modes this application does not drive (burst, interval, …) are shown by NAME rather
+     * than mapped onto one of the two it knows. ANNOUNCES A CHANGE, never the first answer:
+     * the hardware shutter moves the mode without the pilot asking.
+     */
+    private fun renderMediaMode(mode: dji.sdk.keyvalue.value.camera.CameraMode?) {
+        if (!::fpvMediaMode.isInitialized) return
+        when (mode) {
+            null -> fpvMediaMode.setMode(null)
+            CameraMode.VIDEO_NORMAL -> fpvMediaMode.setMode(MediaModeView.Mode.VIDEO)
+            CameraMode.PHOTO_NORMAL -> fpvMediaMode.setMode(MediaModeView.Mode.PHOTO)
+            else -> fpvMediaMode.setMode(null, unhandledName = mode.name)
+        }
+        if (mode != null && cameraModeEverPainted && mode != lastPaintedCameraMode) {
+            AppLog.i(REC_TAG, "camera mode changed: $lastPaintedCameraMode -> $mode")
+            showNotice("Camera: " + when (mode) {
+                CameraMode.PHOTO_NORMAL -> "PHOTO"; CameraMode.VIDEO_NORMAL -> "VIDEO"; else -> mode.name
+            })
+        }
+        if (mode != null) { lastPaintedCameraMode = mode; cameraModeEverPainted = true }
     }
 
     /**
@@ -3548,10 +3727,14 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // Collapsed: the worst warning and a count. Expanded: every warning on its own line,
         // worst first. The arrow is the only hint that the banner opens at all, so it is on the
         // line whenever there is something behind the count.
+        //
+        // The banner sits at the bottom-left and opens UPWARD (step 2, 2026-10-07): collapsed,
+        // the arrow points up to say "more above"; open, the list stands above the arrow that
+        // closes it, worst first from the top.
         val more = d.all.size > 1
         flightDiagnostics.text = when {
-            warningExpanded -> d.all.joinToString("\n") + "\n▴"
-            more -> "${d.text}  ▾"
+            warningExpanded -> d.all.joinToString("\n") + "\n▾"
+            more -> "${d.text}  ▴"
             else -> d.text
         }
         // Severity goes on the BACKGROUND and the text stays white — specification §4.8, and
@@ -3780,6 +3963,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         toolbarTakDot.setColorFilter(if (takOk) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
 
         recordToggle.setRecording(hud?.isRecording == true)
+        renderMediaMode(hud?.cameraMode)
         // THE SHUTTER LOCKS WHILE RECORDING (V30, audit 2026-08-20; the Autel sibling's
         // per-tick guard). A still mid-record drags the camera VIDEO->PHOTO->VIDEO under the
         // team's live feed. Merged with the photo-sequence busy state rather than fighting
@@ -3835,7 +4019,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         //
         // ⚠ COLUMN HEIGHT BUDGET — check this before adding anything to flightHudColumn.
         // Fixed height, worst case (FAA ceiling visible), at 12sp bold ≈ 16dp a line:
-        //   paddingTop 60 + EV slider 24 + map @dimen/flight_map_size + paddingBottom 12
+        //   paddingTop 8 (was 60 until 2026-10-07; the actions column freed the band's end)
+        //   + EV slider 24 + map @dimen/flight_map_size + paddingBottom 12
         //   + margins 20 + 16 x (4 readout lines + 6 single-line views)
         // Base bucket (map 130dp): 406dp against the S20 Ultra's 411dp landscape height.
         // h440dp bucket (map 160dp): 436dp against the Pixel 8 Pro's ~448dp.
@@ -3853,8 +4038,12 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             // Height is second because it is the number a pilot checks constantly. Lat/lon and
             // home are reference figures, looked up only when somebody asks for them.
             // The clock sits below the EV slider in its own view — see fpvClock.
+            // The callsign on its OWN line, the speed on the next (spec §4.4, four lines;
+            // step 3, 2026-10-07). The column has the height now that the actions have left
+            // the band — see the budget in dimens.xml.
             append(currentCallsign)
-            append(if (hud != null) "   ${Units.mph(hud.speedMs)}" else "   — mph")
+            append('\n')
+            append(if (hud != null) Units.mph(hud.speedMs) else "— mph")
             append('\n')
             // "AGL" only when DTED actually corrected it to height-above-terrain-below;
             // otherwise "ALT", which is what the raw number really is (height above the takeoff
@@ -4076,6 +4265,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        com.dji.sdk.sample.tak.RcButtons.onC1 = null
+        com.dji.sdk.sample.tak.RcButtons.onShutter = null
+        TakBridgeHolder.onStillTaken = null
+        com.dji.sdk.sample.tak.RcButtons.disarm()
         AppLog.v(TAG, "onDestroy")
         // R13: the OOM-restart guard in onCreate can finish() before setContentView ever runs,
         // which leaves every lateinit view (arOverlay, mapView included) unassigned. onDestroy
@@ -4343,6 +4536,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         /** The gimbal camera. Every camera key on this screen names it explicitly — an
          *  untargeted key was accepted and discarded by this aircraft (2026-08-20). */
         private val MAIN_CAM = ComponentIndexType.LEFT_OR_MAIN
+        /** The REC-from-any-mode wait (step 3). The Autel's figures until the M4TD is measured. */
+        private const val MODE_POLL_MS = 250L
+        private const val MODE_POLL_LIMIT_MS = 6_000L
+        private const val MODE_READY_SETTLE_MS = 1_200L
+
         private const val REQUEST_MEDIA_PROJECTION = 3001
 
         /** The lens-switch ramp settles well inside this; see adoptZoomRatioFromCamera. */

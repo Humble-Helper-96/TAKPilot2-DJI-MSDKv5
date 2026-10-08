@@ -273,11 +273,13 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun sectionThree() {
         section("3. The Flight Screen")
-        body("The live camera image fills the screen. The toolbar is across the top, with the " +
-            "status icons on the left and the buttons on the right. The readout is down the " +
-            "right side and the small map is in the bottom right corner.")
+        body("The live camera image fills the screen. The status icons are in a capsule at the " +
+            "top left. The action buttons are in a column down the left side, under the " +
+            "capsule, one above the other, all the same size. The readout is down the right " +
+            "side and the small map is in the bottom right corner. Warnings show at the " +
+            "bottom left.")
 
-        sub("Toolbar: left side (status)")
+        sub("Status capsule (top left)")
 
         entry(
             listOf(icon(R.drawable.ic_menu) to "Menu"),
@@ -386,9 +388,38 @@ class FieldGuideActivity : AppCompatActivity() {
             anchor = ANCHOR_AR,
         )
 
-        // NO "PHOTO" ENTRY SINCE 2026-08-23. The shutter pill was removed from the flight screen
-        // — the controller's own shutter button takes the still — and this guide documents what
-        // the screen shows, not what the aircraft can do on its own.
+        // NO PHOTO PILL SINCE 2026-08-23: the controller's shutter button takes the still. The
+        // button itself IS documented (2026-10-07), because the screen now reacts to it — the
+        // camera-mode switch moves and a notice confirms the still — and a pilot who does not
+        // know that the half-press is focus presses twice.
+        entry(
+            emptyList(),
+            "The shutter button (right shoulder)",
+            "The button on the top right of the controller takes a still picture. Press it " +
+                "half way to focus. Press it fully to take the picture. The screen shows " +
+                "PHOTO SAVED when the picture is on the card.\n\n" +
+                "The camera changes to the photo mode and stays there. The switch under the " +
+                "EV slider shows which mode the camera is in.",
+            caveats = listOf(
+                "A STILL WHILE THE CAMERA RECORDS IS A FRAME OF THE VIDEO. The recording " +
+                    "continues.",
+            ),
+        )
+
+        entry(
+            emptyList(),
+            "The camera mode switch",
+            "A small switch under the EV slider shows what the camera is set to save: the " +
+                "movie camera on the left for video, the still camera on the right for " +
+                "photos. The white knob is on the mode the AIRCRAFT reports.\n\n" +
+                "Touch the other side to change the mode. This takes no picture and starts " +
+                "no recording.\n\n" +
+                "Both sides are amber until the camera has answered. Do not read amber as " +
+                "a mode.",
+            caveats = listOf(
+                "THE SWITCH DOES NOT MOVE WHILE THE CAMERA RECORDS. Stop the recording first.",
+            ),
+        )
 
         entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
@@ -476,7 +507,13 @@ class FieldGuideActivity : AppCompatActivity() {
             ),
             "REC: record to the aircraft",
             "Records video to the card in the aircraft, independently of the live video. The " +
-                "card keeps the full quality; the live video to your team is lower.",
+                "card keeps the full quality; the live video to your team is lower.\n\n" +
+                "REC records from ANY camera mode. If the camera is in the photo mode, the app " +
+                "changes it to video, waits for the camera to confirm, then starts. The " +
+                "button is red while the camera records.\n\n" +
+                "The record button on the top left of the controller does the same. In the " +
+                "video mode the controller starts and stops the recording by itself. In the " +
+                "photo mode the app does it, through the same steps as the REC button.",
         )
 
         sub("On the video image")
@@ -532,13 +569,26 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             emptyList(),
-            "Warnings (top left)",
-            "A box below the toolbar shows a warning. RED means act now. AMBER means know it. " +
+            "Warnings (bottom left)",
+            "A box at the bottom left shows a warning. RED means act now. AMBER means know it. " +
                 "IF THE MOTORS DO NOT START, READ THIS BOX FIRST.\n\n" +
                 "Most come from the aircraft, in its own words. The app adds its own for the " +
                 "return home, the battery, the limits, a missing home point and high wind. " +
-                "The box shows the most important one, with a count if there are more.\n\n" +
-                "Touch the box to read all of them, and again to close it.",
+                "The box shows the most important one, with a count if there are more. A " +
+                "small arrow pointing up means there are more above it.\n\n" +
+                "Touch the box to read all of them, worst first from the top, and touch the " +
+                "arrow under the list to close it. Touch the X to hide this set of warnings. " +
+                "The box comes back by itself the moment the aircraft says something " +
+                "different.\n\n" +
+                "DEBUG LOG ON is an amber warning from the app, not from the aircraft. It " +
+                "means the debug log is writing to the controller, which costs some " +
+                "smoothness. The X does not hide it. Turn the log off on the Debug screen.",
+            caveats = listOf(
+                "AN ADVISORY YOU HIDE WITH THE X STAYS HIDDEN FOR THIS FLIGHT. The aircraft " +
+                    "sends some lines as advice, not as alarm, for example low light for the " +
+                    "obstacle cameras at night. If you hide one of those it does not come " +
+                    "back when it repeats. A real warning always comes back.",
+            ),
         )
 
         entry(
@@ -555,10 +605,13 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             emptyList(),
-            "The controller buttons: L1, L2, L3",
+            "The controller buttons: L1, L2, L3 and C1",
             "The buttons on the front left of the controller do the same as the controls " +
                 "on the screen. Small labels at the left edge of the screen show what each " +
                 "button does.\n\n" +
+                "C1, on the back of the controller, changes between the usual camera and " +
+                "the thermal camera, the same as L3 and the IR button. C2 and C3 do " +
+                "nothing in this app.\n\n" +
                 "L1 is the crosshair as a button. Press it to put the quick marker where " +
                 "the crosshair points. Press and hold it to put a new static marker there. " +
                 "Each hold makes a new marker.\n\n" +

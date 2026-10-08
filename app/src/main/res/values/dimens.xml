@@ -28,6 +28,10 @@
              paddingTop 60 + EV slider 24 + map 110 + paddingBottom 12 + margins 20
                + 16 x 10 text lines + 2 panels x 8dp padding = 402dp
 
+         ⚠ 2026-10-07: paddingTop is 8dp now (the actions left the band, the EV slider rose
+         to the band's top), so every figure below has 52dp more slack than it says. Measured
+         on the RC Plus 2 the same day: root 480dp, map bottom 477dp.
+
          against 411dp of screen, so 9dp of slack. The conformance note on the D1 fix
          names exactly this remedy: take the height from flight_map_size, never by re-joining
          the readout lines. **This is arithmetic, not a measurement.**
@@ -68,12 +72,30 @@
          (operator). 13sp fits the same text in fewer, shorter lines. The width stays 380dp:
          narrowing it does not shrink the banner, it makes it TALLER, and height is what
          covers the picture. -->
-    <dimen name="flight_warning_text_size">13sp</dimen>
-    <dimen name="flight_warning_max_width">380dp</dimen>
-    <!-- The banner's ✕ close button. A touch target, not a glyph box: 34dp is what the other
-         flight-screen pills use on this controller, and the ✕ it holds is about 9dp wide.
-         It ADDS to the banner width, thus max_width above no longer bounds the whole banner. -->
-    <dimen name="flight_warning_close_size">34dp</dimen>
+    <!-- ⚠ RE-SIZED BY PROPORTION 2026-10-07 (operator, on sight beside the Autel): these were
+         the Autel's 15sp/480dp scaled only by eye in August, and on this panel — where a dp
+         is 24 % larger than nominal — the banner still read as the Autel's at full size.
+         Scaled the way the column pills were: the Autel's 15sp by the screens' height ratio
+         (480/720) is 10sp; 11sp is the floor the outline and bold still read at. The width
+         follows the text (11/13 of 380 is 320) so the LINE COUNT does not grow — narrowing
+         the box without shrinking the text makes the banner taller, and height is what
+         covers the picture. The ✕ is the column's control height, one target size across the
+         screen. Paddings 8/6/4/4 from 12/8/6/6, the same two-thirds. -->
+    <dimen name="flight_warning_text_size">11sp</dimen>
+    <dimen name="flight_warning_max_width">320dp</dimen>
+    <dimen name="flight_warning_padding_start">8dp</dimen>
+    <dimen name="flight_warning_padding_end">6dp</dimen>
+    <dimen name="flight_warning_padding_v">4dp</dimen>
+    <!-- The banner's ✕ close button. A touch target, not a glyph box: the same 30dp as every
+         control in the band and the column on this controller; the ✕ it holds is about 8dp
+         wide. It ADDS to the banner width, thus max_width above no longer bounds the whole
+         banner. -->
+    <dimen name="flight_warning_close_size">@dimen/hud_column_pill_height</dimen>
+    <!-- The transient notice (top-centre): the same 11sp as the banner, by the same
+         proportion, and hung 8dp under the 44dp band (it was 64dp under the top, set when
+         the band was 60). -->
+    <dimen name="flight_notice_text_size">11sp</dimen>
+    <dimen name="flight_notice_margin_top">52dp</dimen>
 
     <!-- The accessory panel (L2). 280dp of a 768dp screen — wide enough for a usable brightness
          slider, and it still leaves the crosshair and the whole right-hand HUD column clear.
@@ -143,6 +165,92 @@
          A MINIMUM rather than a fixed height because either cluster may still grow: a longer
          signal readout, a taller button style, a density not yet seen. minHeight can only make
          a capsule taller, thus it can never clip its own content. -->
-    <dimen name="hud_capsule_height">52dp</dimen>
+    <!-- ⚠ RE-DERIVED 2026-10-07, TWICE. The actions left the band for the column (step 1),
+         taking the 46dp drop pin with them; the band's controls then took the column's pill
+         height (operator, on sight of the Autel beside it), so the capsule's tallest child
+         is a 30dp control:
+
+             30dp control + 2 x 3dp paddingVertical = 36dp
+
+         and the band is 8dp paddingTop + 36dp = 44dp. The band's height is the top chrome
+         inset for the AR overlay and the obstacle view, and hud_column_margin_top derives
+         from it — move this and move that. -->
+    <dimen name="hud_capsule_height">36dp</dimen>
+
+    <!-- (superseded the same day — kept for the record) THIS WAS THE STATUS CAPSULE'S MINIMUM ONLY. The actions left the
+         band for the column below, taking the 46dp drop pin with them, so nothing in the band
+         is taller than a 34dp icon any more and this value is what keeps the band the height
+         it was. It is kept at 52dp ON PURPOSE: the band's height is the top chrome inset for
+         the AR overlay and the obstacle view, and the HUD column's paddingTop arithmetic, and
+         none of those should move because the actions moved. Measured on the RC Plus 2 the
+         same day: band = 8dp paddingTop + 52dp = 60dp. -->
+
+    <!-- ===== THE ACTIONS COLUMN (parity plan 2026-09-15, step 1; measured 2026-10-07) =====
+         The seven action pills stand in ONE vertical column at the top-left of the video,
+         the Autel v2.3.1 shape, so a pilot changing airframe finds the same controls in the
+         same place. Every number below is THIS TREE'S, measured on the RC Plus 2 with
+         `dumpsys activity top` (specification §7: no dp value transfers between trees).
+
+         THE SCREEN: the flight activity hides the status bar (48dp) and the navigation bar
+         (16dp) and lays out under both, so the root FrameLayout is 768 x 480dp — not the
+         416dp `am get-config` reports, nor the 464dp the hardware doc assumed. Measured as
+         `android:id/content 0,0-1920,1200` at 2.5 px/dp, with both bar backgrounds 0px tall.
+
+         THE BUDGET (seven pills; no PIP, no thermal-size pill on MSDKv5 — spec §4.2 slots):
+
+             7 x 30dp pills               210dp
+             6 x 10dp gaps                 60dp
+             2 x  8dp paddingVertical      16dp
+                                          ======
+             column                       286dp
+             + marginTop                   48dp   (band 44 + 4)
+                                          ======
+                                          334dp   of 480dp, 146dp clear above the bottom edge.
+
+         ⚠ SIZED BY PROPORTION, NOT BY COPYING (operator, 2026-10-07, on sight of the first
+         cut). The first cut kept the Autel's 42dp pill height; measured on the device it put
+         the column at y 64-450 and it was plainly too large for this panel, and it buried the
+         L1/L2 hint chips at the bottom-left (MARK at y 383, ACC at 421). The Autel's 42dp pill
+         is 5.8 % of its 720dp screen height; 42dp here is 8.75 % of 480. Scaling the Autel
+         column by the two screens' heights (480/720 = 2/3) gives 28dp pills and a 12dp gap,
+         and by their widths (768/1024 = 3/4) a 50dp pill; rounded to what the labels need,
+         that is 52 x 30 with a 10dp gap. The column's foot at 334dp clears the chips by 49dp.
+
+         A dp on this panel is about 24 % larger than nominal, so a 30dp pill here is a
+         touch target of about the physical size of a 37dp one on the Autel. -->
+
+    <!-- ONE width and ONE height for all seven. 52dp holds "▶ LIVE" and "● REC" at 13sp
+         (the toggle views measure their own text; see them) and the four-glyph "2.4X" the
+         zoom pill can show. 30dp is the proportional height — see the budget above. -->
+    <dimen name="hud_column_pill_width">52dp</dimen>
+    <dimen name="hud_column_pill_height">30dp</dimen>
+    <!-- The gap between pills: a third of a pill, the Autel's own ratio (18 of 42). -->
+    <dimen name="hud_column_pill_gap">10dp</dimen>
+    <!-- The capsule's own padding. 6dp sideways: the column is 52 + 12 + 8 margin = 72dp of a
+         768dp screen, and the banner and the left obstacle label start to its right. 8dp
+         vertically: the capsule corners (hud_control_radius, 20dp) eat into the first and
+         last pill, so they get a little more air than the sides. -->
+    <dimen name="hud_column_padding_h">6dp</dimen>
+    <dimen name="hud_column_padding_v">8dp</dimen>
+    <!-- The label size on the text pills (AR, IR, zoom). 13sp: the band's pills were 14sp
+         in a 34dp box; a 30dp box takes one step down and the glyphs still clear the stroke. -->
+    <dimen name="hud_column_pill_text">13sp</dimen>
+    <!-- Below the band. The band measures 44dp (8dp paddingTop + the 36dp status capsule);
+         4dp of air under it, the same gap the Autel column keeps under its band. The band's
+         height is the AR overlay's top chrome inset, thus this margin and that inset agree. -->
+    <dimen name="hud_column_margin_top">48dp</dimen>
+    <!-- Flush with the band's own 8dp paddingHorizontal, so the column's left edge and the
+         status capsule's left edge are one line. -->
+    <dimen name="hud_column_margin_start">8dp</dimen>
+
+    <!-- WHAT STARTS TO THE RIGHT OF THE COLUMN (step 2, 2026-10-07). The column's right edge
+         is marginStart 8 + paddingHorizontal 6 + pill 52 + 6 = 72dp, measured as 72 on the
+         RC Plus 2. 8dp of air, the column's own margin, puts these at 80dp. Spec §4.2: the
+         warning banner starts to the right of the column — on THIS screen the plan expected
+         the two to overlap in Y, and they do not (the column's foot is 334dp, the banner's
+         top about 440), but the L1/L2/L3 hint chips DO stand at the bottom-left, 58dp wide
+         (MARK at y 383-402), so the banner needs the same clearance for them. One number,
+         derived once, for everything that must not sit on the column. -->
+    <dimen name="flight_left_chrome_clear">80dp</dimen>
 
 </resources>

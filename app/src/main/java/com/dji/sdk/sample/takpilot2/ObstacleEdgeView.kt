@@ -126,7 +126,8 @@ class ObstacleEdgeView @JvmOverloads constructor(
                 rect.set(videoRect.left + inset - bow, cyMid - len / 2f,
                          videoRect.left + inset + bow, cyMid + len / 2f)
                 canvas.drawArc(rect, -70f, 140f, false, arcPaint)
-                cx = videoRect.left + inset + bow + dp(20f)
+                // Beside the column when the column stands here; at the arc otherwise.
+                cx = maxOf(videoRect.left + inset + bow + dp(20f), leftInset + dp(28f))
             }
             Side.RIGHT -> {
                 rect.set(videoRect.right - inset - bow, cyMid - len / 2f,
@@ -160,6 +161,17 @@ class ObstacleEdgeView @JvmOverloads constructor(
      * a taller toolbar or a smaller FORE_DROP cannot silently hide a proximity warning.
      */
     private var topInset = 0f
+
+    /** The actions column's right edge (step 2, 2026-10-07): the LEFT-face label draws beside
+     *  the column rather than under it. The arc itself still draws from the video's edge — the
+     *  wash is a warning, not a readout. */
+    private var leftInset = 0f
+
+    fun setLeftInset(px: Float) {
+        if (leftInset == px) return
+        leftInset = px
+        invalidate()
+    }
 
     fun setTopInset(px: Float) {
         if (topInset == px) return

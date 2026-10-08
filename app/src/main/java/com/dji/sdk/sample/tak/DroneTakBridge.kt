@@ -113,7 +113,11 @@ class DroneTakBridge(
     @Volatile private var lastGimbalAttitude: Attitude? = null
     @Volatile private var lastGimbalYawRel: Double? = null
     @Volatile private var lastIsRecording = false
+    @Volatile private var lastCameraMode: dji.sdk.keyvalue.value.camera.CameraMode? = null
     @Volatile private var lastIsShootingPhoto = false
+    /** Fed on the MAIN thread when the camera finishes a still, whoever started it (step 3,
+     *  2026-10-07). The flight screen shows the notice the firmware never does. */
+    @Volatile var onStillTaken: (() -> Unit)? = null
     @Volatile private var lastRthHeight: Int? = null
     @Volatile private var lastRemainingFlightSec: Int? = null
     @Volatile private var lastIsoName: String? = null
@@ -281,7 +285,24 @@ class DroneTakBridge(
         }
 
         CameraKey.KeyIsRecording.create().listen(h) { lastIsRecording = it == true }
-        CameraKey.KeyIsShootingPhoto.create().listen(h) { lastIsShootingPhoto = it == true }
+        // THE CAMERA'S OWN MODE, LISTENED (step 3, 2026-10-07). It was only ever SET, on REC
+        // and on the shutter, never read back — so the screen could not say which mode the
+        // camera was in, and REC had no way to wait for the camera to actually be in video
+        // before starting (the Autel tree measured a start 800 ms after the ack silently
+        // ignored). Rule 4: a listen, not the one-argument getValue, which reads an empty cache.
+        CameraKey.KeyCameraMode.create().listen(h) { lastCameraMode = it }
+        CameraKey.KeyIsShootingPhoto.create().listen(h) {
+            val now = it == true
+            if (now != lastIsShootingPhoto) {
+                // Transition-logged (2026-10-07): the hardware shutter's still is taken by
+                // whoever gets there first — the firmware or this application — and this is
+                // the one signal that says a still happened at all. A still with no indication
+                // on the screen is the bench report that led here.
+                AppLog.i(TAG, if (now) "camera: shooting a still" else "camera: still done")
+                lastIsShootingPhoto = now
+                if (!now) onStillTaken?.let { cb -> handler.post { cb() } }
+            }
+        }
         CameraKey.KeyConnection.create().listen(h) { connected ->
             if (connected == true && !exposureApplied) {
                 exposureApplied = true
@@ -378,6 +399,7 @@ class DroneTakBridge(
         lastGimbalAttitude = null
         lastGimbalYawRel = null
         lastIsRecording = false
+        lastCameraMode = null
         lastIsShootingPhoto = false
         lastIsoName = null
         lastShutterName = null
@@ -700,6 +722,9 @@ class DroneTakBridge(
          * preference — those can differ, and the difference is the point.
          */
         val rthHeightM: Int? = null,
+        /** What the camera says it is set to save, or null until it has said (step 3). LAST,
+         *  so the positional construction in hud() is untouched. */
+        val cameraMode: dji.sdk.keyvalue.value.camera.CameraMode? = null,
     )
 
     /**
@@ -734,6 +759,7 @@ class DroneTakBridge(
             lastDownlinkQuality,
             null,
             lastRthHeight,
+            cameraMode = lastCameraMode,
         )
     }
 

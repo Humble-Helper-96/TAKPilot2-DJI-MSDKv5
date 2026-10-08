@@ -114,14 +114,22 @@ class ArOverlayView @JvmOverloads constructor(
      * Fed from the flight screen's real measured view bounds rather than hardcoded dp, so this
      * can't drift out of step with a toolbar or HUD layout change.
      */
-    fun setChromeInsets(top: Float, right: Float) {
-        if (chromeInsetTop == top && chromeInsetRight == right) return
+    fun setChromeInsets(top: Float, left: Float, right: Float) {
+        if (chromeInsetTop == top && chromeInsetLeft == left && chromeInsetRight == right) return
         chromeInsetTop = top
+        chromeInsetLeft = left
         chromeInsetRight = right
+        // Said out loud (the Autel tree's practice): these decide where an edge arrow may be
+        // drawn, and a wrong value hides the arrow rather than misplacing it visibly. Gated by
+        // the change guard above, so it writes once per real layout change, not per frame.
+        AppLog.i(TAG, "chrome insets: top=%.0f left=%.0f right=%.0f".format(top, left, right))
         invalidate()
     }
 
     private var chromeInsetTop = 0f
+    /** The actions column's right edge (step 2, 2026-10-07): an arrow under the column is an
+     *  arrow the pilot never sees. */
+    private var chromeInsetLeft = 0f
     private var chromeInsetRight = 0f
 
     fun start() {
@@ -715,7 +723,7 @@ class ArOverlayView @JvmOverloads constructor(
         // chrome rules. clampOrCentre keeps this from throwing when the insets invert the band.
         val x = clampOrCentre(
             cx + nx.toFloat() * (videoRect.width() / 2f - margin),
-            maxOf(videoRect.left, 0f) + margin,
+            maxOf(videoRect.left, 0f, chromeInsetLeft) + margin,
             minOf(videoRect.right, width.toFloat()) - chromeInsetRight - margin)
         val y = clampOrCentre(
             cy + ny.toFloat() * (videoRect.height() / 2f - margin),

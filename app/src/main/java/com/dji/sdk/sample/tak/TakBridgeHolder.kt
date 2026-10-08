@@ -76,6 +76,7 @@ object TakBridgeHolder {
         val sameFlight = bridge != null
         bridge?.stop(finalizeFlight = false)
         bridge = DroneTakBridge(appContext, droneUid, droneCallsign).also {
+            it.onStillTaken = onStillTaken
             it.videoUrl = videoUrl
             it.cameraPointEnabled = cameraPointEnabled
             it.zoomFactor = zoomFactor
@@ -256,6 +257,10 @@ object TakBridgeHolder {
 
     /** Latest telemetry snapshot for the on-screen HUD, or null if the bridge isn't running. */
     fun hud(): DroneTakBridge.Hud? = bridge?.hud()
+
+    /** See [DroneTakBridge.onStillTaken]. Kept here so it survives a bridge restart. */
+    var onStillTaken: (() -> Unit)? = null
+        set(value) { field = value; bridge?.onStillTaken = value }
 
     /** See [DroneTakBridge.photoInProgress]. False when the bridge isn't running — with no camera
      *  state to consult, a caller waiting on this must proceed rather than block forever. */
