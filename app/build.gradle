@@ -236,14 +236,18 @@ android {
         //      been built without a versionCode bump and its mapping never left a local build
         //      directory; this release gives that fix an actual versionCode and a real
         //      signedReleases entry. Not yet flown.
-        versionCode 133
+        versionCode 138
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.
         //      Short flight tests flown on vc132 of this source; this build is vc133 with the
         //      name moved. ⚠ SIGNED WITH THE NEW AnchorTAK KEY of 2026-10-07: it does not
         //      install over v1.2.x without an uninstall.
-        versionName "2.0.0"
+        // 2.0.1 (2026-10-07): Pre-Flight section 0, Memory Card (card state, free of total,
+        //      Format Card — run for real on the M4TD); UP/DOWN obstacle bands, near only;
+        //      0x1A420BC6 hidden; the limits read-back and the gimbal speeds verified on the
+        //      M4TD. Flown on vc136/vc137 of this source at dusk; this build is the name moved.
+        versionName "2.0.1"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey

@@ -725,6 +725,8 @@ class DroneTakBridge(
         /** What the camera says it is set to save, or null until it has said (step 3). LAST,
          *  so the positional construction in hud() is untouched. */
         val cameraMode: dji.sdk.keyvalue.value.camera.CameraMode? = null,
+        /** KeyIsFlying, for the refusals that must not act on an airborne aircraft. */
+        val isFlying: Boolean = false,
     )
 
     /**
@@ -760,6 +762,7 @@ class DroneTakBridge(
             null,
             lastRthHeight,
             cameraMode = lastCameraMode,
+            isFlying = lastIsFlying,
         )
     }
 

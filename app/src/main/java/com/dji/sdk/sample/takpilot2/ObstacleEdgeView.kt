@@ -30,10 +30,12 @@ import com.dji.sdk.sample.R
  * readout — a captioned chevron pointing up-and-away, mirroring REAR, so the two read as a pair
  * and neither can be confused with the up/down arcs.
  *
- * **Up and down are NOT drawn yet.** Their distances come from a separate feed whose units the
- * SDK does not document (see [com.dji.sdk.sample.tak.DjiObstacleState.logPerception]); they are
- * being logged until a measured hover confirms the scale. An unverified number on a collision
- * display is worse than no number.
+ * **Up and down are bands on the top and bottom edges, NEAR ONLY** (operator, 2026-10-07:
+ * "just show the indicator when it's very near"). The same wash as the sides, so an edge band
+ * always means "the hazard is off that edge" and a chevron always means fore/aft; they start
+ * at [VERT_NEAR_M], not [WARN_M], because the downward sensor reads the ground at every low
+ * hover and the upward one reads a ceiling indoors — a 39 ft start would paint both edges for
+ * most of a flight. The feed is the same millimetre contract as the ring.
  *
  * **Units need no assumption here.** DJI reports metres by API contract, unlike the Autel radar
  * whose centimetre scale had to be inferred and field-validated. Feet for display is one
@@ -129,6 +131,48 @@ class ObstacleEdgeView @JvmOverloads constructor(
         // Forward and rear as a matched chevron pair — see the class note.
         faces[Face.NOSE]?.let { drawChevron(canvas, it, forward = true) }
         faces[Face.TAIL]?.let { drawChevron(canvas, it, forward = false) }
+        faces[Face.UP]?.let { drawVertical(canvas, it, top = true) }
+        faces[Face.DOWN]?.let { drawVertical(canvas, it, top = false) }
+    }
+
+    /**
+     * Up or down, as a wash from the top or bottom edge — the side band turned through 90°,
+     * depth as a fraction of the HEIGHT, starting at [VERT_NEAR_M]. The top band starts at the
+     * TRUE edge and its extent is the chrome inset PLUS the depth (§4.13): the depth alone is
+     * smaller than the toolbar at the far threshold, and a band wholly behind the toolbar would
+     * show nothing. The label clears the chrome. Captioned, because an edge band with no
+     * caption could be read as a side one.
+     */
+    private fun drawVertical(canvas: Canvas, meters: Float, top: Boolean) {
+        if (meters > VERT_NEAR_M) return
+        val t = (1f - (meters / VERT_NEAR_M)).coerceIn(0f, 1f)
+        val danger = meters <= DANGER_M
+        val color = if (danger) COLOR_DANGER else COLOR_WARN
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val depth = h * (MIN_DEPTH_FRAC + (MAX_DEPTH_FRAC - MIN_DEPTH_FRAC) * t * t) +
+            (if (top) topInset else 0f)
+        washPaint.shader = washShader(danger, color).also { sh ->
+            washMatrix.reset()
+            // The unit ramp runs along x; turn it to run along y, from the edge inward.
+            washMatrix.setScale(depth, 1f)
+            if (top) washMatrix.postRotate(90f)
+            else { washMatrix.postRotate(-90f); washMatrix.postTranslate(0f, h) }
+            sh.setLocalMatrix(washMatrix)
+        }
+        washPaint.alpha = (MIN_WASH_ALPHA + (MAX_WASH_ALPHA - MIN_WASH_ALPHA) * t).toInt()
+        val cx = videoRect.centerX()
+        val cy: Float
+        if (top) {
+            canvas.drawRect(0f, 0f, w, depth, washPaint)
+            cy = topInset + dp(VERT_LABEL_INSET)
+        } else {
+            canvas.drawRect(0f, h - depth, w, h, washPaint)
+            cy = h - dp(VERT_LABEL_INSET)
+        }
+        washPaint.shader = null
+        arcPaint.color = color
+        drawLabel(canvas, cx, cy, meters, if (top) "UP " else "DOWN ")
     }
 
     private enum class Side { LEFT, RIGHT }
@@ -289,6 +333,11 @@ class ObstacleEdgeView @JvmOverloads constructor(
          *  the two apps warn at the same distances. */
         private const val WARN_M = 12f
         private const val DANGER_M = 4f
+        /** Up/down start here, not at WARN_M — see the class note. 3 m ≈ 10 ft: a hover at
+         *  head height does not warn, a drift toward a ceiling or the ground does. */
+        private const val VERT_NEAR_M = 3f
+        /** dp from the top/bottom edge to the vertical label's baseline. */
+        private const val VERT_LABEL_INSET = 18f
 
         // Precomputed so onDraw never runs Color.parseColor (a string parse + allocation) per
         // face per frame. Red inside DANGER_M, amber beyond it.

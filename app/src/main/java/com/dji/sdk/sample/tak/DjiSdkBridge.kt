@@ -376,6 +376,7 @@ object DjiSdkBridge {
         // sentences and a "fly with caution" the banner's colour already says. This is the
         // ONE place re-wording is allowed — a verified English line for an exact code.
         "0x1A420BC5" to "Upward light too low — upward obstacle sensing off",
+        "0x1A420BC6" to "Horizontal light too low — horizontal obstacle sensing off",
     )
 
     /** True when the text holds Chinese characters, thus it was never localised. */
@@ -430,6 +431,9 @@ object DjiSdkBridge {
         // faces that ARE sensing. The verified English line in FAULT_ENGLISH stays so that
         // deleting this one line puts it back on the banner, short.
         "1a420bc5",
+        // Its horizontal sibling (operator, 2026-10-07, dusk flight): the same reasoning — the
+        // wash shows the faces that are sensing, and this returned on every evening flight.
+        "1a420bc6",
     )
 
     /** Normalised for lookup: the aircraft reports "0x1AFC0140", the set holds "1afc0140". */

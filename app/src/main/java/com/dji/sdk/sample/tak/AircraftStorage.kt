@@ -48,6 +48,12 @@ object AircraftStorage {
     var sdFreeMb: Int? = null
         private set
 
+    /** The card's capacity, MB, from KeyCameraStorageInfos — this SDK reports it (the Autel's
+     *  does not), so Pre-Flight shows free OF total as MSDKv4 does. Null until read. */
+    @Volatile
+    var sdTotalMb: Int? = null
+        private set
+
     /** True only when the camera will write to a card that is genuinely usable. */
     val willRecord: Boolean
         get() = location == CameraStorageLocation.SDCARD && sdState == CameraSDCardState.NORMAL
@@ -65,7 +71,7 @@ object AircraftStorage {
         // leaving the Pre-Flight storage row stuck on amber "STORAGE: —", which is precisely
         // the "you will get no recording" blind spot this object exists to prevent. Atomic
         // count, `<= 0`, and a one-shot gate so an extra fire can neither skip it nor repeat it.
-        val outstanding = java.util.concurrent.atomic.AtomicInteger(3)
+        val outstanding = java.util.concurrent.atomic.AtomicInteger(4)
         val fired = java.util.concurrent.atomic.AtomicBoolean(false)
         fun step() {
             if (outstanding.decrementAndGet() > 0) return
@@ -94,6 +100,41 @@ object AircraftStorage {
                 override fun onSuccess(value: Int?) { sdFreeMb = value; step() }
                 override fun onFailure(error: IDJIError) { step() }
             })
+
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(CameraKey.KeyCameraStorageInfos, MAIN_CAM),
+            object : CommonCallbacks.CompletionCallbackWithParam<dji.sdk.keyvalue.value.camera.CameraStorageInfos> {
+                override fun onSuccess(value: dji.sdk.keyvalue.value.camera.CameraStorageInfos?) {
+                    val sd = value?.cameraStorageInfoList?.firstOrNull { it.storageType == CameraStorageLocation.SDCARD }
+                    sdTotalMb = sd?.storageCapacity?.takeIf { it > 0 }
+                    step()
+                }
+                override fun onFailure(error: IDJIError) { step() }
+            })
+    }
+
+    /**
+     * Formats the SD card (Pre-Flight section 0, 2026-10-07; the Autel v1.7.3 function through
+     * MSDKv4 v1.2.18's mechanics). The callback carries the CAMERA's answer; the card state,
+     * re-read by the caller's poll, is what says it finished. Run for real on the M4TD on
+     * 2026-10-07 (vc134): a card with ~90 GB free came back 118.9 of 118.9 GB. The refusal
+     * reasons are the caller's, before this is reached.
+     */
+    fun formatSdCard(onResult: (IDJIError?) -> Unit) {
+        AppLog.i(TAG, "format SD card requested")
+        runCatching {
+            KeyManager.getInstance().performAction(
+                KeyTools.createKey(CameraKey.KeyFormatStorage, MAIN_CAM),
+                CameraStorageLocation.SDCARD,
+                object : CommonCallbacks.CompletionCallbackWithParam<dji.sdk.keyvalue.value.common.EmptyMsg> {
+                    override fun onSuccess(t: dji.sdk.keyvalue.value.common.EmptyMsg?) {
+                        AppLog.i(TAG, "format SD card accepted by the camera"); onResult(null)
+                    }
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.w(TAG, "format SD card refused: ${error.description()}"); onResult(error)
+                    }
+                })
+        }.onFailure { AppLog.w(TAG, "format SD card threw: ${it.message}"); onResult(null) }
     }
 
     /**
@@ -105,6 +146,7 @@ object AircraftStorage {
         location = null
         sdState = null
         sdFreeMb = null
+        sdTotalMb = null
     }
 
     /** The pilot-facing line. Short, because it sits on a card row. */

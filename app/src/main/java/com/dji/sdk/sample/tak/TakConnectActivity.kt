@@ -66,6 +66,7 @@ class TakConnectActivity : AppCompatActivity() {
         AppLog.v(TAG, "onCreate")
 
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        setupSdCardSection()
         setupDroneSettings(prefs)
         setupMapDisplay()
         setupDtedSection()
@@ -1297,6 +1298,126 @@ class TakConnectActivity : AppCompatActivity() {
         val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
         paintVideoSummary(p)
         mirrorActiveSlot(p)
+        sdHandler.post(sdTick)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sdHandler.removeCallbacks(sdTick)
+    }
+
+    // ---------------------------------------------------------------- 0. Memory Card
+
+    private val sdHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** Re-reads the card once a second while the screen is up: the state after a format
+     *  arrives this way, and so does a card inserted while the pilot watches. */
+    private val sdTick = object : Runnable {
+        override fun run() {
+            if (DjiSdkBridge.isProductConnected) AircraftStorage.refresh { runOnUiThread { renderSdCard() } }
+            else renderSdCard()
+            sdHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private fun setupSdCardSection() {
+        findViewById<android.widget.Button>(R.id.sdCardFormatButton).setOnClickListener { confirmFormatSdCard() }
+        renderSdCard()
+    }
+
+    /** Human text for the card state. Every value this SDK can report is named: an unnamed
+     *  state would read as a fault when several of them are normal. */
+    private fun sdStateText(s: dji.sdk.keyvalue.value.camera.CameraSDCardState?): String = when (s) {
+        null -> "Not known"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.NORMAL -> "Ready"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.NOT_INSERTED -> "No card"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.FULL -> "Full"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.READ_ONLY -> "Write protected"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.FORMATTING -> "Formatting"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.FORMAT_NEEDED -> "Needs a format"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.FORMAT_RECOMMENDED -> "Format recommended"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.INVALID -> "Invalid card"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.INVALID_FILE_SYSTEM -> "Unknown file system"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.SLOW, dji.sdk.keyvalue.value.camera.CameraSDCardState.WRITING_SLOWLY -> "Slow card"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.BUSY -> "Busy"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.INITIALIZING -> "Starting"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.RECOVERING_FILES -> "Recovering files"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.NO_REMAINING_FILE_INDICES -> "No file numbers left"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.USB_CONNECTED -> "USB connected"
+        dji.sdk.keyvalue.value.camera.CameraSDCardState.UNKNOWN_ERROR -> "Error"
+        else -> s.name.replace('_', ' ')
+    }
+
+    private fun gb(mb: Int): String = if (mb >= 1024) String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0) else "$mb MB"
+
+    /** Free OF total when the SDK has given both — it reports the capacity, the Autel's does not. */
+    private fun sdFreeText(): String {
+        val free = AircraftStorage.sdFreeMb ?: return "Not known"
+        val total = AircraftStorage.sdTotalMb
+        return if (total != null && total > 0) "${gb(free)} of ${gb(total)}" else gb(free)
+    }
+
+    /** Why the Format button is not available, or null when it is. Separate strings: the pilot
+     *  needs to know WHICH reason applies — a disabled button with no reason is the fault the
+     *  exterior-lights button already taught. */
+    private fun formatBlockedReason(): String? {
+        val hud = TakBridgeHolder.hud()
+        val s = AircraftStorage.sdState
+        return when {
+            !DjiSdkBridge.isProductConnected -> "No aircraft"
+            hud?.isFlying == true -> "Not while the aircraft is flying"
+            hud?.isRecording == true -> "Not while recording"
+            s == null -> "Waiting for the camera"
+            s == dji.sdk.keyvalue.value.camera.CameraSDCardState.NOT_INSERTED -> "No card"
+            s == dji.sdk.keyvalue.value.camera.CameraSDCardState.READ_ONLY -> "Card is write protected"
+            s == dji.sdk.keyvalue.value.camera.CameraSDCardState.FORMATTING -> "Formatting"
+            else -> null
+        }
+    }
+
+    private fun renderSdCard() {
+        val stateView = findViewById<TextView>(R.id.sdCardState) ?: return
+        val status = findViewById<TextView>(R.id.sdCardStatus)
+        val button = findViewById<android.widget.Button>(R.id.sdCardFormatButton)
+        stateView.text = sdStateText(AircraftStorage.sdState)
+        findViewById<TextView>(R.id.sdCardFree).text = sdFreeText()
+        val blocked = formatBlockedReason()
+        button.isEnabled = blocked == null
+        button.alpha = if (blocked == null) 1.0f else 0.45f
+        val text = when {
+            blocked != null -> blocked
+            AircraftStorage.recordingToInternal -> "The camera is recording to internal storage, not this card."
+            else -> ""
+        }
+        status.text = text
+        status.visibility = if (text.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+    }
+
+    /** ⚠ IRREVERSIBLE, AND ON A PUBLIC-SAFETY AIRFRAME THE FILES MAY BE EVIDENCE. The free space is
+     *  quoted so the pilot can see whether the card holds anything; the button says what it does. */
+    private fun confirmFormatSdCard() {
+        android.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+            .setTitle("Format the memory card?")
+            .setMessage("This erases everything on the SD card in the aircraft. Photographs and " +
+                "video cannot be recovered.\n\nFree space now: ${sdFreeText()}")
+            .setPositiveButton("Format") { _, _ -> doFormatSdCard() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun doFormatSdCard() {
+        val button = findViewById<android.widget.Button>(R.id.sdCardFormatButton)
+        val status = findViewById<TextView>(R.id.sdCardStatus)
+        button.isEnabled = false; button.alpha = 0.45f
+        status.text = "Formatting…"; status.visibility = android.view.View.VISIBLE
+        AircraftStorage.formatSdCard { error ->
+            runOnUiThread {
+                // NOT "done": the camera has taken the request; the CARD STATE, re-read by the
+                // poll, is what says it finished.
+                status.text = if (error == null) "The camera accepted the request."
+                              else "The aircraft did not format the card."
+                status.visibility = android.view.View.VISIBLE
+            }
+        }
     }
 
     private fun slotName(prefs: android.content.SharedPreferences, slot: Int): String =

@@ -139,9 +139,9 @@ v4 tree and the V1 crib sheet are the places to look.
 ## Verification
 
 - The build: `./gradlew :app:assembleRelease`. Gradle 8.12, AGP 8.7.0. `versionName` is
-  `2.0.0`. The last signed release was **v2.0.0, versionCode 133, on 2026-10-07** (tag
-  `v2.0.0`), signed with the **NEW** AnchorTAK key of that day — the old key was lost; see
-  the release notes. The current number is in `app/build.gradle`, which carries a line per
+  `2.0.1`. The last signed release was **v2.0.1, versionCode 138, on 2026-10-07** (tag
+  `v2.0.1`), signed with the **NEW** AnchorTAK key of that day — the old key was lost; see
+  the v2.0.0 release notes. The current number is in `app/build.gradle`, which carries a line per
   bump saying what each one was for. Installs go through `tools/install.sh`.
   saying what each one was for. Signing comes from `app/keystore.properties`, the same
   AnchorTAK key the MSDKv4 sibling uses; it is gitignored and must stay that way.

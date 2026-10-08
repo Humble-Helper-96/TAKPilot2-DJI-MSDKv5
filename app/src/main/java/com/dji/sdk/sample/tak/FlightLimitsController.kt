@@ -39,17 +39,11 @@ import dji.v5.manager.KeyManager
  * Rule carried from v4 (and the 2026-08-02 crash): flight-controller writes happen at
  * connect or on an explicit Apply, never on a timer.
  *
- * ⚠ **THE APPLY AND READ-BACK PATH IS NOT VERIFIED ON HARDWARE.** The read-back completeness,
- * the refusal tracking and the barrier below were ported from the MSDKv4 sibling on
- * 2026-08-13, where they are flight-verified. Here they compile and no aircraft has run them.
- * Bench-check all of it on the M4T before any release:
- *   - each of the six getters returns a value, and the units are metres (the screen converts)
- *   - a refused write appears in the Apply summary and is NOT counted as applied
- *   - the read-back barrier releases, so the Apply button re-enables
- *   - the watchdog path works when a getter never answers
- * The MSDKv5 key set is assumed to mirror the v4 getters: KeyHeightLimit for max altitude,
- * KeyDistanceLimit for radius, KeyGoHomeHeight for RTH. If a key returns null on the M4T,
- * the key is wrong, not the aircraft — check MSDKv5-SDK-Surface.md before changing the logic.
+ * The apply and read-back path was ported from the MSDKv4 sibling on 2026-08-13 and
+ * **verified on the Matrice 4TD on 2026-10-07** (operator): a limit changed 150 → 250 applied
+ * and read back. The key set mirrors the v4 getters: KeyHeightLimit for max altitude,
+ * KeyDistanceLimit for radius, KeyGoHomeHeight for RTH. If a key returns null, the key is
+ * wrong, not the aircraft — check MSDKv5-SDK-Surface.md before changing the logic.
  */
 object FlightLimitsController {
     private const val TAG = "TP2Limits"

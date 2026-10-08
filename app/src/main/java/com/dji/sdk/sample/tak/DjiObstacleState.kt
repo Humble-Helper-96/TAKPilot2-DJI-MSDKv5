@@ -40,7 +40,7 @@ object DjiObstacleState {
     private const val RANGE_TAG = "TP2ObstacleRange"
 
     /** Horizontal quadrants relative to the airframe. Replaces v4's VisionSensorPosition. */
-    enum class Face { NOSE, RIGHT, TAIL, LEFT }
+    enum class Face { NOSE, RIGHT, TAIL, LEFT, UP, DOWN }
 
     /** Per-face nearest obstacle in METRES. Absent = that face has not reported, which is
      *  not the same as clear. */
@@ -123,14 +123,17 @@ object DjiObstacleState {
             quadrantMin(0.50)?.let { next[Face.TAIL] = it }
             quadrantMin(0.75)?.let { next[Face.LEFT] = it }
         }
-        if (ring.isNotEmpty() || data.upwardObstacleDistance != null) sensingAircraft = true
+        // Up and down, the same millimetre contract as the ring (operator 2026-10-07: show them,
+        // near only — the view's threshold decides). DOWN is the GROUND whenever the aircraft is
+        // low, and the ground is not an obstacle while landing or sitting on it: it goes in
+        // only when the aircraft says it is flying, and the view's near threshold keeps a
+        // normal hover above it. A reading of 0 means "no reading", as in the ring.
+        mmToMeters(data.upwardObstacleDistance)?.let { next[Face.UP] = it }
+        if (TakBridgeHolder.hud()?.isFlying == true)
+            mmToMeters(data.downwardObstacleDistance)?.let { next[Face.DOWN] = it }
+        if (ring.isNotEmpty() || data.upwardObstacleDistance > 0) sensingAircraft = true
         faces = next
         next.entries.minByOrNull { it.value }?.let { logNearIfNotable(it.key, it.value) }
-        // Up/down are logged only, not drawn — same policy as v4 (their calibration against
-        // a known distance has not been done on this airframe).
-        mmToMeters(data.upwardObstacleDistance)?.let { up ->
-            if (up <= LOG_NEAR_M) AppLog.i(RANGE_TAG, "obstacle UP ${"%.1f".format(up)}m")
-        }
         runCatching { onChanged?.invoke() }
     }
 

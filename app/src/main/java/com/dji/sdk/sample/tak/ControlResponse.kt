@@ -42,7 +42,8 @@ object ControlResponse {
     private const val PREFS = "takpilot2_tak"
     private const val KEY_MODE = "control_response_precision"
 
-    /** Gimbal pitch speed for each mode. Mini 2 scale (1..100) — unverified on the M4T. */
+    /** Gimbal pitch speed for each mode, 1..100. Both felt right on the Matrice 4TD
+     *  (operator, 2026-10-07). */
     private const val NORMAL_PITCH_SPEED = 35
     private const val PRECISION_PITCH_SPEED = 15
 
