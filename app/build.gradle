@@ -276,12 +276,16 @@ android {
         //      home screen and Pre-Flight. (b) The warning banner carried the aircraft's whole
         //      explanation after the fault name; it shows the title only now, and the full
         //      title -> description stays in the log.
+        // 153: the home screen gains the two status rows Autel has and this tree did not —
+        //      APP PERMISSIONS and MEDIA SERVER — and the network row takes Autel's wording
+        //      ("WIFI:", "NO INTERNET", "NOT CONNECTED"). Four rows now, in Autel's order.
+        //      The internet test itself was already here; only the label differed.
         // 149: ⚠ AN EMERGENCY BROADCAST WITH NO STREAM ADVERTISED NOTHING WHILE THE NOTICE
         //      SAID "video on all channels" (operator, caught on the controller). Starting one
         //      now starts the stream, a refused screen-capture consent takes the override back
         //      down with it, and the notice reads NO VIDEO STREAM in the caution colour
         //      whenever a broadcast is running with nothing going out.
-        versionCode 152
+        versionCode 153
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.

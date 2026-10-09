@@ -654,3 +654,31 @@ vanish. ⚠ Nothing is lost: the full `title -> description` for every fault is 
 log line. This is the THIRD shortening of this banner — the duplicate-sentence fix (2026-08-19)
 and the worst-plus-a-count collapse both left the advice on screen, which is what was actually
 being complained about each time.
+
+**2026-10-09: the home screen's four status rows, to Autel parity** (operator). This tree had
+two where Autel has four. Now: **APP PERMISSIONS, WIFI, TAK, MEDIA SERVER**, in that order,
+with Autel's wording.
+
+- **MEDIA SERVER was genuinely missing.** `MediaServerProbe` is ported byte-identical below the
+  package line: an RTSP `OPTIONS` to the bare root on a background thread, cached for 10 s.
+  ⚠ Green means the server is UP AND SPEAKING RTSP, never that it will take the stream —
+  credentials, path permission and codec are only answered during a real publish, so the LIVE
+  pill stays the authority. It probes RTSP even in SRT mode, because SRT is UDP with nothing to
+  connect to and the server serves RTSP to the TAK clients regardless.
+- **APP PERMISSIONS was missing too**, and was not asked for. Worth having: the Autel incident
+  behind it is a controller that flew a 12.5-hour mission with location denied, where the
+  aircraft flew, the video streamed, the markers worked, and only the PILOT was missing —
+  published at 0,0 for the whole mission with one unread log line as the only sign. Tapping the
+  row raises the dialog, because a status a pilot cannot clear is half a fix.
+  ⚠ **Its answer comes from `DjiSdkBridge`, NOT from Autel's `AppPermissions`, deliberately.**
+  This tree already owns a gate that validates its required set against what the manifest
+  declares — the fix for the VIBRATE permission that once stopped the SDK registering. Two
+  notions of "permissions" in one app would be worse than the duplication avoided.
+- ⚠ **THE INTERNET TEST WAS ALREADY HERE AND ONLY THE LABEL DIFFERED.** `NetworkStatus` exists
+  in both trees, both check `NET_CAPABILITY_VALIDATED`, both have CONNECTED/NO_INTERNET/OFF.
+  This tree simply said "Network:" where Autel says "WIFI:" — the same status in two languages,
+  which is what §8's MUST exists to stop, and it read as a missing feature. The wording is
+  Autel's now. **Check the words before concluding a function is absent.**
+
+Sizes stay PER-DEVICE — 8dp dots and 11sp against Autel's 10dp/13sp, because this panel is
+768dp wide against that controller's 1024dp. Only the WORDS are shared.

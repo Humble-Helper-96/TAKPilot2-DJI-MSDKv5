@@ -21,6 +21,8 @@ import com.dji.sdk.sample.tak.DjiObstacleState
 import com.dji.sdk.sample.tak.ControlResponse
 import com.dji.sdk.sample.tak.FlightLimitsController
 import com.dji.sdk.sample.tak.FlightPathLogger
+import com.dji.sdk.sample.tak.MediaServerProbe
+import com.dji.sdk.sample.tak.VideoTransport
 import com.dji.sdk.sample.tak.TakAutoConnect
 import com.dji.sdk.sample.tak.TakBridgeHolder
 import com.dji.sdk.sample.tak.TakConnectActivity
@@ -78,6 +80,11 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     private lateinit var takDot: android.view.View
     private lateinit var network: TextView
     private lateinit var networkDot: android.view.View
+    private lateinit var permissionsRow: android.view.View
+    private lateinit var permissionsStatus: TextView
+    private lateinit var permissionsDot: android.view.View
+    private lateinit var mediaStatus: TextView
+    private lateinit var mediaDot: android.view.View
 
     private val refresh = object : Runnable {
         override fun run() {
@@ -107,6 +114,19 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         takDot = findViewById(R.id.homeTakDot)
         network = findViewById(R.id.homeNetwork)
         networkDot = findViewById(R.id.homeNetworkDot)
+        permissionsRow = findViewById(R.id.homePermissionsRow)
+        permissionsStatus = findViewById(R.id.homePermissionsStatus)
+        permissionsDot = findViewById(R.id.homePermissionsDot)
+        mediaStatus = findViewById(R.id.homeMediaStatus)
+        mediaDot = findViewById(R.id.homeMediaDot)
+        // ⚠ A STATUS LINE A PILOT CANNOT CLEAR IS ONLY HALF A FIX (the Autel sibling's note).
+        // Tapping the row raises the permission dialog for whatever is still missing.
+        permissionsRow.setOnClickListener {
+            if (DjiSdkBridge.hasMissingPermissions(this)) {
+                AppLog.i(TAG, "tap: permissions row — requesting what is missing")
+                DjiSdkBridge.requestMissingPermissions(this)
+            }
+        }
 
         // Fixed at build time, not runtime state — set once, never touched in updateStatus().
         // BuildConfig.VERSION_NAME rather than the PackageManager: same string, no IPC, and it
@@ -262,6 +282,8 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
             ?: takDot.background?.setTint(color)
 
         updateNetwork()
+        updatePermissions()
+        updateMediaServer()
     }
 
     /**
@@ -269,14 +291,88 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
      * network that goes nowhere reads amber, which is the case that otherwise looks like a
      * broken TAK server. See [NetworkStatus].
      */
+    /**
+     * App permissions — two states, never three. A permission is granted or it is not.
+     *
+     * ⚠ The answer comes from [DjiSdkBridge], which validates its required set against what the
+     * manifest actually declares. The Autel sibling has its own `AppPermissions` for this and
+     * it was deliberately NOT ported: this tree already owns a gate, and that gate carries the
+     * fix for the VIBRATE permission that once stopped the SDK registering because it was
+     * requested and never declared. Two notions of "permissions" in one app would be worse
+     * than the duplication it saves.
+     */
+    private fun updatePermissions() {
+        val ok = !DjiSdkBridge.hasMissingPermissions(this)
+        permissionsStatus.text =
+            if (ok) "APP PERMISSIONS: Granted" else "APP PERMISSIONS: Denied"
+        val color = ContextCompat.getColor(applicationContext,
+            if (ok) R.color.tp_state_go else R.color.tp_state_danger)
+        permissionsStatus.setTextColor(color)
+        (permissionsDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(color)
+            ?: permissionsDot.background?.setTint(color)
+    }
+
+    /** The probe runs off the UI thread; these hold its last answer between refreshes. */
+    @Volatile private var mediaProbe: MediaServerProbe.Result? = null
+    @Volatile private var mediaProbeAtMs = 0L
+    @Volatile private var mediaProbeRunning = false
+
+    /**
+     * Draws the media-server line, and refreshes the probe behind it when it is stale.
+     *
+     * ⚠ **GREEN MEANS THE SERVER IS UP, NOT THAT IT WILL TAKE THE STREAM.** Whether this
+     * publisher is accepted depends on credentials, on whether the path may be published to,
+     * and on the codec — all answered during a real publish. The LIVE pill on the flight screen
+     * stays the authority on that. See [MediaServerProbe].
+     */
+    private fun updateMediaServer() {
+        val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        val host = p.getString("video_host", "") ?: ""
+        val port = p.getInt("video_rtsp_port", VideoTransport.RTSP.defaultPort)
+
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!mediaProbeRunning && now - mediaProbeAtMs > MEDIA_PROBE_PERIOD_MS) {
+            mediaProbeRunning = true
+            Thread {
+                val r = MediaServerProbe.probe(host, port)
+                mediaProbe = r
+                mediaProbeAtMs = android.os.SystemClock.elapsedRealtime()
+                mediaProbeRunning = false
+                runOnUiThread { if (!isFinishing) updateMediaServer() }
+            }.apply { isDaemon = true; name = "media-probe" }.start()
+        }
+
+        // Amber until the first answer — unknown is its own state, and a server that has not
+        // been asked yet must not be drawn as either up or down.
+        val res = mediaProbe
+        mediaStatus.text = when (res) {
+            MediaServerProbe.Result.REACHABLE -> "MEDIA SERVER: Reachable"
+            MediaServerProbe.Result.UNREACHABLE -> "MEDIA SERVER: Not reachable"
+            MediaServerProbe.Result.NOT_CONFIGURED -> "MEDIA SERVER: Not set"
+            null -> "MEDIA SERVER: —"
+        }
+        val color = ContextCompat.getColor(applicationContext, when (res) {
+            MediaServerProbe.Result.REACHABLE -> R.color.tp_state_go
+            MediaServerProbe.Result.UNREACHABLE -> R.color.tp_state_danger
+            else -> R.color.tp_state_unknown
+        })
+        mediaStatus.setTextColor(color)
+        (mediaDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(color)
+            ?: mediaDot.background?.setTint(color)
+    }
+
     private fun updateNetwork() {
         val net = NetworkStatus.read(this)
         val bars = net.bars()
         val suffix = if (bars.isEmpty()) "" else "  $bars"
+        // ⚠ THE WORDS ARE THE AUTEL SIBLING'S, DELIBERATELY (operator, 2026-10-09). This row
+        // said "Network:" and the same element on the other controller said "WIFI:" — the same
+        // status in two languages, which is exactly what §8's MUST exists to stop. The SIZES
+        // stay per-device; only the wording is shared.
         network.text = when (net.state) {
-            NetworkStatus.State.CONNECTED -> "Network: ${net.label}$suffix"
-            NetworkStatus.State.NO_INTERNET -> "Network: ${net.label} — no internet$suffix"
-            NetworkStatus.State.OFF -> "Network: none"
+            NetworkStatus.State.CONNECTED -> "WIFI: ${net.label}$suffix"
+            NetworkStatus.State.NO_INTERNET -> "WIFI: ${net.label} — NO INTERNET$suffix"
+            NetworkStatus.State.OFF -> "WIFI: NOT CONNECTED"
         }
         val color = ContextCompat.getColor(
             applicationContext,
@@ -295,6 +391,11 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** How often the media-server probe is allowed to run again. Long enough that the
+         *  home screen's refresh tick does not hammer the server, short enough that a pilot
+         *  who fixes the network sees it go green without leaving the screen. */
+        private const val MEDIA_PROBE_PERIOD_MS = 10_000L
+
         private const val TAG = "TAKPilot2GoHome"
 
         /**

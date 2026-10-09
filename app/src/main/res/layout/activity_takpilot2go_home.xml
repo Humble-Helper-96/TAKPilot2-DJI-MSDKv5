@@ -203,9 +203,78 @@
             android:textSize="12sp"
             android:layout_marginTop="6dp" />
 
-        <!-- TAK connection status — moved here from under the app name. This card is what a
-             pilot taps to fly, so the one thing that decides whether the team will see them
-             belongs where they are about to act on it, not on the screen's other side. -->
+        <!-- FOUR STATUS ROWS, IN THE AUTEL SIBLING'S ORDER AND WITH ITS WORDING (operator,
+             2026-10-09): permissions, wifi, TAK, media server. This tree had only two of them.
+             The dot is 8dp and the text 11sp where Autel uses 10dp/13sp — PER-DEVICE, this
+             screen is 768dp wide against that controller's 1024dp. The WORDS are the shared
+             thing and they now match. -->
+
+        <!-- ⚠ A CONTROLLER FLEW A 12.5-HOUR MISSION WITH LOCATION DENIED AND NOBODY KNEW
+             (operator, 2026-09-14, on the Autel sibling). Android denies silently at setup.
+             The aircraft flew, the video streamed and the markers worked — only the PILOT was
+             missing, published at 0,0 in the "position not known" form for the whole mission,
+             and the single sign was a log line nobody was reading.
+
+             Two states, not three. A permission is granted or it is not; there is nothing to
+             wait for and nothing to be unknown about, so §4.6's amber has no place here.
+
+             ⚠ THE SOURCE IS THIS TREE'S OWN GATE, NOT AUTEL'S AppPermissions. DjiSdkBridge
+             already owns a manifest-VALIDATED required set — it drops anything requested but
+             undeclared, which is the fix for the VIBRATE gate that once stopped the SDK
+             registering. Two competing notions of "permissions" in one app would be worse
+             than the duplication it saves. -->
+        <LinearLayout
+            android:id="@+id/homePermissionsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginTop="10dp">
+            <View
+                android:id="@+id/homePermissionsDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homePermissionsStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="APP PERMISSIONS: —"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Wifi state, directly above the TAK line it explains. The TAK dot alone cannot
+             separate "server down" from "this controller has no network", and that ambiguity
+             is what had pilots chasing enrollment failures on the sibling. Three states, same
+             colour rule as everything else: green = internet CONFIRMED (a validated network,
+             not merely an association), amber = wifi but no internet, red = no wifi. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+            <View
+                android:id="@+id/homeNetworkDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homeNetwork"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WIFI: —"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- TAK connection status. This card is what a pilot taps to fly, so the one thing that
+             decides whether the team will see them belongs where they are about to act on it. -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -227,10 +296,17 @@
                 android:textSize="11sp" />
         </LinearLayout>
 
-        <!-- Network state, directly under the TAK line it explains. The TAK dot alone cannot
-             separate "server down" from "this phone has no network", and that ambiguity is what
-             had pilots chasing enrollment failures on the sibling. Green means reachability was
-             CONFIRMED, not merely that something is attached. -->
+        <!-- Media server reachability, last of the four (operator, 2026-09-14).
+
+             ⚠ GREEN MEANS THE SERVER IS UP AND SPEAKING RTSP. IT DOES NOT MEAN IT WILL TAKE THE
+             STREAM. Credentials, whether the path may be published to, and whether the server
+             likes the codec are all answered during a real publish and not before — so the LIVE
+             pill on the flight screen stays the only authority on that. See MediaServerProbe.
+
+             It probes the RTSP port even when the pilot has selected SRT, because SRT is UDP and
+             has nothing to connect to, while the server always serves RTSP to the TAK clients
+             regardless. It therefore tests THE SERVER, which is the question, and not the SRT
+             ingest. -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -238,16 +314,16 @@
             android:gravity="center_vertical"
             android:layout_marginTop="4dp">
             <View
-                android:id="@+id/homeNetworkDot"
+                android:id="@+id/homeMediaDot"
                 android:layout_width="8dp"
                 android:layout_height="8dp"
                 android:layout_marginEnd="6dp"
                 android:background="@drawable/tak_status_dot" />
             <TextView
-                android:id="@+id/homeNetwork"
+                android:id="@+id/homeMediaStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Network: —"
+                android:text="MEDIA SERVER: —"
                 android:textColor="@color/tp_text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>
