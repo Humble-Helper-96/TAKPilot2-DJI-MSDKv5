@@ -316,8 +316,25 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             emergencyBroadcastBanner.visibility = View.GONE
             return
         }
-        emergencyBroadcastBanner.text =
+        // ⚠ **THE NOTICE MUST NOT CLAIM VIDEO THAT IS NOT GOING OUT** (operator, 2026-10-09).
+        // The override only decides which CONNECTIONS may carry the video url; it cannot
+        // conjure a url. With nothing streaming, `videoUrl` is null, `TakManager.videoFor`
+        // returns null on every path, and not one channel gets a link — while the notice said
+        // "video on all channels" to a pilot who had just pressed the button in an incident.
+        // That is a false affirmative at the worst possible moment, and it is why starting a
+        // broadcast now starts the stream too (see wireEmergencyBroadcastRow).
+        //
+        // This line is the BACKSTOP for every case that coupling cannot cover: the pilot stops
+        // LIVE while a broadcast runs, the media server refuses the connection, the link drops.
+        // It is read on the HUD tick, so it follows the stream rather than the button press.
+        val streaming = VideoStreamerHolder.isRunning
+        emergencyBroadcastBanner.text = if (streaming) {
             "EMERGENCY BROADCAST — video on all channels — ${remainingText(expiresAtEpochMs)}"
+        } else {
+            "EMERGENCY BROADCAST — NO VIDEO STREAM — ${remainingText(expiresAtEpochMs)}"
+        }
+        emergencyBroadcastBanner.setTextColor(ContextCompat.getColor(applicationContext,
+            if (streaming) R.color.tp_state_emergency else R.color.tp_state_caution))
         emergencyBroadcastBanner.visibility = View.VISIBLE
     }
 
@@ -345,7 +362,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             "Emergency Broadcast is running — ${remainingText(tm.emergencyBroadcastExpiresAtEpochMs())} left."
         } else {
             "Emergency Broadcast: every channel gets the aircraft's video link for 15 minutes. " +
-                "The aircraft marker carries it, so the aircraft must be reporting its position."
+                "It starts the video stream if it is not running. The aircraft marker carries " +
+                "the link, so the aircraft must be reporting its position."
         }
         start.text = if (active) "Renew for 15 min" else "Start Emergency Broadcast (15 min)"
         caption.visibility = View.VISIBLE
@@ -353,6 +371,20 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         stop.visibility = if (active) View.VISIBLE else View.GONE
         start.setOnClickListener {
             AppLog.i(TAG, "LIVE menu: Emergency Broadcast ${if (active) "renew" else "start"}")
+            // ⚠ A BROADCAST WITHOUT A STREAM ADVERTISES NOTHING (operator, 2026-10-09). The
+            // override decides which connections may carry the video url; with nothing
+            // streaming there is no url to carry, so every channel got exactly what it had
+            // before and the notice said otherwise. Starting one therefore starts the stream.
+            // A renew does not — a running broadcast already has whatever stream it has, and
+            // re-requesting a projection mid-incident would put a system dialog over the
+            // flight screen for no gain.
+            if (!active && !startStreamForEmergencyBroadcast()) {
+                // Refused, and the pilot has been told why. The override does NOT start: a
+                // 15-minute authorisation that can never advertise anything is the fault this
+                // whole change exists to remove.
+                dialog.dismiss()
+                return@setOnClickListener
+            }
             tm.startOrRenewEmergencyBroadcast()
             dialog.dismiss()
         }
@@ -1033,9 +1065,22 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                 com.dji.sdk.sample.tak.ScreenCaptureService.start(this, resultCode, data)
             } else {
                 AppLog.w(TAG, "screen-capture permission DENIED (resultCode=$resultCode) — no stream started")
-                Toast.makeText(this, "Screen capture permission denied — no stream started",
-                    Toast.LENGTH_LONG).show()
+                // ⚠ A DENIAL TAKES THE OVERRIDE DOWN WITH IT. Without this the pilot refuses
+                // the system dialog and is left with a 15-minute notice promising video on
+                // every channel and no stream to put on them — the state this change exists to
+                // make impossible.
+                if (projectionRequestedForEmergency &&
+                    TakManager.getInstance().isEmergencyBroadcastActive
+                ) {
+                    AppLog.w(TAG, "Emergency Broadcast cancelled — screen capture was refused")
+                    TakManager.getInstance().cancelEmergencyBroadcast()
+                    showNotice("Screen capture refused — Emergency Broadcast stopped", refused = true)
+                } else {
+                    Toast.makeText(this, "Screen capture permission denied — no stream started",
+                        Toast.LENGTH_LONG).show()
+                }
             }
+            projectionRequestedForEmergency = false
         }
     }
 
@@ -4005,6 +4050,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // notice's mm:ss moving while it is active, on the same tick as everything else on
         // this screen.
         if (TakManager.getInstance().isEmergencyBroadcastActive) {
+            // Repaints the whole line, not just the clock: the NO VIDEO STREAM state above is
+            // decided here, on the tick, so the notice follows the stream and not the button.
             paintEmergencyBroadcast(true, TakManager.getInstance().emergencyBroadcastExpiresAtEpochMs())
         }
 
@@ -4517,6 +4564,49 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
      * the reason they are not cut further live in dimens.xml — the row stays a touch target
      * over live video.
      */
+
+    /**
+     * True while a screen-capture consent request was raised BY an Emergency Broadcast rather
+     * than by the LIVE pill. A denial on that path has to take the override back down with it —
+     * see [onActivityResult].
+     */
+    private var projectionRequestedForEmergency = false
+
+    /**
+     * Makes sure a stream is running, or on its way, before an Emergency Broadcast starts
+     * (operator, 2026-10-09).
+     *
+     * @return true if the broadcast may start. False means it must NOT: the pilot has been told
+     * why, and starting a 15-minute authorisation that can never advertise anything is exactly
+     * the false affirmative this exists to prevent.
+     */
+    private fun startStreamForEmergencyBroadcast(): Boolean {
+        if (VideoStreamerHolder.isActive) return true   // already streaming, or connecting
+
+        // The same guard the LIVE pill applies, and the same words. A broadcast cannot fix an
+        // unconfigured video server, so it must not pretend to.
+        val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        if ((p.getString("video_host", "") ?: "").isEmpty() ||
+            (p.getString("video_streamid", "") ?: "").isEmpty()
+        ) {
+            AppLog.w(TAG, "Emergency Broadcast refused — video server not configured")
+            showNotice("Set up the video server in Pre-Flight Setup first", refused = true)
+            return false
+        }
+
+        // ⚠ THE OVERRIDE STARTS NOW AND THE STREAM FOLLOWS, deliberately. The pilot pressed a
+        // button in an incident; the override is an AUTHORISATION and does not have to wait on
+        // a socket. videoFor reads the url at every send, so the link starts going out the
+        // moment the stream has one — and until then the notice says NO VIDEO STREAM rather
+        // than claiming otherwise (see paintEmergencyBroadcast).
+        AppLog.i(TAG, "Emergency Broadcast — starting the screen stream with it")
+        projectionRequestedForEmergency = true
+        val mpm = getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE)
+            as android.media.projection.MediaProjectionManager
+        startActivityForResult(mpm.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+        return true
+    }
+
     private fun compactChannelRow(box: android.widget.CheckBox) {
         box.textSize = resources.getDimension(R.dimen.chan_dialog_row_text_size) /
             resources.displayMetrics.scaledDensity

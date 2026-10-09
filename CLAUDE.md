@@ -544,3 +544,29 @@ operator made it writable in the same session. Caught before it reached the cont
 guide also now describes the Configure TAK Server button, because the screen it described had
 moved. **Re-read the Field Guide's entry for anything you change in the same sitting** — it is
 pilot-facing text in Kotlin, and nothing compiles against whether it is true.
+
+**2026-10-09: an Emergency Broadcast with no stream advertised NOTHING** (operator, caught on
+the controller). The override only decides which CONNECTIONS may carry the video url — it
+cannot conjure one. With nothing streaming, `videoUrl` is null, `videoFor` returns null on
+every path, and not one channel got a link, while the notice said "video on all channels" to a
+pilot who had just pressed the button in an incident. A false affirmative at the worst possible
+moment. Three parts to the fix:
+
+- **Starting a broadcast starts the stream.** Not a renew — a running broadcast already has
+  whatever stream it has, and re-requesting a projection mid-incident would put a system dialog
+  over the flight screen for no gain.
+- **A refused screen-capture consent takes the override down with it**, so the pilot cannot be
+  left with a 15-minute notice promising video and no stream to put on it.
+- ⚠ **The notice tells the truth, and this is the part that matters.** While a broadcast runs
+  with nothing going out it reads `EMERGENCY BROADCAST — NO VIDEO STREAM — mm:ss` in the caution
+  colour. It is read on the HUD tick, so it follows the STREAM and not the button press — the
+  backstop for every case the start-time coupling cannot cover: the pilot stops LIVE mid
+  broadcast, the media server refuses, the link drops.
+
+⚠ **§4.8 FIXES ONE WORDING FOR THIS NOTICE AND THERE ARE NOW TWO.** The second state is not in
+the shared specification and is OWED to it, with the operator's agreement, along with the
+Autel port. Recorded here so it is not mistaken for a decision.
+
+**Flight record, verified from a real flight (2026-10-09):** `flight-2026-10-09-09-29-48-events.log`
+holds `active at takeoff (expires …)`, `reset-on-reconnect` and `started (expires …)` — three of
+the five line types, in the pinned format, from the aircraft actually flying.
