@@ -316,7 +316,7 @@ android {
         //      ⚠ NOT FLOWN, and NOT YET PLAYED BY A REAL ATAK against this build. The
         //      formula is pinned to the reference document and the XML to tests; the
         //      end-to-end claim is still the document's, not this application's.
-        versionCode 160
+        versionCode 161
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.
