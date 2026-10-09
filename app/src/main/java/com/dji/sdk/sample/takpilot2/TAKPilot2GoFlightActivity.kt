@@ -4582,32 +4582,64 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         reload()
 
         // The ELEVATED account's channels under the Standard's (operator, 2026-10-08): the whole
-        // scope of this aircraft, in flight, on one screen. Read-only rows — see the layout note.
+        // scope of this aircraft, in flight, on one screen. WRITABLE since 2026-10-09, the same
+        // as the Standard rows above and behind the same lock — see
+        // TakConnectActivity.renderVideoChannels for why a tick here is also the only possible
+        // "ignore incoming" control, and for what it costs the fleet.
         // Read once at open: the server's t-x-g-c change notice arrives on the Standard
-        // connection only, and the Elevated set is the administrator's to change.
+        // connection only.
         val elevatedLabel = view.findViewById<TextView>(R.id.takChanElevatedLabel)
         val elevatedList = view.findViewById<android.widget.LinearLayout>(R.id.takChanElevatedList)
+        var elevated: List<com.taklite.client.tak.TakMissionClient.Channel> = emptyList()
+        var paintingElevated = false
+
+        fun paintElevated(chans: List<com.taklite.client.tak.TakMissionClient.Channel>) {
+            elevated = chans
+            paintingElevated = true
+            elevatedList.removeAllViews()
+            if (chans.isEmpty()) {
+                elevatedList.addView(TextView(themed).apply {
+                    text = "The server returned no channels for the Elevated account."
+                    setTextColor(androidx.core.content.ContextCompat.getColor(
+                        applicationContext, R.color.tp_text_secondary))
+                })
+            } else for (ch in chans) {
+                elevatedList.addView(android.widget.CheckBox(themed).apply {
+                    text = com.dji.sdk.sample.tak.TakMissionManager.channelLabel(ch)
+                    // ⚠ LOCKED IS NOT DISABLED — the same rule as every other channel row.
+                    setTextColor(androidx.core.content.ContextCompat.getColor(
+                        applicationContext,
+                        if (locked) R.color.tp_text_secondary else R.color.tp_text_primary))
+                    isChecked = ch.active
+                    isClickable = !locked
+                    isFocusable = !locked
+                    buttonTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(
+                            applicationContext, R.color.tp_accent))
+                    setOnCheckedChangeListener { _, checked ->
+                        if (paintingElevated) return@setOnCheckedChangeListener
+                        ch.active = checked
+                        val bits = elevated.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
+                        status.text = "Sending ${bits.size} Elevated channel(s)…"
+                        com.dji.sdk.sample.tak.TakMissionManager
+                            .setElevatedActiveChannels(this@TAKPilot2GoFlightActivity, bits) { ok ->
+                                status.text = if (ok) {
+                                    "The server has ${bits.size} Elevated channel(s). " +
+                                        "This applies to every controller on that account."
+                                } else {
+                                    "The server refused the Elevated change."
+                                }
+                            }
+                    }
+                })
+            }
+            paintingElevated = false
+        }
+
         if (TakManager.getInstance().isVideoChannelConfigured) {
             com.dji.sdk.sample.tak.TakMissionManager.listElevatedChannels(this) { chans ->
                 if (chans == null) return@listElevatedChannels
-                elevatedList.removeAllViews()
-                if (chans.isEmpty()) {
-                    elevatedList.addView(TextView(themed).apply {
-                        text = "The server returned no channels for the Elevated account."
-                        setTextColor(androidx.core.content.ContextCompat.getColor(
-                            applicationContext, R.color.tp_text_secondary))
-                    })
-                } else for (ch in chans) {
-                    elevatedList.addView(TextView(themed).apply {
-                        text = com.dji.sdk.sample.tak.TakMissionManager.channelLabel(ch) +
-                            if (ch.active) "" else " (off)"
-                        setTextColor(androidx.core.content.ContextCompat.getColor(
-                            applicationContext, R.color.tp_text_primary))
-                        textSize = 15f
-                        val pad = (6 * resources.displayMetrics.density).toInt()
-                        setPadding(0, pad, 0, pad)
-                    })
-                }
+                paintElevated(chans)
                 elevatedLabel.visibility = View.VISIBLE
                 elevatedList.visibility = View.VISIBLE
             }

@@ -15,7 +15,10 @@ This tree's gap list is in `../../../TAKPILOT2-UI-CONFORMANCE.md`. It is the lon
 three, because this application was forked from an earlier MSDKv4 commit and carries both
 that commit's defects and its own.
 
-A UI change lands in all three applications, or it lands in none.
+A UI change lands in BOTH LIVE applications — Autel and MSDKv5 — or it lands in neither.
+MSDKv4 is FROZEN (operator, 2026-10-09) and is owed nothing. One tree may LEAD, which is
+how a change gets tested on hardware first; what is not allowed is a change that lands in
+one tree and is not WRITTEN DOWN as owed by the other. See specification §8 rule 1.
 
 ## What this application is
 
@@ -452,3 +455,64 @@ specification needs the operator's agreement, every time.
 here has been bench-tested on this controller. The one server mistake the application can see —
 a channel ACTIVE on both accounts — shows as a red line on Pre-Flight; everything else about the
 two accounts is the administrator's.
+
+**2026-10-09, later: the Pre-Flight cleanup, and MSDKv4 is FROZEN.**
+
+⚠ **MSDKv4 IS NOT CARRIED FORWARD ANY MORE** (operator). The UI specification's scope is now the
+two LIVE applications, Autel and this one — see its header and §8 rule 1, both rewritten in this
+change, and the note at the top of `TAKPILOT2-UI-CONFORMANCE.md`. Every ledger row recording
+MSDKv4 as owing something is closed by that decision rather than by work. `check-taklite.sh`
+lists it as FROZEN: its drift is reported and never fails the check, so the check is usable
+again for the two trees that are live.
+
+⚠ **THIS TREE NOW LEADS AND AUTEL OWES BOTH CHANGES BELOW.** That is allowed, and the rule it
+runs under is written down: a change may land in one live tree first, but the debt is recorded
+when it is incurred. This paragraph is the record.
+
+**1. The Elevated account's channels are WRITABLE, and its connection ACCEPTS what arrives.**
+They were read-only when the split shipped, on the reasoning that the application never changes
+what that account is a member of. The operator reversed it: another agency may put the account
+in several channels, and the pilot has to choose which of them the aircraft reaches. Writable on
+Pre-Flight and in the flight screen's TAK Channels dialog, behind the same lock as the Standard
+rows, with the same locked-is-not-disabled rule.
+
+⚠ **A TICK IS ALSO THE "IGNORE INCOMING" CONTROL, AND IT IS THE ONLY ONE THAT CAN EXIST.** The
+operator asked for a per-channel choice of what to ignore. **The application cannot do that.**
+Inbound CoT carries NO channel label — a TAK client sends and receives plain CoT and the SERVER
+decides delivery (`CHANNELS-FINDINGS.md` §1-3; `<dest group>` is the invention that destroyed
+every marker on 2026-08-15 and must never come back). The only `__group` the parser reads is the
+team colour. So there is nothing in an arriving message to filter on, and unticking a channel is
+what stops it arriving — because the server stops sending it, not because the client throws it
+away. Do not re-propose a client-side channel filter.
+
+The shared core takes `acceptInbound` on `connectVideoChannel`, **defaulting to the old discard**
+so the Autel sibling's wire behaviour does not change from this bench. This tree passes true.
+⚠ Accepting means every inbound message is handled twice where both accounts can receive from
+the same people — but everything downstream is keyed by UID, so the second copy lands on the
+same entry. The cost is parsing, not duplicate icons. That stops being true the moment something
+downstream starts APPENDING per message instead of replacing per uid.
+
+⚠ **AND IT CHANGES THE WHOLE FLEET.** activebits is absolute and belongs to the ACCOUNT, and the
+Elevated account is one shared TAK Server user. Unticking the video channel here takes video
+away from every controller signed in as it. The section says so above the rows.
+
+**2. The TAK server configuration moved off Pre-Flight to `TakServerActivity`** — the same move,
+and the same reasoning, that `VideoServersActivity` made for the video settings on 2026-08-30.
+Pre-Flight keeps a GENERATED three-line summary (which user, which channels are active, where
+the video link goes) and one button. Both enrollments, six fields, two channel lists and the TAK
+lock live on the new screen.
+
+The lock came with it, unlike the video screen's, which stayed on Pre-Flight to guard the
+active-server toggle it left behind. Nothing of the TAK configuration stayed, so there was
+nothing for it to guard.
+
+⚠ **`setupOneLock`/`applyLock` are gone from `TakConnectActivity` and are now `ConfigLock`, one
+implementation for every screen.** Copying them would have been the obvious move and the wrong
+one: both of their rules — locked is not hidden, and a control whose state IS its tick must not
+be dimmed — came from real faults, and a copy is how one screen keeps a safety rule while the
+other quietly stops.
+
+Verified on the controller at vc145: both screens, the summary, the writable Elevated row, the
+split still sending on both connections, no exceptions. 163 tests green. **The Elevated channel
+was NOT unticked on the bench** — that is a live server and it would have taken video from the
+fleet; the operator does that when they choose to.

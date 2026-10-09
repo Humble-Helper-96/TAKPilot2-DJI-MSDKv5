@@ -134,6 +134,11 @@
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize" />
         <activity
+            android:name="com.dji.sdk.sample.tak.TakServerActivity"
+            android:label="TAK Server"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize" />
+        <activity
             android:name="com.dji.sdk.sample.tak.DebugActivity"
             android:label="Debug Log"
             android:screenOrientation="landscape"

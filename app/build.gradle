@@ -249,7 +249,14 @@ android {
         //      reachable only through the reconnect, so the commonest path — reopening
         //      Pre-Flight with everything up — left the read-only list empty, the status line
         //      blank, and the channel-overlap check with nothing to compare against.
-        versionCode 144
+        // 145: Pre-Flight cleanup (operator, 2026-10-09). The Elevated account's channels are
+        //      WRITABLE now, the same as the Standard account's, and its connection ACCEPTS
+        //      what arrives on them — a tick is also the only "ignore incoming" control that
+        //      can exist, because inbound CoT carries no channel label. And the whole TAK
+        //      server configuration moved off Pre-Flight into TakServerActivity, leaving a
+        //      generated three-line summary and a button, the same move the video settings
+        //      made on 2026-08-30.
+        versionCode 145
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.

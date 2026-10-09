@@ -160,6 +160,11 @@ object TakAutoConnect {
                     val videoCc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
                     TakManager.getInstance().connectVideoChannel(
                         host, cotPort, videoTs, "atakatak", videoCc, "atakatak",
+                        // acceptInbound = true (operator, 2026-10-09). The Elevated account's
+                        // channels are the pilot's to choose now, so what arrives on them is
+                        // traffic they asked for. The core keeps the discard as its default for
+                        // the Autel sibling, which has not taken this decision yet.
+                        true,
                     )
                     AppLog.i(TAG, "Auto-connected video channel")
                 }
