@@ -682,3 +682,38 @@ with Autel's wording.
 
 Sizes stay PER-DEVICE — 8dp dots and 11sp against Autel's 10dp/13sp, because this panel is
 768dp wide against that controller's 1024dp. Only the WORDS are shared.
+
+**2026-10-09: AR marker jitter — the pose is low-pass filtered. ⚠ NOT YET VERIFIED.**
+
+`ArOverlayView` redraws every 100 ms and rebuilt the camera pose from the raw latest sensor
+values on every frame. Nothing filtered it, so every sample of sensor noise reached the
+screen. Measured on the bench with the aircraft ON THE GROUND and the gimbal PERFECTLY STILL
+(`camPitch` standard deviation exactly 0.00 over 80 frames):
+
+    camBrg   sd 0.21 deg, range 0.80 deg, changed on 73 % of frames
+    pinBrg   sd 0.09 deg  (aircraft GPS)
+    screen x sd 3.1 px,   range 12 px,    moved on 86 % of frames
+
+With the gimbal static the only moving input is `aircraftHeading`, so **the jitter is COMPASS
+noise**. It scales with zoom — 0.80 deg is 22 px at the wide FOV and about 40 px at 2X, which
+is why it looks worse the closer you look.
+
+`cameraPose()` now carries an exponential low-pass. ⚠ **The alpha comes from ELAPSED TIME, not
+from the call** — there are two consumers at different rates (the AR overlay at 10 Hz, the
+crosshair's bearing readout on the 500 ms HUD tick), and a fixed per-call alpha would smooth
+by a different amount depending on who asked and how often. A real slew past 8 deg snaps
+instead of easing, so a deliberate pan does not trail the picture.
+
+⚠ **THE SPI AND A DROPPED MARKER STAY RAW.** They call `cameraBearing` directly and must: a
+marker has to land where the crosshair is NOW. Smoothing is a rendering choice and it stops at
+the things being rendered.
+
+⚠ **NOBODY HAS LOOKED AT THIS IN FLIGHT.** It is item 6.2 of `FLIGHT-TEST-CHECKLIST.md`. The
+thing to watch for is the overlay LAGGING a deliberate pan — that would mean `POSE_SNAP_DEG`
+is too high or `POSE_TAU_SEC` too long.
+
+**`FLIGHT-TEST-CHECKLIST.md` is new in this tree** (the Autel sibling has had one for months).
+Six sections, ordered. ⚠ **Section 1 is the gate**: the video split's two AUDIENCES have never
+been checked. Everything observed so far proves the app SENDS two connections and strips the
+url from one — not that a basic user sees no link and a video user does. Until that passes,
+the feature is "it compiles and it transmits".

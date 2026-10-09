@@ -399,6 +399,11 @@ class DroneTakBridge(
         lastWind = null
         lastGimbalAttitude = null
         lastGimbalYawRel = null
+        // The pose filter holds a bearing from the last session; easing into a new one from a
+        // stale value would sweep the overlay on the first frames after a reconnect.
+        smoothedBearing = null
+        smoothedPitch = null
+        poseFilterAtNs = 0L
         lastIsRecording = false
         lastCameraMode = null
         lastIsShootingPhoto = false
@@ -805,11 +810,80 @@ class DroneTakBridge(
      * SAME [cameraBearing] + [PITCH_OFFSET_DEG] model that [lookPoint] uses — one model,
      * one place, so the AR overlay and marker drops cannot disagree.
      */
+    // ---- Camera-pose smoothing, for the DISPLAY only ----
+
+    @Volatile private var smoothedBearing: Double? = null
+    @Volatile private var smoothedPitch: Double? = null
+    @Volatile private var poseFilterAtNs = 0L
+
+    /**
+     * The camera's pose for DRAWING, low-pass filtered.
+     *
+     * ⚠ **THE AR MARKERS JITTERED BECAUSE NOTHING FILTERED THIS** (operator, 2026-10-09).
+     * `ArOverlayView` redraws every 100 ms and rebuilt the pose from the raw latest sensor
+     * values every frame, so every sample of sensor noise landed on the screen. Measured on
+     * the bench with the aircraft ON THE GROUND and the gimbal PERFECTLY STILL — `camPitch`
+     * standard deviation exactly 0.00 over 80 frames — the bearing still moved:
+     *
+     *     camBrg   sd 0.21 deg, range 0.80 deg, changed on 73 % of frames
+     *     screen x sd 3.1 px,   range 12 px,    moved on 86 % of frames
+     *
+     * With the gimbal static the only moving input is `aircraftHeading`, so **the noise is the
+     * COMPASS**. And it scales with zoom: 0.80 deg is 22 px at the wide FOV and about 40 px at
+     * 2X, which is why the jitter looks worse the closer you look.
+     *
+     * ## Why the filter advances on TIME and not on calls
+     *
+     * ⚠ There are TWO consumers at DIFFERENT RATES — the AR overlay at 10 Hz and the
+     * crosshair's bearing readout on the 500 ms HUD tick. A fixed per-call alpha would smooth
+     * by a different amount depending on WHO asked and HOW OFTEN, and two consumers in the
+     * same frame would advance the filter twice. So alpha is derived from the elapsed time,
+     * `1 - exp(-dt / TAU)`: any call pattern gives the same smoothing in seconds, and a second
+     * call in the same millisecond moves it by almost nothing.
+     *
+     * ## What this must never touch
+     *
+     * ⚠ **THE SPI AND A DROPPED MARKER STAY RAW.** They call [cameraBearing] directly, not
+     * this, and they must: a marker has to land where the crosshair is NOW, not where it was
+     * a third of a second ago. Smoothing is a rendering choice and it stops at the things
+     * being rendered. Do not "simplify" by routing those through here.
+     */
     fun cameraPose(): CameraPose? {
         val gimbal = lastGimbalAttitude ?: return null
         if (lastLocation == null) return null
-        val heading = (((lastHeading ?: 0.0) % 360.0) + 360.0) % 360.0
-        return CameraPose(cameraBearing(gimbal.yaw, heading), gimbal.pitch + TakBridgeHolder.currentPitchOffset)
+        val heading = CameraSlantPoint.norm360(lastHeading ?: 0.0)
+        val rawBearing = cameraBearing(gimbal.yaw, heading)
+        val rawPitch = gimbal.pitch + TakBridgeHolder.currentPitchOffset
+
+        val nowNs = System.nanoTime()
+        val prevBrg = smoothedBearing
+        val prevPitch = smoothedPitch
+        if (prevBrg == null || prevPitch == null) {
+            // First pose of the session: adopt it whole rather than easing up from zero.
+            smoothedBearing = rawBearing
+            smoothedPitch = rawPitch
+            poseFilterAtNs = nowNs
+            return CameraPose(rawBearing, rawPitch)
+        }
+        val dtSec = ((nowNs - poseFilterAtNs).coerceAtLeast(0L)) / 1_000_000_000.0
+        poseFilterAtNs = nowNs
+        val alpha = (1.0 - kotlin.math.exp(-dtSec / POSE_TAU_SEC)).coerceIn(0.0, 1.0)
+
+        // Shortest way round, so a pose either side of north does not take the long path and
+        // sweep the whole overlay across the screen.
+        val dBrg = ((rawBearing - prevBrg + 540.0) % 360.0) - 180.0
+        val dPitch = rawPitch - prevPitch
+
+        // ⚠ A REAL SLEW SNAPS, IT DOES NOT EASE. Filtering a deliberate pan would make the
+        // overlay trail the picture, which reads as broken rather than smooth. Past the
+        // threshold the pilot is MOVING the camera and the truth beats the smoothing.
+        val newBrg = if (kotlin.math.abs(dBrg) > POSE_SNAP_DEG) rawBearing
+                     else CameraSlantPoint.norm360(prevBrg + alpha * dBrg)
+        val newPitch = if (kotlin.math.abs(dPitch) > POSE_SNAP_DEG) rawPitch
+                       else prevPitch + alpha * dPitch
+        smoothedBearing = newBrg
+        smoothedPitch = newPitch
+        return CameraPose(newBrg, newPitch)
     }
 
     /**
@@ -920,6 +994,18 @@ class DroneTakBridge(
 
     companion object {
         private const val TAG = "DroneTakBridge"
+
+        /**
+         * Time constant of the camera-pose low-pass, in seconds. At the AR overlay's 10 Hz
+         * this settles about 95 % of a step in roughly 0.75 s while removing the compass
+         * shimmer measured at 0.21 deg standard deviation. Raising it buys smoothness and
+         * costs responsiveness on a slow pan; lowering it does the reverse.
+         */
+        private const val POSE_TAU_SEC = 0.25
+
+        /** Past this much change in one update the camera is being SLEWED, not jittering, so
+         *  the pose snaps. See [cameraPose]. */
+        private const val POSE_SNAP_DEG = 8.0
 
         /** How old the last location may be and still be worth publishing as the aircraft's
          *  position. */
