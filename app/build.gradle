@@ -236,7 +236,15 @@ android {
         //      been built without a versionCode bump and its mapping never left a local build
         //      directory; this release gives that fix an actual versionCode and a real
         //      signedReleases entry. Not yet flown.
-        versionCode 138
+        // 139-143: the two-account video split + Emergency Broadcast, ported from Autel
+        //      v2.4.0, on branch `uasvideo-split`. versionName deliberately UNMOVED — none of
+        //      this has flown and the branch is not released. 139 was the first install of the
+        //      port; 140, 141 and 142 are BENCH INSTRUMENTATION, each one forcing the Emergency
+        //      Broadcast notice visible so its width could be read off the panel instead of
+        //      computed (the computed 11sp line ran 35dp under the EV slider's "-2" label —
+        //      see the derivation in dimens.xml). 143 is the measured geometry with the
+        //      instrumentation taken back out: marginStart 316dp, marginTop 14dp, 10sp.
+        versionCode 143
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.

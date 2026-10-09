@@ -229,6 +229,33 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- Emergency Broadcast notice — PERSISTENT, not the transient fpvNotice above (that
+         auto-hides after NOTICE_MS; this stays up for the whole window, so it is its own view,
+         toggled by TakManager.EmergencyBroadcastListener). It is also the CONTROL while a
+         broadcast runs: tap renews for 15 minutes, touch-and-hold stops (operator, 2026-10-08).
+         AT THE TOP, in the gap between the status capsule and the EV slider, anchored to the
+         START of that gap and vertically centred on the capsule. Both margins and the text size
+         are PER-DEVICE and DERIVED — see their dimens, which also carry the warning that the
+         line is expected to be too wide for this 768dp screen until it is measured.
+         A later child than flightCrosshair, thus it takes the touch — a tap on it cannot fall
+         through and drop a marker (the same z-order rule the warning banner follows). -->
+    <TextView
+        android:id="@+id/flightEmergencyBroadcastBanner"
+        android:contentDescription="Emergency Broadcast is running — tap to add 15 minutes, touch and hold to stop"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="@dimen/flight_emergency_notice_margin_start"
+        android:layout_marginTop="@dimen/flight_emergency_notice_margin_top"
+        android:background="@drawable/bg_hud_capsule"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:text=""
+        android:textColor="@color/tp_state_emergency"
+        android:textSize="@dimen/flight_emergency_notice_text_size"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <!-- BVLOS antenna-aim arc (V37, audit 2026-08-20; the Autel sibling's, verbatim): the
          controller's antennas are directional, and during authorized BVLOS work the pilot
          cannot see the aircraft to face it. Pilot dot at the centre, aircraft marker riding

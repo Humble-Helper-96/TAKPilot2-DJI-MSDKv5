@@ -24,4 +24,37 @@
         style="@style/takFormRow"
         android:orientation="horizontal" />
 
+    <!-- Emergency Broadcast — TAKPilot2GoFlightActivity.wireEmergencyBroadcastRow. All three
+         stay GONE unless an Elevated account (video channel) is configured; the text and which
+         of the two buttons show follow the running state. It lives in this menu, not in the
+         actions column, on purpose (operator, 2026-10-08): a long-press and a button that says
+         what it does are the friction, and the column keeps its six pills. -->
+    <TextView
+        android:id="@+id/videoEmergencyCaption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text=""
+        android:textColor="@color/tp_text_secondary"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/videoEmergencyButton"
+        style="@style/TakButton.Primary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Start Emergency Broadcast (15 min)"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/videoEmergencyStopButton"
+        style="@style/TakButton.Neutral"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Stop Emergency Broadcast"
+        android:visibility="gone" />
+
 </LinearLayout>

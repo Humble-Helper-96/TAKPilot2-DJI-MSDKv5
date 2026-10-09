@@ -3,6 +3,7 @@ package com.dji.sdk.sample.takpilot2
 import android.app.Application
 import android.content.Context
 import com.cySdkyc.clx.Helper
+import com.dji.sdk.sample.tak.EmergencyBroadcastPolicy
 import com.dji.sdk.sample.tak.FlightPathLogger
 import com.dji.sdk.sample.tak.TakBridgeHolder
 import com.dji.sdk.sample.tak.TakDropMarkers
@@ -43,5 +44,9 @@ class TAKPilot2Application : Application() {
         // The stream path this process will publish under, once. This is also where the
         // per-process token is made when the random path is on — see StreamPath.
         com.dji.sdk.sample.tak.StreamPath.logSessionPath(this)
+        // What the application does when an Emergency Broadcast starts, renews or ends — the
+        // flight-record line. Here, not on a screen, so it runs whichever screen is open, or
+        // none. See EmergencyBroadcastPolicy.
+        EmergencyBroadcastPolicy.install(this)
     }
 }

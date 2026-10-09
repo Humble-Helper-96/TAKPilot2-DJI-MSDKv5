@@ -405,3 +405,50 @@ comment asking a human to remember.
 a pilot who discovers the loudest warning is untrue has been taught to discount the rest of them
 — including the ones that matter, like the spotlight disabling obstacle sensing. If a temporary
 warning is ever added again, tie it to something that CANNOT be forgotten, not to a comment.
+
+**2026-10-09: the two-account VIDEO SPLIT and EMERGENCY BROADCAST, ported from Autel v2.4.0.**
+On branch `uasvideo-split`, off `main` at `9380b24`. **NOT pushed, NOT merged, NOT on the
+controller, and `versionName`/`versionCode` are UNTOUCHED at 2.0.1 / 138** — nothing here is a
+release claim. The reference is the Autel sibling's `uasvideo-split`; the specifications are
+`../../../TAKPILOT2-UI-SPEC.md` §4.8 and the Autel tree's `CHANNELS-FINDINGS.md` §12.
+
+What it is: a SECOND TAK connection, enrolled under its own TAK Server username — the fleet's
+shared "Elevated" account — so the live-video link reaches only the channel that account is in.
+Everything else (position, FOV, SPI, markers) still goes out on both. Two shared accounts for
+the whole fleet, Standard and Elevated, not two per controller. Emergency Broadcast is the
+pilot's bounded override: 15 minutes with the link on EVERY channel, from the LIVE pill's
+long-press menu, with the running notice at the top of the screen as its control (tap renews,
+touch-and-hold stops) and every start/renew/stop/expiry written to the flight's `-events.log`.
+
+- `com.taklite` took the WHOLE 420-line delta from `taklite-core`'s `uasvideo-split` as a clean
+  apply — this tree was 0 lines from pre-split master on `TakMissionClient`/`TakCertEnroller` and
+  4 (its pinned waiver) on `TakManager`, so there was no catch-up to do. The `TakManager` waiver
+  was REGENERATED because the master moved under it; the two vendor-identity comment lines are
+  all it still holds. `check-taklite.sh` reports **DJIv5: CONFORMS**.
+- ⚠ **THE PILOT MARKER NO LONGER CARRIES THE VIDEO URL** (operator, 2026-10-08), the decision
+  this tree owed. It carried it from 2026-08-20. TAK Aware draws a team member whose report has
+  a video entry as a MIL-STD-2525 square instead of the team-member dot, for as long as the
+  stream is up, and the operator chose the dot. The aircraft marker alone advertises the stream.
+  The shared core keeps the parameter; `DroneTakBridge.sendPilotPli` passes null.
+- The AR overlay work that rides in Autel v2.4.0 (`ArOverlayView`, `DtedTile`, the gimbal-roll
+  read) is deliberately NOT in this port. It is a separate piece of work.
+- 163 unit tests green, release build clean. Three test files are new:
+  `VideoSplitPolicyTest` (9), `OutboundLogShorteningTest` (8), `EmergencyBroadcastPolicyFormatTest`
+  (2), plus two event-line cases in `FlightPathLoggerFormatTest`.
+
+⚠ **THE NOTICE'S POSITION IS COMPUTED AND NOT MEASURED, AND THE ARITHMETIC SAYS IT WILL NOT
+FIT.** `flight_emergency_notice_margin_start` is derived as 340dp from the status capsule's
+children, and the gap to the EV slider is then about 276dp against a line that computes to about
+334dp at 11sp. Two of the capsule's children are `wrap_content` text views, so the 340 itself
+needs reading off the device. **Take both numbers to an RC Plus 2 before this goes anywhere.**
+The per-device levers §4.8 grants are the margin and the text size; the WORDING is fixed by the
+specification and shortening it for this screen is the operator's call.
+
+⚠ **Specification §4.8's two SLOTs still say "the DJI trees owe it"** — that is now out of date
+for this tree, and so is `../../../TAKPILOT2-UI-CONFORMANCE.md`. Neither was touched: the shared
+specification needs the operator's agreement, every time.
+
+**Phase 0 on a test server has not been run** (`CHANNELS-FINDINGS.md` §12 lists it), and nothing
+here has been bench-tested on this controller. The one server mistake the application can see —
+a channel ACTIVE on both accounts — shows as a red line on Pre-Flight; everything else about the
+two accounts is the administrator's.

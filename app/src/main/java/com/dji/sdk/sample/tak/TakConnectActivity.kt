@@ -193,11 +193,19 @@ class TakConnectActivity : AppCompatActivity() {
             // Reset the UI fields so it's clearly a fresh login.
             username.setText("")
             password.setText("")
+            // clearEnrollment() above already cleared cert B's files/prefs and disconnected it —
+            // this just resets THIS screen's Elevated-account fields to match.
+            runCatching { findViewById<android.widget.Switch>(R.id.takVideoChannelEnabled).isChecked = false }
+            runCatching { findViewById<EditText>(R.id.takVideoUsername).setText("") }
+            runCatching { findViewById<EditText>(R.id.takVideoPassword).setText("") }
+            runCatching { findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList).removeAllViews() }
+            setVideoChannelStatus("", ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
                 ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
 
         setupVideoControls(prefs)
+        setupVideoChannelSection(prefs, host, enrollPort, cotPort)
         // LAST, deliberately. Every setup above populates and enables its own fields, so a lock
         // applied before them would be undone on the way past.
         setupConfigLocks()
@@ -421,6 +429,11 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.takHost, R.id.takEnrollPort, R.id.takCotPort,
         R.id.takUsername, R.id.takPassword, R.id.takCallsign,
         R.id.takDisconnectButton,
+        // The Elevated account locks with the server fields — it is the MORE privileged
+        // account, and a stray tap on its switch would put video on every channel (review,
+        // 2026-10-08).
+        R.id.takVideoChannelEnabled, R.id.takVideoUsername, R.id.takVideoPassword,
+        R.id.takVideoConnectButton,
     )
 
     /** Codec and TCP transport are part of WHAT the stream is — the wrong codec breaks playback
@@ -1755,7 +1768,9 @@ class TakConnectActivity : AppCompatActivity() {
         }.start()
     }
 
-    /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean. */
+    /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean.
+     *  Also clears cert B (the Elevated account) — a logout must not leave a second,
+     *  more-privileged certificate behind for the next person to sign in on top of. */
     private fun clearEnrollment(prefs: android.content.SharedPreferences) {
         val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
         val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
@@ -1774,6 +1789,7 @@ class TakConnectActivity : AppCompatActivity() {
             .putBoolean(KEY_LOGGED_OUT, true)   // block auto-reconnect until a fresh enroll
             .apply()
         com.taklite.util.AppLog.i("TakConnect", "enrollment cleared")
+        clearVideoEnrollment(prefs)
     }
 
     /** True if we have saved cert files on disk from a previous enrollment. */
@@ -1783,6 +1799,280 @@ class TakConnectActivity : AppCompatActivity() {
         return ts.isNotEmpty() && cc.isNotEmpty() &&
             java.io.File(ts).exists() && java.io.File(cc).exists()
     }
+
+
+    // ---- Elevated account (cert B) ----
+    //
+    // Cert B enrolls under its OWN TAK Server username/password (see TakCertEnroller's doc: the
+    // username/password authenticate a CSR signing request, there is no cert file to "upload"),
+    // so it lands in a different channel/group than cert A. It reuses cert A's host/enroll
+    // port/CoT port — one aircraft, one controller, two certificates — only the username,
+    // password and file-name prefix differ.
+
+    /** Enroll cert B and, on success, connect the video channel. Mirrors [enrollAndConnect]. */
+    private fun enrollAndConnectVideo(
+        host: String, enrollPort: Int, cotPort: Int, username: String, password: String,
+    ) {
+        AppLog.v(TAG, "enrollAndConnectVideo: host=$host enrollPort=$enrollPort cotPort=$cotPort user=$username")
+        // The same check cert A makes first. Without it the enrollment goes ahead, the socket
+        // fails inside TLS, and the pilot gets a handshake message for what is really no
+        // network at all.
+        if (!NetworkStatus.hasInternet(this)) {
+            AppLog.w(TAG, "Elevated enroll aborted — no validated network")
+            setVideoChannelStatus("No network connection. Connect to Wi-Fi or mobile data, then try again.",
+                ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+            return
+        }
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        var uid = prefs.getString(KEY_CHB_UID, "") ?: ""
+        if (uid.isEmpty()) {
+            uid = "TAKPilot2-" + UUID.randomUUID().toString().substring(0, 8) + "-VIDEO"
+            prefs.edit().putString(KEY_CHB_UID, uid).apply()
+        }
+        setVideoChannelStatus("Enrolling the Elevated account with $host:$enrollPort …",
+            ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+        Thread {
+            TakCertEnroller.enroll(host, enrollPort, username, password, uid, filesDir, "tak_video_",
+                object : TakCertEnroller.EnrollmentCallback {
+                    override fun onSuccess(trustStorePath: String, clientCertPath: String) {
+                        prefs.edit()
+                            .putString(KEY_CHB_TRUSTSTORE, trustStorePath)
+                            .putString(KEY_CHB_CLIENTCERT, clientCertPath)
+                            .putString(KEY_CHB_USERNAME, username)
+                            .putBoolean(KEY_CHB_LOGGED_OUT, false)
+                            .apply()
+                        runOnUiThread {
+                            setVideoChannelStatus("Enrolled. Connecting …",
+                                ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+                        }
+                        // Same reasoning as the cert A path: this runs on a worker thread, so a
+                        // throw here reaches nothing but Android's default handler.
+                        runCatching {
+                            connectVideoChannelWithCerts(host, cotPort, trustStorePath, clientCertPath)
+                        }.onFailure {
+                            AppLog.e(TAG, "Elevated connect after enrollment failed: ${it.message}", it)
+                            runOnUiThread {
+                                setVideoChannelStatus("Enrolled, but the connection failed: ${it.message}",
+                                    ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                            }
+                        }
+                    }
+
+                    override fun onError(error: String) {
+                        AppLog.w(TAG, "Elevated account enrollment failed: $error")
+                        runOnUiThread {
+                            setVideoChannelStatus("Error: $error",
+                                ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                        }
+                    }
+                })
+        }.start()
+    }
+
+    /** Connect cert B using already-enrolled files. Mirrors [connectWithCerts]. */
+    private fun connectVideoChannelWithCerts(
+        host: String, cotPort: Int, trustStorePath: String, clientCertPath: String,
+    ) {
+        val certPw = "atakatak"
+        TakManager.getInstance().connectVideoChannel(host, cotPort, trustStorePath, certPw, clientCertPath, certPw)
+        runOnUiThread {
+            // "Connecting", not "connected": the socket is being dialled on its own thread and
+            // nothing has answered yet. The channel list that follows is the proof it works.
+            setVideoChannelStatus("Elevated account: connecting …",
+                ContextCompat.getColor(applicationContext, R.color.tp_state_unknown))
+            refreshVideoChannels()
+        }
+    }
+
+    /** Reconnect cert B using saved certs, no UI entry needed. Mirrors [reconnectFromSaved]. */
+    private fun reconnectVideoFromSaved(prefs: android.content.SharedPreferences) {
+        val host = prefs.getString(KEY_HOST, "") ?: ""
+        val cotPort = prefs.getInt(KEY_COT_PORT, 8089)
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) return
+        Thread {
+            runCatching { connectVideoChannelWithCerts(host, cotPort, ts, cc) }
+                .onFailure {
+                    AppLog.e(TAG, "Elevated reconnect from saved enrollment failed: ${it.message}", it)
+                    runOnUiThread {
+                        setVideoChannelStatus("Could not connect the Elevated account: ${it.message}",
+                            ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                    }
+                }
+        }.start()
+    }
+
+    /** True if cert B has saved cert files on disk from a previous enrollment. Mirrors
+     *  [hasSavedCerts]. */
+    private fun hasSavedVideoCerts(prefs: android.content.SharedPreferences): Boolean {
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+        return ts.isNotEmpty() && cc.isNotEmpty() &&
+            java.io.File(ts).exists() && java.io.File(cc).exists()
+    }
+
+    /** Deletes cert B's files + prefs and disconnects it. Called from [clearEnrollment] (full
+     *  logout) and also usable on its own if the pilot turns the Elevated switch off. */
+    private fun clearVideoEnrollment(prefs: android.content.SharedPreferences) {
+        // A removal, not a drop: single-connection behaviour comes back. See clearVideoChannel.
+        runCatching { TakManager.getInstance().clearVideoChannel() }
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+        if (ts.isNotEmpty()) { val f = java.io.File(ts); runCatching { f.delete() } }
+        if (cc.isNotEmpty()) { val f = java.io.File(cc); runCatching { f.delete() } }
+        listOf("tak_video_clientcert.p12", "tak_video_truststore.p12").forEach {
+            val f = java.io.File(filesDir, it); if (f.exists()) runCatching { f.delete() }
+        }
+        prefs.edit()
+            .remove(KEY_CHB_TRUSTSTORE)
+            .remove(KEY_CHB_CLIENTCERT)
+            .remove(KEY_CHB_UID)
+            .remove(KEY_CHB_USERNAME)
+            .putBoolean(KEY_CHB_LOGGED_OUT, true)
+            .apply()
+        AppLog.i(TAG, "Elevated account enrollment cleared")
+    }
+
+    private fun setVideoChannelStatus(text: String, color: Int) {
+        findViewById<TextView>(R.id.takVideoChannelStatus)?.let {
+            it.text = text
+            it.setTextColor(color)
+        }
+    }
+
+    /** Read-only — cert B never writes activebits. Mirrors [refreshChannels]/[renderChannels]
+     *  but with no check boxes: nothing here can change what B is a member of. */
+    private fun refreshVideoChannels() {
+        // One reader for the Elevated list, shared with the flight screen's dialog.
+        TakMissionManager.listElevatedChannels(this) { chans -> renderVideoChannels(chans ?: return@listElevatedChannels) }
+    }
+
+    /**
+     * Wires the "Elevated Account" section (cert B) — OFF by default. [host]/[enrollPort]/
+     * [cotPort] are cert A's already-on-screen fields, reused as-is (one aircraft, one
+     * controller, two certificates — only the username/password/file-prefix differ).
+     */
+    private fun setupVideoChannelSection(
+        prefs: android.content.SharedPreferences,
+        host: EditText, enrollPort: EditText, cotPort: EditText,
+    ) {
+        val enabledSwitch = findViewById<android.widget.Switch>(R.id.takVideoChannelEnabled)
+        val fields = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelFields)
+        val connectButton = findViewById<Button>(R.id.takVideoConnectButton)
+        val channelsLabel = findViewById<TextView>(R.id.takVideoChannelsLabel)
+        val videoUsername = findViewById<EditText>(R.id.takVideoUsername)
+        val videoPassword = findViewById<EditText>(R.id.takVideoPassword)
+
+        videoUsername.setText(prefs.getString(KEY_CHB_USERNAME, ""))
+
+        fun paintEnabled(on: Boolean) {
+            fields.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+            connectButton.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+            channelsLabel.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        }
+
+        val enabled = prefs.getBoolean(KEY_CHB_ENABLED, false)
+        enabledSwitch.isChecked = enabled
+        paintEnabled(enabled)
+        // ⚠ NOT when it is already connected (review, 2026-10-08). This runs on every onCreate,
+        // and a reconnect tears the Elevated socket down and re-dials it — and until that
+        // review it also ended a running Emergency Broadcast. A pilot opening this screen to
+        // read a channel must change nothing on the wire.
+        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)
+            && !TakManager.getInstance().isVideoChannelConnected
+        ) {
+            setVideoChannelStatus("Reconnecting the Elevated account …",
+                ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            reconnectVideoFromSaved(prefs)
+        }
+
+        enabledSwitch.setOnCheckedChangeListener { _, isOn ->
+            AppLog.v(TAG, "Elevated account enable toggle -> $isOn")
+            prefs.edit().putBoolean(KEY_CHB_ENABLED, isOn).apply()
+            paintEnabled(isOn)
+            if (!isOn) {
+                // Turning the switch off REMOVES the video channel for this session — on purpose,
+                // thus clearVideoChannel() and not disconnectVideoChannel(): the Standard
+                // connection carries video again, as before the split existed. It does NOT
+                // delete the saved enrollment (that is clearVideoEnrollment's job, on full Log
+                // Out); switching back on reconnects from the same saved certs.
+                runCatching { TakManager.getInstance().clearVideoChannel() }
+                setVideoChannelStatus("Elevated account off — video goes out on the Standard account again.",
+                    ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            } else if (hasSavedVideoCerts(prefs)) {
+                reconnectVideoFromSaved(prefs)
+            }
+        }
+
+        connectButton.setOnClickListener {
+            val h = host.text.toString().trim()
+            val ep = enrollPort.text.toString().trim().toIntOrNull() ?: 8446
+            val cp = cotPort.text.toString().trim().toIntOrNull() ?: 8089
+            val u = videoUsername.text.toString().trim()
+            val p = videoPassword.text.toString()
+            if (h.isEmpty() || u.isEmpty() || p.isEmpty()) {
+                setVideoChannelStatus("Host (above), Elevated username and password are required.",
+                    ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                return@setOnClickListener
+            }
+            enrollAndConnectVideo(h, ep, cp, u, p)
+        }
+    }
+
+    private fun renderVideoChannels(channels: List<TakMissionClient.Channel>) {
+        val list = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList) ?: return
+        list.removeAllViews()
+        latestVideoChannels = channels
+        if (channels.isEmpty()) {
+            setVideoChannelStatus("This server has no channels for the Elevated account.",
+                ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            return
+        }
+        checkChannelOverlap()
+        for (ch in channels) {
+            val row = TextView(this).apply {
+                text = TakMissionManager.channelLabel(ch) + if (ch.active) "" else " (off)"
+                setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_primary))
+                textSize = 11f
+            }
+            list.addView(row)
+        }
+    }
+
+    /** The Elevated account's channels, as last read — for [checkChannelOverlap]. */
+    private var latestVideoChannels: List<TakMissionClient.Channel> = emptyList()
+
+    /**
+     * The one server mistake this screen can see: a channel ACTIVE on BOTH accounts. Everyone
+     * in it would get the Elevated copy of the aircraft, video included — the split fails open
+     * and nothing on the server says so. Checked whenever either list is painted. The fix is on
+     * the server, so the line says that and offers no control.
+     */
+    private fun checkChannelOverlap() {
+        val standard = latestChannels.filter { it.active }.map { it.name }.toSet()
+        val elevated = latestVideoChannels.filter { it.active }.map { it.name }.toSet()
+        val shared = standard.intersect(elevated)
+        if (shared.isEmpty()) {
+            // Clear ONLY our own line, so a connect or enrollment status is not wiped — and
+            // clear it the moment the server is corrected (review, 2026-10-08).
+            if (overlapWarningShown) {
+                overlapWarningShown = false
+                setVideoChannelStatus("", ContextCompat.getColor(
+                    applicationContext, R.color.tp_text_secondary))
+            }
+            return
+        }
+        overlapWarningShown = true
+        AppLog.w(TAG, "Standard and Elevated accounts share active channel(s): $shared")
+        setVideoChannelStatus("Standard and Elevated share channel ${shared.joinToString()} — " +
+            "everyone in it will get video. Fix this on the server.",
+            ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+    }
+
+    /** True while takVideoChannelStatus holds the overlap warning, so checkChannelOverlap can
+     *  retract its own line and nothing else's. */
+    private var overlapWarningShown = false
 
     private fun setStatus(text: String, color: Int) {
         status.text = text
@@ -1872,6 +2162,7 @@ class TakConnectActivity : AppCompatActivity() {
             }
             list.addView(row)
         }
+        checkChannelOverlap()
     }
 
     /**
@@ -1993,6 +2284,18 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_UID = "uid"
         private const val KEY_TRUSTSTORE = "truststore_path"
         private const val KEY_CLIENTCERT = "clientcert_path"
+
+        // ---- Elevated account (cert B). "CHB" = "channel B", distinct from the KEY_V_*
+        // family below, which means "video STREAM config" (RTSP/SRT host/port/codec), a
+        // completely different concept. Cert B reuses KEY_HOST/KEY_ENROLL_PORT/KEY_COT_PORT/
+        // KEY_CALLSIGN from cert A above — one aircraft, one controller, two certificates. ----
+        internal const val KEY_CHB_ENABLED = "chb_enabled"
+        private const val KEY_CHB_USERNAME = "chb_username"
+        private const val KEY_CHB_UID = "chb_uid"
+        private const val KEY_CHB_TRUSTSTORE = "chb_truststore_path"
+        private const val KEY_CHB_CLIENTCERT = "chb_clientcert_path"
+        private const val KEY_CHB_LOGGED_OUT = "chb_logged_out"
+
         private const val KEY_V_HOST = "video_host"
         private const val KEY_V_PORT = "video_port"
         /**

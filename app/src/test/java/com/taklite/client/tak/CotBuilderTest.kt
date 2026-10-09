@@ -28,9 +28,16 @@ class CotBuilderTest {
     }
 
     /**
-     * The video url rides the OPERATOR marker as well as the aircraft — the stream is a screen
-     * capture of the controller and keeps running when the aircraft is down, while the drone PLI
-     * stops the moment there is no GPS fix.
+     * The BUILDER still advertises a video url on a pilot marker when it is given one. This
+     * pins the builder, not the application's policy.
+     *
+     * ⚠ **NO APPLICATION PASSES ONE ANY MORE (operator, 2026-10-08).** The aircraft marker
+     * alone advertises the stream: TAK Aware draws a team member carrying a video entry as a
+     * MIL-STD-2525 square instead of the team-member dot, and the operator chose the dot. See
+     * `DroneTakBridge.sendPilotPli`. The parameter stays on the builder because the shared core
+     * is vendor- and policy-neutral; the call site is where the decision lives. This comment
+     * used to explain why the OLD behaviour was right, which is the shape of stale note that
+     * has cost this tree a build before.
      */
     @Test
     fun aVideoUrlIsAdvertisedOnThePilotMarkerWhenGiven() {

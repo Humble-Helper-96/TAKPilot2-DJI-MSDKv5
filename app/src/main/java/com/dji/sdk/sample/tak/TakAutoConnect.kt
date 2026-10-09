@@ -31,6 +31,14 @@ object TakAutoConnect {
     private const val KEY_CAMERA_POINT = "camera_point"
     private const val KEY_LOGGED_OUT = "logged_out"
 
+    // ---- Video channel (cert B) — the Elevated account. This file keeps its OWN copy of
+    // these keys rather than sharing TakConnectActivity's, which is the existing convention
+    // here: KEY_HOST and the rest above are already duplicated from that Activity. ----
+    private const val KEY_CHB_ENABLED = "chb_enabled"
+    private const val KEY_CHB_TRUSTSTORE = "chb_truststore_path"
+    private const val KEY_CHB_CLIENTCERT = "chb_clientcert_path"
+    private const val KEY_CHB_LOGGED_OUT = "chb_logged_out"
+
     @Volatile private var attemptedThisProcess = false
 
     fun attemptOnAppLaunch(context: Context) {
@@ -55,6 +63,9 @@ object TakAutoConnect {
         if (TakManager.getInstance().isConnected) {
             AppLog.i(TAG, "TAK icon tap — disconnecting")
             runCatching { TakManager.getInstance().disconnect() }
+            // A removal, not a drop: with TAK off on purpose there is no split to fail closed
+            // for, and the re-tap below reconnects the Elevated account if it is enabled.
+            runCatching { TakManager.getInstance().clearVideoChannel() }
             runCatching { TakForegroundService.stop(context.applicationContext) }
             onResult(true, "TAK disconnected")
             return
@@ -78,6 +89,14 @@ object TakAutoConnect {
     fun hasSavedCerts(prefs: android.content.SharedPreferences): Boolean {
         val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
         val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
+        return ts.isNotEmpty() && cc.isNotEmpty() && File(ts).exists() && File(cc).exists()
+    }
+
+    /** The same check for cert B — the Elevated account. Mirrors [hasSavedCerts]; cert B has
+     *  no host of its own, it reuses cert A's (one controller, two certificates). */
+    fun hasSavedVideoCerts(prefs: android.content.SharedPreferences): Boolean {
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
         return ts.isNotEmpty() && cc.isNotEmpty() && File(ts).exists() && File(cc).exists()
     }
 
@@ -130,6 +149,20 @@ object TakAutoConnect {
                     uid, callsign, "Cyan", "Team Member",
                     host, cotPort, ts, "atakatak", cc, "atakatak",
                 )
+                // Cert B — the Elevated account. Only if enabled, not logged out, and its own
+                // certs are still on disk. Reuses cert A's host/cotPort (one aircraft, one
+                // controller, two certificates). See TakConnectActivity's equivalent path.
+                if (prefs.getBoolean(KEY_CHB_ENABLED, false)
+                    && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)
+                    && hasSavedVideoCerts(prefs)
+                ) {
+                    val videoTs = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+                    val videoCc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+                    TakManager.getInstance().connectVideoChannel(
+                        host, cotPort, videoTs, "atakatak", videoCc, "atakatak",
+                    )
+                    AppLog.i(TAG, "Auto-connected video channel")
+                }
                 TakBridgeHolder.start(droneUid, callsign)
                 TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
                 TakForegroundService.start(context, callsign)

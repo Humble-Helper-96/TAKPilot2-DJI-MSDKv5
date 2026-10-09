@@ -143,6 +143,10 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     // crossing instead. MIN_VALUE means "nothing cached yet".
     private var lastFaaGridRow = Int.MIN_VALUE
     private var lastFaaGridCol = Int.MIN_VALUE
+    /** Fires the "Video link down" notice on a CHANGE only — never on the first read, so
+     *  connecting with the Elevated connection not yet up does not immediately show a notice
+     *  for something the pilot did not just do. */
+    private var lastVideoChannelDown: Boolean? = null
     private var cachedFaaCeilingFt: Int? = null
     private var cachedFaaWithinDownloadedArea = false
     private var currentCallsign: String = ""
@@ -157,6 +161,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
     private var homeLineSource: GeoJsonSource? = null
     private var homeLineLayer: LineLayer? = null
     private lateinit var fpvNotice: TextView
+    private lateinit var emergencyBroadcastBanner: TextView
     private lateinit var flightDiagnostics: TextView
     private lateinit var flightDiagnosticsRow: View
     private lateinit var flightDiagnosticsClose: TextView
@@ -290,6 +295,73 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         }
     }
     private val hideNotice = Runnable { fpvNotice.visibility = View.GONE }
+
+    /**
+     * Told by [TakManager] whenever the Emergency Broadcast override starts, renews or ends.
+     * This screen only PAINTS. The flight-record line belongs to
+     * [com.dji.sdk.sample.tak.EmergencyBroadcastPolicy], installed at application start so it
+     * runs whichever screen is open, or none.
+     */
+    private val emergencyBroadcastListener =
+        TakManager.EmergencyBroadcastListener { active, expiresAtEpochMs, _ ->
+            runOnUiThread { paintEmergencyBroadcast(active, expiresAtEpochMs) }
+        }
+
+    /** Shows or hides the running notice and keeps its countdown current. Called from the
+     *  listener above on every change, and from [updateHud]'s tick while active so the mm:ss
+     *  keeps moving. */
+    private fun paintEmergencyBroadcast(active: Boolean, expiresAtEpochMs: Long) {
+        if (!::emergencyBroadcastBanner.isInitialized) return
+        if (!active) {
+            emergencyBroadcastBanner.visibility = View.GONE
+            return
+        }
+        emergencyBroadcastBanner.text =
+            "EMERGENCY BROADCAST — video on all channels — ${remainingText(expiresAtEpochMs)}"
+        emergencyBroadcastBanner.visibility = View.VISIBLE
+    }
+
+    /** mm:ss until [expiresAtEpochMs], never negative. */
+    private fun remainingText(expiresAtEpochMs: Long): String {
+        val remainingSec = ((expiresAtEpochMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0)
+        return "%d:%02d".format(remainingSec / 60, remainingSec % 60)
+    }
+
+    /**
+     * The Emergency Broadcast rows of the LIVE long-press menu. Shown only when an Elevated
+     * account (video channel) is configured — with no split there is nothing to override. No
+     * confirm step (operator, 2026-10-08): the long-press and a button that says what it does
+     * are the friction. While one runs, the flight-screen notice is the control (tap renews,
+     * touch-and-hold stops), and the same two actions are offered here.
+     */
+    private fun wireEmergencyBroadcastRow(view: View, dialog: AlertDialog) {
+        val tm = TakManager.getInstance()
+        if (!tm.isVideoChannelConfigured) return // the rows stay GONE
+        val caption = view.findViewById<TextView>(R.id.videoEmergencyCaption)
+        val start = view.findViewById<android.widget.Button>(R.id.videoEmergencyButton)
+        val stop = view.findViewById<android.widget.Button>(R.id.videoEmergencyStopButton)
+        val active = tm.isEmergencyBroadcastActive
+        caption.text = if (active) {
+            "Emergency Broadcast is running — ${remainingText(tm.emergencyBroadcastExpiresAtEpochMs())} left."
+        } else {
+            "Emergency Broadcast: every channel gets the aircraft's video link for 15 minutes. " +
+                "The aircraft marker carries it, so the aircraft must be reporting its position."
+        }
+        start.text = if (active) "Renew for 15 min" else "Start Emergency Broadcast (15 min)"
+        caption.visibility = View.VISIBLE
+        start.visibility = View.VISIBLE
+        stop.visibility = if (active) View.VISIBLE else View.GONE
+        start.setOnClickListener {
+            AppLog.i(TAG, "LIVE menu: Emergency Broadcast ${if (active) "renew" else "start"}")
+            tm.startOrRenewEmergencyBroadcast()
+            dialog.dismiss()
+        }
+        stop.setOnClickListener {
+            AppLog.i(TAG, "LIVE menu: Emergency Broadcast stop")
+            tm.cancelEmergencyBroadcast()
+            dialog.dismiss()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Mapbox.getInstance(applicationContext)
@@ -454,6 +526,26 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         toolbarTakDot = findViewById(R.id.toolbarTakDot)
         toolbarSignal = findViewById(R.id.toolbarSignal)
         toolbarSignalText = findViewById(R.id.toolbarSignalText)
+
+        emergencyBroadcastBanner = findViewById(R.id.flightEmergencyBroadcastBanner)
+        // The running notice IS the control while a broadcast runs (operator, 2026-10-08): a tap
+        // adds 15 minutes, a touch-and-hold stops it. STARTING one is in the LIVE long-press
+        // menu — see wireEmergencyBroadcastRow — and nothing for it sits in the actions column
+        // (six pills, two widths: that is a rule).
+        emergencyBroadcastBanner.setOnClickListener {
+            AppLog.i(TAG, "tap: Emergency Broadcast notice — renew")
+            TakManager.getInstance().startOrRenewEmergencyBroadcast()
+        }
+        emergencyBroadcastBanner.setOnLongClickListener {
+            AppLog.i(TAG, "touch-and-hold: Emergency Broadcast notice — stop")
+            TakManager.getInstance().cancelEmergencyBroadcast()
+            true
+        }
+        TakManager.getInstance().addEmergencyBroadcastListener(emergencyBroadcastListener)
+        paintEmergencyBroadcast(
+            TakManager.getInstance().isEmergencyBroadcastActive,
+            TakManager.getInstance().emergencyBroadcastExpiresAtEpochMs(),
+        )
 
         resourceMonitorRow = findViewById(R.id.flightResourceMonitorRow)
         // Drawn above the warning banner, which shares the bottom-left since step 2: the row
@@ -893,11 +985,13 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             }
         }
 
-        AlertDialog.Builder(this, R.style.TakDialogTheme)
+        val dialog = AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Video Quality")
             .setView(view)
             .setPositiveButton("Done", null)
-            .show()
+            .create()
+        wireEmergencyBroadcastRow(view, dialog)
+        dialog.show()
     }
 
     private fun onLiveToggleTapped() {
@@ -3893,6 +3987,27 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         logResourcesPeriodically()
         updateResourceRow()
 
+        // Elevated connection (cert B) health. Only meaningful once configured — an
+        // unconfigured split has no video channel to be "down". Fires the amber notice on a
+        // CHANGE only (see lastVideoChannelDown's doc), and only while the stream is actually
+        // running — a down Elevated connection with nothing streaming has nothing to warn about
+        // yet. Above the no-GPS-fix early return on purpose: neither this nor the countdown
+        // below depends on the AIRCRAFT having a fix.
+        if (TakManager.getInstance().isVideoChannelConfigured) {
+            val videoChannelDown = !TakManager.getInstance().isVideoChannelConnected
+                && VideoStreamerHolder.isRunning
+            if (lastVideoChannelDown == false && videoChannelDown) {
+                showNotice("Video link down — feed not advertised", refused = true)
+            }
+            lastVideoChannelDown = videoChannelDown
+        }
+        // Emergency Broadcast countdown — the listener paints on start/stop; this keeps the
+        // notice's mm:ss moving while it is active, on the same tick as everything else on
+        // this screen.
+        if (TakManager.getInstance().isEmergencyBroadcastActive) {
+            paintEmergencyBroadcast(true, TakManager.getInstance().emergencyBroadcastExpiresAtEpochMs())
+        }
+
         fpvClock.text = clockFormat.format(java.util.Date())
 
         // What the AIRCRAFT holds, not what Pre-Flight asked for. "RTH --" until it answers:
@@ -4277,6 +4392,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // for. Guard each lateinit view touch the same way the Autel sibling does.
         // Stop the AR redraw loop explicitly — it posts to a Handler several times a second and
         // would otherwise keep firing against a dead Activity.
+        runCatching { TakManager.getInstance().removeEmergencyBroadcastListener(emergencyBroadcastListener) }
         if (::arOverlay.isInitialized) arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         // Same reason as the line above: DjiSdkBridge is a process-wide singleton and would
@@ -4464,6 +4580,38 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         fun reload() = com.dji.sdk.sample.tak.TakMissionManager.listChannels { paint(it) }
         lockedNote.visibility = if (locked) View.VISIBLE else View.GONE
         reload()
+
+        // The ELEVATED account's channels under the Standard's (operator, 2026-10-08): the whole
+        // scope of this aircraft, in flight, on one screen. Read-only rows — see the layout note.
+        // Read once at open: the server's t-x-g-c change notice arrives on the Standard
+        // connection only, and the Elevated set is the administrator's to change.
+        val elevatedLabel = view.findViewById<TextView>(R.id.takChanElevatedLabel)
+        val elevatedList = view.findViewById<android.widget.LinearLayout>(R.id.takChanElevatedList)
+        if (TakManager.getInstance().isVideoChannelConfigured) {
+            com.dji.sdk.sample.tak.TakMissionManager.listElevatedChannels(this) { chans ->
+                if (chans == null) return@listElevatedChannels
+                elevatedList.removeAllViews()
+                if (chans.isEmpty()) {
+                    elevatedList.addView(TextView(themed).apply {
+                        text = "The server returned no channels for the Elevated account."
+                        setTextColor(androidx.core.content.ContextCompat.getColor(
+                            applicationContext, R.color.tp_text_secondary))
+                    })
+                } else for (ch in chans) {
+                    elevatedList.addView(TextView(themed).apply {
+                        text = com.dji.sdk.sample.tak.TakMissionManager.channelLabel(ch) +
+                            if (ch.active) "" else " (off)"
+                        setTextColor(androidx.core.content.ContextCompat.getColor(
+                            applicationContext, R.color.tp_text_primary))
+                        textSize = 15f
+                        val pad = (6 * resources.displayMetrics.density).toInt()
+                        setPadding(0, pad, 0, pad)
+                    })
+                }
+                elevatedLabel.visibility = View.VISIBLE
+                elevatedList.visibility = View.VISIBLE
+            }
+        }
 
         // Follow the server while the dialog is open, and stop when it closes.
         val onGroups = TakManager.GroupChangeListener {

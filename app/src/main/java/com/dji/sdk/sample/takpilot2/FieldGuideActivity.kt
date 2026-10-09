@@ -257,6 +257,15 @@ class FieldGuideActivity : AppCompatActivity() {
             "also change channels in flight: touch and hold the TAK icon.")
         body("The channels belong to your certificate, not to this controller. If two " +
             "controllers sign in as the same user, a change on one changes the other.")
+        body("Elevated account (optional): the fleet's second TAK account. Only the channel it " +
+            "belongs to gets the live-video link. Every other channel still gets the position " +
+            "and the markers. Its channel list here is read-only. After Log Out, enroll the " +
+            "Elevated account again, or the video link goes to every channel.")
+        body("Emergency Broadcast: touch and hold LIVE, then touch Start Emergency Broadcast. " +
+            "Every channel gets the live-video link for 15 minutes. The aircraft marker carries " +
+            "the link, thus the aircraft must have a GPS position. A notice with a timer shows " +
+            "at the top of the flight screen. Touch the notice to add 15 minutes. Touch and " +
+            "hold it to stop. Each start, renew and stop goes in the flight record.")
 
         sub("4. Elevation Data (DTED)")
         body("The terrain data for your area, one file for each region. It makes the markers " +

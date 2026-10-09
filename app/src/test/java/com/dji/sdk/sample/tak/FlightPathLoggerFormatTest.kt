@@ -101,4 +101,21 @@ class FlightPathLoggerFormatTest {
         assertEquals("flight (a)", FlightPathLogger.canonicalBase("flight (a)"))
         assertEquals("flight (1) tail", FlightPathLogger.canonicalBase("flight (1) tail"))
     }
+
+    // ---- Events file ----
+
+    @Test
+    fun eventLineIsIsoUtcSpaceTextNewline() {
+        // 1_754_580_000_000 is a whole second: 2025-08-07T15:20:00Z.
+        assertEquals("2025-08-07T15:20:00Z emergency-broadcast started\n",
+            FlightPathLogger.eventLine(1_754_580_000_000L, "emergency-broadcast started"))
+    }
+
+    @Test
+    fun eventLineHoldsExactlyOneNewlineAtTheEnd() {
+        // The file is read one event per line; a break inside the text would split one event.
+        val line = FlightPathLogger.eventLine(1_754_580_000_000L, "emergency-broadcast cancelled")
+        assertEquals(1, line.count { it == '\n' })
+        assertTrue(line.endsWith("\n"))
+    }
 }

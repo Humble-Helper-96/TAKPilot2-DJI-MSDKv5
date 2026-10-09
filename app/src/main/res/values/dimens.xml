@@ -265,4 +265,43 @@
          derived once, for everything that must not sit on the column. -->
     <dimen name="flight_left_chrome_clear">80dp</dimen>
 
+    <!-- THE EMERGENCY BROADCAST NOTICE (spec §4.8's SLOT). PER-DEVICE, exactly like the warning
+         banner's size: the notice sits at the TOP in the gap between the status capsule and the
+         EV slider, anchored to the start of that gap and vertically centred on the capsule.
+
+         ⚠ **MEASURED ON THE RC Plus 2, 2026-10-09, NOT COMPUTED** — and the computed version of
+         these numbers was wrong in a way that would have shipped. Read off a screenshot of the
+         flight screen with the notice forced visible, at 1920x1200 px and 400 dpi, so 1dp =
+         2.5px on this panel:
+           status capsule          x 20-768 px   =   8 - 307dp   (so its right edge is 307dp,
+                                                                  not the 315dp the child widths
+                                                                  predicted)
+           EV slider "-2" label    x 1563 px     = 625dp         (the real obstacle — the label
+                                                                  stands further left than the
+                                                                  slider line at 1581 px / 632dp)
+           the notice at 11sp      800 px wide   = 320dp         of a 318dp gap
+         So 11sp DID NOT FIT: the notice ran 35dp under the EV label, over a live control. The
+         per-device lever §4.8 grants is the text size, so the notice runs at 10sp here. VERIFIED
+         at 10sp on the same bench: the capsule measures x 790-1505 px = 316-602dp, 286dp wide,
+         clearing the EV label by 23dp. The WORDING is fixed by §4.8 and is not this tree's to
+         shorten.
+
+         marginStart = the capsule's measured right edge (307 -> 308) + 8dp of air, the band's
+         own rhythm. marginTop centres the notice on the capsule's centre, which the same
+         screenshot puts at 65 px = 26dp; VERIFIED at 14dp, which puts the notice's own centre
+         at 26.6dp (it was 20dp, taken from the Autel, and sat 7dp low).
+         The notice is inside the band's 44dp height, so a tap on it lands on the notice and not
+         on the video.
+
+         ⚠ Re-measure all three whenever the status capsule gains or loses a control, or either
+         of its two wrap_content text views (the signal "%" and the satellite count) changes
+         shape. Nothing here derives itself. -->
+    <dimen name="flight_emergency_notice_margin_start">316dp</dimen>
+    <dimen name="flight_emergency_notice_margin_top">14dp</dimen>
+    <!-- 10sp, below the Autel's 13sp and below this tree's own 11sp notice/banner size, because
+         the measurement above left no other way to keep the specified wording out of the EV
+         slider. A dp on this 400dpi panel is about 24 % larger than nominal, so 10sp here is
+         about a nominal 12sp. -->
+    <dimen name="flight_emergency_notice_text_size">10sp</dimen>
+
 </resources>
