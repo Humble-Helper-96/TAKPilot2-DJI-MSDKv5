@@ -222,8 +222,11 @@ class FieldGuideActivity : AppCompatActivity() {
         body("If the signal is lost sets what the aircraft does alone. Select Return Home. It " +
             "applies also if the app stops in flight.")
 
-        body("Obstacle avoidance has three boxes. Read the line below them: it shows what the " +
-            "aircraft reports, and the boxes do nothing without obstacle sensors.")
+        body("Obstacle avoidance is shown here, not set here. The line reports what the " +
+            "AIRCRAFT holds. To change it, use DJI Pilot 2 on this controller — the settings " +
+            "live in the aircraft and this app reads them.")
+        body("\"Not available\" does not mean off. It means the aircraft did not answer, so " +
+            "the app does not know. Treat it as unknown and check in DJI Pilot 2.")
 
         body("Battery Warning and Battery Critical are where the aircraft warns you and lands.")
         body("Some aircraft keep their own battery levels and refuse a change. If yours " +

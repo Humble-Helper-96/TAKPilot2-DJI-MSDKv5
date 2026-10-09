@@ -570,3 +570,59 @@ Autel port. Recorded here so it is not mistaken for a decision.
 **Flight record, verified from a real flight (2026-10-09):** `flight-2026-10-09-09-29-48-events.log`
 holds `active at takeoff (expires …)`, `reset-on-reconnect` and `started (expires …)` — three of
 the five line types, in the pinned format, from the aircraft actually flying.
+
+**2026-10-09: AVOIDANCE IS READ-ONLY. The write path is deleted, and "soft landing" was never
+this app's to fix.**
+
+⚠ **THE LANDING BEHAVIOUR IS THE AIRCRAFT'S, NOT OURS.** The operator ran the same descent in
+DJI Pilot 2 on this airframe and got the identical result: it lets you fly it into the ground,
+the motors spool to idle on contact, sticks down-and-in rotate it until the landing latch
+takes. Then TAKPilot read the aircraft's own configuration and found **everything already on** —
+`overall=true downward=true visionPositioning=true precisionLanding=true braking=2.0m`. A
+commanded descent is a pilot command; downward avoidance and landing protection govern
+AUTO-land, not the stick. **There is no cushion setting to switch on. If a cushioned descent is
+wanted, that is auto-land or RTH, not stick-down.** Do not go looking for this again.
+
+**What WAS wrong, and is now gone:** this tree was the ONLY one of the three that wrote
+avoidance settings to the aircraft (Autel enforces with a verify chain; the MSDKv4 app — read
+from the bundle — has no avoidance code at all and lands correctly). And every part of the
+write was broken on this airframe:
+
+- `getObstacleAvoidanceType` is **REJECTED by the M4TD** ("unavailable: null"), so the value
+  the write guarded on could never be known.
+- Which made the write **BLIND**: the guard was `if (<unread> == desired)` and null never
+  equals true, so "only correct what is wrong" degraded into writing a flight-safety setting
+  the app had just failed to read. Rule 4.
+- And the chain **died silently** — no write, no skip, no log line — because the flight-state
+  gate only fails safe when a callback FIRES; a key that never answers leaves it hanging.
+- Two of the three Pre-Flight check boxes were wired to nothing at all.
+
+⚠ **AND THE COMMENT THAT CAUSED IT.** This file used to state "RTH avoidance and landing
+protection are aircraft-firmware behavior in v5 with no public switch". **Half of that was
+false and it sent this investigation down the wrong road.** Disassembling
+`dji-sdk-v5-aircraft-provided-5.18.0.jar` shows `IVisualManager`/`IPerceptionCommon` carry
+`setObstacleAvoidanceEnabled(bool, PerceptionDirection)`, `setVisionPositioningEnabled`,
+`setPrecisionLandingEnabled`, `setOverallObstacleAvoidanceEnabled` and both distance setters,
+each with a getter. **Read the SDK surface before recording something as impossible** — this is
+the TTS lesson pointing the other way: that time a declared capability did not work, this time
+a working one was declared absent. (RTH avoidance genuinely has no public getter; that half
+stands.)
+
+**The design now:** read, never write. These settings live in the AIRCRAFT, DJI Pilot 2 is on
+the same controller and sets them properly, and what it sets persists into this app. Pre-Flight
+mirrors the aircraft's answer and says "Set these in DJI Pilot 2".
+⚠ **THE AUTEL SIBLING STILL ENFORCES, AND MUST** — it has no second app. A deliberate per-tree
+difference with a reason, recorded as a SLOT, not a gap to close.
+
+Two faults of my own, found and fixed in the same change:
+
+- ⚠ **A single read at connect is not enough.** It fires at `onProductConnect: 0`, ~400 ms
+  before registration completes, and the first answer was `overall avoidance = false` on an
+  aircraft that reports `true` two seconds later. A single-read version would have shown
+  avoidance OFF on a healthy aircraft — the exact false reading this work exists to remove.
+  Bounded re-reads (2/4/8/15 s), stopping as soon as everything is known. Reads only.
+- ⚠ **`DjiObstacleState.onChanged` was a SINGLE SLOT and Pre-Flight took it** — safety rule 1,
+  in the app's own fan-out rather than an SDK one. The flight screen drives the obstacle edge
+  view from it, so a pilot could have reached the flight screen with that display silently
+  dead. It is a `CopyOnWriteArrayList` now, both consumers hold their listener in a field so it
+  can actually be removed, and both remove it.

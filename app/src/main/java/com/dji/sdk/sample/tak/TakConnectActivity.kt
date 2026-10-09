@@ -46,7 +46,9 @@ class TakConnectActivity : AppCompatActivity() {
         SpeakerBroadcast.onChanged = null
         if (SpeakerRecorder.recording) SpeakerRecorder.cancel()
         // The TAK listeners went with the TAK configuration to TakServerActivity, which
-        // attaches and detaches its own. This screen holds none.
+        // attaches and detaches its own. This screen holds none of those — but it DOES hold
+        // the avoidance one, and DjiObstacleState outlives the Activity.
+        runCatching { DjiObstacleState.removeChangeListener(avoidanceListener) }
         super.onDestroy()
     }
 
@@ -709,44 +711,63 @@ class TakConnectActivity : AppCompatActivity() {
      * therefore reports what the AIRCRAFT currently says, not what the checkbox says — the whole
      * hazard being addressed is a pilot who believes avoidance is on because a box is ticked.
      */
+    /**
+     * The avoidance section — A MIRROR, NOT A CONTROL (operator, 2026-10-09).
+     *
+     * It had three check boxes and wrote a selection to the aircraft at every connect. All of
+     * that is gone. The reasons are in [DjiObstacleState]'s own note; the short version is that
+     * the one API it used is REJECTED by this airframe, which made the write blind, and that
+     * these settings live in the AIRCRAFT with DJI Pilot 2 already on this controller to set
+     * them properly. The MSDKv4 sibling writes nothing and lands correctly.
+     *
+     * ⚠ WHAT MUST NOT BE LOST IS THE READING. The Autel incident this pattern came from was
+     * not really about enforcement — it was about a screen showing a protection the aircraft
+     * did not have. So the state still appears here, sourced from the aircraft every connect,
+     * and an unread value says "not available" rather than quietly looking like "off".
+     */
     private fun setupAvoidance() {
-        val system = findViewById<android.widget.CheckBox>(R.id.avoidSystem)
-        val rth = findViewById<android.widget.CheckBox>(R.id.avoidRth)
-        val landing = findViewById<android.widget.CheckBox>(R.id.avoidLanding)
-        val status = findViewById<TextView>(R.id.avoidStatus)
-
-        system.isChecked = DjiObstacleState.savedSystem(this)
-        rth.isChecked = DjiObstacleState.savedRth(this)
-        landing.isChecked = DjiObstacleState.savedLanding(this)
-
-        val save = {
-            DjiObstacleState.saveIntent(this, system.isChecked, rth.isChecked, landing.isChecked)
-            AppLog.i("TP2Obstacle", "pre-flight avoidance intent: system=${system.isChecked} " +
-                "rth=${rth.isChecked} landing=${landing.isChecked} (applies on next connect)")
-            status.text = avoidanceStatusText()
-        }
-        listOf(system, rth, landing).forEach { it.setOnCheckedChangeListener { _, _ -> save() } }
-        status.text = avoidanceStatusText()
+        renderAvoidance()
+        // The reads land on DJI's callback thread and arrive after this screen is built.
+        DjiObstacleState.addChangeListener(avoidanceListener)
     }
 
-    /** Says what the aircraft actually reports, and is explicit when it has told us nothing —
-     *  "not read yet" and "disabled" are different facts and must never be shown as the same one. */
+    /** Held as a field so it can be REMOVED. A lambda created at the call site is a new
+     *  object every time and could never be unregistered — which is how a listener list leaks
+     *  a dead Activity. */
+    private val avoidanceListener: () -> Unit = { runOnUiThread { renderAvoidance() } }
+
+    private fun renderAvoidance() {
+        findViewById<TextView>(R.id.avoidStatus)?.text = avoidanceStatusText()
+    }
+
+    /**
+     * What the AIRCRAFT reports, in the pilot's terms.
+     *
+     * ⚠ THREE STATES, NEVER TWO. "on", "OFF" and "not available" are different facts. The old
+     * version rendered the third as "not read yet", which reads as "it is coming" — and for
+     * landing protection it could never become anything else, because nothing ever read it.
+     */
     private fun avoidanceStatusText(): String {
         fun s(v: Boolean?) = when (v) {
             true -> "on"
             false -> "OFF"
-            null -> "not read yet"
+            null -> "not available"
         }
-        return "Aircraft currently reports: avoidance ${s(DjiObstacleState.collisionAvoidance)}, " +
-            "RTH avoidance ${s(DjiObstacleState.rthAvoidance)}, " +
-            "landing protection ${s(DjiObstacleState.landingProtection)}."
+        val cushion = when (DjiObstacleState.cushionedLanding) {
+            true -> "The aircraft should cushion a descent."
+            false -> "⚠ The aircraft will NOT cushion a descent."
+            null -> "Whether it will cushion a descent is not known."
+        }
+        val braking = DjiObstacleState.downwardBrakingM?.let {
+            " Downward braking distance %.1f m.".format(it)
+        } ?: ""
+        return "The aircraft reports: avoidance ${s(DjiObstacleState.overallAvoidance)}, " +
+            "downward ${s(DjiObstacleState.downwardAvoidance)}, " +
+            "vision positioning ${s(DjiObstacleState.visionPositioning)}, " +
+            "precision landing ${s(DjiObstacleState.precisionLanding)}, " +
+            "RTH avoidance ${s(DjiObstacleState.rthAvoidance)}.$braking $cushion"
     }
 
-    /** Signal-loss failsafe picker. Like the numeric limits above it's saved locally and pushed
-     *  to the aircraft on its next connect — the status line spells that out, because "I picked
-     *  Return to Home" and "the aircraft is actually set to Return to Home" are different
-     *  claims, and this is a setting where assuming the first means the second is exactly the
-     *  wrong habit. */
     private fun setupFailsafe() {
         val group = findViewById<RadioGroup>(R.id.limitFailsafeGroup)
         val status = findViewById<TextView>(R.id.limitFailsafeStatus)

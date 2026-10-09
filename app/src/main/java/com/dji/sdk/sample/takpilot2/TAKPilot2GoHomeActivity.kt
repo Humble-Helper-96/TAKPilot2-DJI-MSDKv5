@@ -431,7 +431,9 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         val unknown = ContextCompat.getColor(applicationContext, R.color.tp_state_unknown)
         val info = ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)
 
-        val avoid = DjiObstacleState.collisionAvoidance
+        // The COMPOSITE, not one switch: downward sensing, vision positioning and the master
+        // all have to be on before this aircraft protects a descent. See DjiObstacleState.
+        val avoid = DjiObstacleState.cushionedLanding
         avoidance.text = when {
             !connected -> ""
             avoid == true -> "OBSTACLE AVOIDANCE: ON"

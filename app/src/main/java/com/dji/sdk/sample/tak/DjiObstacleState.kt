@@ -7,6 +7,7 @@ import dji.v5.common.error.IDJIError
 import dji.v5.manager.aircraft.perception.PerceptionManager
 import dji.v5.manager.aircraft.perception.data.ObstacleAvoidanceType
 import dji.v5.manager.aircraft.perception.data.ObstacleData
+import dji.v5.manager.aircraft.perception.data.PerceptionDirection
 import dji.v5.manager.aircraft.perception.listener.ObstacleDataListener
 
 /**
@@ -22,10 +23,34 @@ import dji.v5.manager.aircraft.perception.listener.ObstacleDataListener
  * - The horizontal ring is folded into four [Face] quadrants so the edge view keeps its v4
  *   shape. Ring index 0 is assumed to be the aircraft NOSE, increasing clockwise —
  *   ⚠ VERIFY ON THE BENCH with a wall on a known side before trusting left/right.
- * - v4's three avoidance switches collapse to one in v5: [ObstacleAvoidanceType]
- *   (BRAKE/BYPASS/CLOSE). RTH avoidance and landing protection are aircraft-firmware
- *   behavior in v5 with no public switch; their fields stay null and the Pre-Flight toggles
- *   for them are inert on this airframe.
+ * - v4's three avoidance switches do NOT collapse to one in v5. [ObstacleAvoidanceType]
+ *   (BRAKE/BYPASS/CLOSE) is the coarse one, and there are others.
+ *
+ *   ⚠ **THIS FILE USED TO SAY "RTH avoidance and landing protection are aircraft-firmware
+ *   behavior in v5 with no public switch" AND THAT WAS FALSE.** It was written from the one
+ *   API somebody found, not from the SDK surface, and it cost a flight: the Pre-Flight
+ *   landing box was wired to nothing, the status line said "not read yet" for ever, and the
+ *   aircraft descended with whatever the last app left behind. Disassembled from
+ *   `dji-sdk-v5-aircraft-provided-5.18.0.jar` on 2026-10-09, `IVisualManager` and
+ *   `IPerceptionCommon` carry, each with a getter:
+ *
+ *     setObstacleAvoidanceEnabled(bool, PerceptionDirection)   // UPWARD/DOWNWARD/HORIZONTAL
+ *     setVisionPositioningEnabled(bool)
+ *     setPrecisionLandingEnabled(bool)
+ *     setOverallObstacleAvoidanceEnabled(bool)
+ *     setObstacleAvoidanceBrakingDistance(double, PerceptionDirection)
+ *     setObstacleAvoidanceWarningDistance(double, PerceptionDirection)
+ *
+ *   DJI Pilot 2's own takeoff record on this airframe reports exactly these as
+ *   `downward_obstacle_avoidance=1`, `OA_distance=3.0`, `OA_warning_distance=10.69`.
+ *
+ *   ⚠ RTH avoidance genuinely has no public v5 switch — that half of the old claim stands.
+ *   Its field stays null and its Pre-Flight control says so.
+ *
+ * - **A CUSHIONED LANDING IS THREE SETTINGS, NOT ONE.** Downward avoidance sees the ground,
+ *   vision positioning is what holds the aircraft steady over it, and precision landing is
+ *   the auto-land behaviour. Any one of them off takes the cushion away, which is why they
+ *   are read and enforced together rather than behind a single boolean.
  *
  * Absence must not read as safety: a ring that never reports means "this aircraft cannot
  * see that way", NOT "that way is clear" — [sensingAircraft] stays false until real data
@@ -54,23 +79,64 @@ object DjiObstacleState {
     var sensingAircraft = false
         private set
 
-    /** Notified whenever [faces] changes (on DJI's callback thread — marshal it yourself). */
-    @Volatile
-    var onChanged: (() -> Unit)? = null
+    /**
+     * Notified whenever anything here changes (on DJI's callback thread — marshal it
+     * yourself).
+     *
+     * ⚠ **A LIST, NOT A SLOT, AND THAT IS SAFETY RULE 1.** This was a single
+     * `var onChanged: (() -> Unit)?` until 2026-10-09. The flight screen used it to drive the
+     * obstacle edge view; the moment Pre-Flight started reading avoidance state it took the
+     * same slot, and a second registration replaces the first WITH NO WARNING — a pilot could
+     * have reached the flight screen with the obstacle display silently dead. The rule exists
+     * because that exact shape has bitten this project before, and it applies to the app's own
+     * fan-out as much as to an SDK slot.
+     */
+    private val changeListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    fun addChangeListener(l: () -> Unit) { if (!changeListeners.contains(l)) changeListeners.add(l) }
+    fun removeChangeListener(l: () -> Unit) { changeListeners.remove(l) }
+
+    private fun notifyChanged() {
+        for (l in changeListeners) runCatching { l() }
+    }
 
     // ---- Live avoidance state, as the AIRCRAFT reports it ----
     // Null means "not read yet", NOT "off". The difference matters in front of a pilot.
-    @Volatile var collisionAvoidance: Boolean? = null; private set
-    /** No public v5 switch — always null; kept so the Pre-Flight screen renders "unknown"
-     *  rather than a lie. */
+    /** ⚠ GENUINELY no public v5 switch — stays null, and the Pre-Flight control says so
+     *  rather than offering a tick that does nothing. */
     @Volatile var rthAvoidance: Boolean? = null; private set
-    @Volatile var landingProtection: Boolean? = null; private set
+
+    // ---- The three that make a cushioned landing. See the class note. ----
+    /** Downward obstacle avoidance — whether the aircraft reacts to the ground coming up. */
+    @Volatile var downwardAvoidance: Boolean? = null; private set
+    /** Vision positioning — what holds the aircraft steady over the ground on descent. */
+    @Volatile var visionPositioning: Boolean? = null; private set
+    /** Precision landing — the auto-land behaviour. */
+    @Volatile var precisionLanding: Boolean? = null; private set
+    /** The master switch, above [ObstacleAvoidanceType]. */
+    @Volatile var overallAvoidance: Boolean? = null; private set
+    /** Downward braking distance in metres, as the aircraft holds it. DJI Pilot 2 uses 3.0. */
+    @Volatile var downwardBrakingM: Double? = null; private set
+
+    /**
+     * The composite a pilot actually cares about: will this aircraft cushion a descent?
+     * True only when every input is known AND on. Null while anything is still unread —
+     * "not read yet" and "off" must never render the same.
+     */
+    val cushionedLanding: Boolean?
+        get() {
+            val parts = listOf(downwardAvoidance, visionPositioning, overallAvoidance)
+            return when {
+                parts.any { it == null } -> null
+                else -> parts.all { it == true }
+            }
+        }
 
     private val obstacleListener = ObstacleDataListener { data -> onObstacleData(data) }
     @Volatile private var listenerArmed = false
 
     /** Wired from [DjiSdkBridge] on every (re)connect. */
-    fun onProductConnected(context: Context) {
+    fun onProductConnected(@Suppress("UNUSED_PARAMETER") context: Context) {
         runCatching {
             if (!listenerArmed) {
                 listenerArmed = true
@@ -79,17 +145,25 @@ object DjiObstacleState {
             AppLog.i(TAG, "obstacle-data listener armed")
         }.onFailure { AppLog.w(TAG, "obstacle-data listener failed: ${it.message}") }
 
-        readSwitches()
-        applyAtConnect(context)
+        // ⚠ READ AGAIN, BOUNDED. Measured 2026-10-09: this fires at `onProductConnect: 0`,
+        // about 400 ms BEFORE SDK registration completes, and four of the five getters answer
+        // "unavailable" because the aircraft is not really there yet. A single read at connect
+        // therefore reports "not available" for a whole session on a healthy aircraft — the
+        // same false unknown this honest-status work exists to remove. Re-asks only while
+        // something is still unknown, a few times, then stops. READS ONLY: safety rule 3
+        // forbids a timer that WRITES, and nothing here writes.
+        rereadAttempt = 0
+        scheduleReread()
     }
 
     fun onProductDisconnected() {
         faces = emptyMap()
         sensingAircraft = false
-        collisionAvoidance = null; rthAvoidance = null; landingProtection = null
-        appliedForThisConnect = false
+        rthAvoidance = null
+        downwardAvoidance = null; visionPositioning = null; precisionLanding = null
+        overallAvoidance = null; downwardBrakingM = null
         lastLoggedNear = -1f
-        runCatching { onChanged?.invoke() }
+        notifyChanged()
     }
 
     private fun mmToMeters(mm: Int?): Float? =
@@ -134,7 +208,7 @@ object DjiObstacleState {
         if (ring.isNotEmpty() || data.upwardObstacleDistance > 0) sensingAircraft = true
         faces = next
         next.entries.minByOrNull { it.value }?.let { logNearIfNotable(it.key, it.value) }
-        runCatching { onChanged?.invoke() }
+        notifyChanged()
     }
 
     /** Nearest obstacle on any face in metres, or null if nothing is reporting. */
@@ -159,141 +233,127 @@ object DjiObstacleState {
     private const val LOG_NEAR_M = 15f
     private const val NEAR_MIN_GAP_MS = 500L
 
-    // ---- Pre-Flight's saved intent, enforced on every connect ----
+    /** Backing off, so a slow link still lands and a dead key costs four reads, not a loop. */
+    private val REREAD_DELAYS_MS = longArrayOf(2_000L, 4_000L, 8_000L, 15_000L)
 
-    private const val PREFS = "takpilot2_avoid"
-    private const val KEY_SYSTEM = "avoid_system"
-    private const val KEY_RTH = "avoid_rth"
-    private const val KEY_LANDING = "avoid_landing"
-
-    /** Defaults are ON. An install nobody has configured must err toward protection. */
-    fun savedSystem(c: Context) = prefs(c).getBoolean(KEY_SYSTEM, true)
-    fun savedRth(c: Context) = prefs(c).getBoolean(KEY_RTH, true)
-    fun savedLanding(c: Context) = prefs(c).getBoolean(KEY_LANDING, true)
-
-    fun saveIntent(c: Context, system: Boolean, rth: Boolean, landing: Boolean) {
-        prefs(c).edit().putBoolean(KEY_SYSTEM, system).putBoolean(KEY_RTH, rth)
-            .putBoolean(KEY_LANDING, landing).apply()
-    }
-
-    private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
-    /** Reads what the aircraft currently has, so the pilot can be shown the real state and
-     *  so [applyAtConnect] only writes a switch that is actually wrong. */
-    private fun readSwitches() {
-        runCatching {
-            PerceptionManager.getInstance().getObstacleAvoidanceType(
-                object : CommonCallbacks.CompletionCallbackWithParam<ObstacleAvoidanceType> {
-                    override fun onSuccess(type: ObstacleAvoidanceType?) {
-                        collisionAvoidance = when (type) {
-                            ObstacleAvoidanceType.BRAKE, ObstacleAvoidanceType.BYPASS -> true
-                            ObstacleAvoidanceType.CLOSE -> false
-                            else -> null
-                        }
-                        AppLog.i(TAG, "obstacleAvoidanceType = $type")
-                    }
-
-                    override fun onFailure(error: IDJIError) {
-                        // Common and harmless: airframes without the feature reject the getter.
-                        AppLog.i(TAG, "obstacleAvoidanceType unavailable: ${error.description()}")
-                    }
-                })
-        }
-        AppLog.i(TAG, "rthAvoidance/landingProtection: no public v5 switch — " +
-            "firmware-managed on this airframe, shown as unknown")
-    }
-
-    @Volatile private var appliedForThisConnect = false
+    // ⚠ THE SAVED PRE-FLIGHT INTENT IS GONE WITH THE WRITES. There is no stored
+    // "system/rth/landing" selection any more, because nothing could act on it. The
+    // `takpilot2_avoid` preference file is simply left behind — reading a dead key to delete
+    // it is not worth a migration, and nothing reads it.
 
     /**
-     * Enforces the Pre-Flight selection on the aircraft, once per connect.
+     * Reads what the aircraft currently holds. **READ ONLY — this object writes NOTHING.**
      *
-     * Same doctrine as v4/Autel: leaving "whatever the DJI app last set" is not neutral, it
-     * is UNKNOWN. Enforcement is only safe BECAUSE the state is visible on the flight screen.
-     * Deferred by [APPLY_DELAY_MS] so the getter above has answered — only correct what is
-     * wrong. NEVER rewrites a safety switch on an aircraft that is already flying.
+     * ⚠ THE WRITE PATH WAS DELETED ON 2026-10-09 (operator), AND THAT IS THE FIX, NOT A
+     * RETREAT. It enforced a Pre-Flight selection by writing [ObstacleAvoidanceType], and on
+     * this airframe every part of that was broken:
+     *
+     *  - **The M4TD REJECTS the getter.** `getObstacleAvoidanceType` answers
+     *    "unavailable: null" on this aircraft (bench, 2026-10-09), so the value it was
+     *    guarding on could never be known. That field is gone with the write.
+     *  - **Which made the write BLIND.** The guard was `if (<the unread value> == desired)`,
+     *    and null never equals true — so the "only correct what is wrong" rule degraded into
+     *    writing a flight-safety setting the app had just failed to read. Rule 4.
+     *  - **And the chain died silently.** The flight-state gate resolves fail-safe only when a
+     *    callback FIRES with a failure; a key that never answers at all leaves it hanging, with
+     *    no write, no skip and no log line. Observed on the same bench. "An observer nobody
+     *    subscribes to is not a mechanism" — this tree has written that down before.
+     *
+     * **THE REASON IT IS SAFE TO STOP IS NOT THAT THE WRITES WERE BROKEN — IT IS THAT THIS
+     * AIRCRAFT HAS A PROPER CONFIGURATION SURFACE ALREADY.** These settings live in the
+     * AIRCRAFT, not in an app; DJI Pilot 2 is on the same controller and sets them well, and
+     * what it sets persists into this application. The MSDKv4 sibling has no avoidance code at
+     * all and lands correctly, which is the same evidence from the other direction.
+     *
+     * ⚠ **THE AUTEL SIBLING STILL ENFORCES, AND MUST.** Its doctrine — "leaving whatever the
+     * other app last set is not neutral, it is UNKNOWN" — is right FOR AUTEL, where there is
+     * no second app to set it. Copying that here solved a problem this tree does not have.
+     * This is a deliberate per-tree difference with a reason, not a gap to close.
+     *
+     * What survives, and what actually mattered in the Autel incident of 2026-08-13, is that
+     * the pilot is shown the aircraft's REAL state — never a tick that does nothing.
      */
-    private fun applyAtConnect(context: Context) {
-        if (appliedForThisConnect) return
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            if (appliedForThisConnect) return@postDelayed
-            // Read from the bridge-independent keys: this fires at product connect, usually
-            // before the pilot reaches the flight screen and its bridge, so nothing has
-            // necessarily subscribed to these keys yet. CLAUDE.md rule 4: the one-argument
-            // getValue(key) answers from MSDK's local CACHE only, and a key nothing has
-            // fetched or listened to is absent from it — it returns null FOR EVER, which
-            // getOrDefault(false) used to read as "not flying". Use the two-argument
-            // getValue(key, callback) form, which actually queries the aircraft.
-            readFlightState { flying, motorsOn ->
-                if (flying || motorsOn) {
-                    AppLog.w(TAG, "aircraft is flying/armed — SKIPPING avoidance enforcement this connect")
-                    return@readFlightState
-                }
-                appliedForThisConnect = true
-                val desired = savedSystem(context)
-                if (collisionAvoidance == desired) {
-                    AppLog.i(TAG, "collisionAvoidance already $desired — no write")
-                    return@readFlightState
-                }
-                val type = if (desired) ObstacleAvoidanceType.BRAKE else ObstacleAvoidanceType.CLOSE
-                AppLog.i(TAG, "enforcing obstacleAvoidanceType -> $type (aircraft had $collisionAvoidance)")
-                runCatching {
-                    PerceptionManager.getInstance().setObstacleAvoidanceType(
-                        type,
-                        object : CommonCallbacks.CompletionCallback {
-                            override fun onSuccess() {
-                                AppLog.i(TAG, "set obstacleAvoidanceType=$type: OK")
-                                collisionAvoidance = desired
-                            }
+    private fun readSwitches() {
+        // Each read is independent: one unsupported key must not stop the others. A failure
+        // leaves its field null, which renders as "not available", never as "off".
+        readBool("overall obstacle avoidance",
+            { cb -> PerceptionManager.getInstance().getOverallObstacleAvoidanceEnabled(cb) }) {
+            overallAvoidance = it
+        }
+        readBool("downward obstacle avoidance",
+            { cb -> PerceptionManager.getInstance()
+                .getObstacleAvoidanceEnabled(PerceptionDirection.DOWNWARD, cb) }) {
+            downwardAvoidance = it
+        }
+        readBool("vision positioning",
+            { cb -> PerceptionManager.getInstance().getVisionPositioningEnabled(cb) }) {
+            visionPositioning = it
+        }
+        readBool("precision landing",
+            { cb -> PerceptionManager.getInstance().getPrecisionLandingEnabled(cb) }) {
+            precisionLanding = it
+        }
+        runCatching {
+            PerceptionManager.getInstance().getObstacleAvoidanceBrakingDistance(
+                PerceptionDirection.DOWNWARD,
+                object : CommonCallbacks.CompletionCallbackWithParam<Double> {
+                    override fun onSuccess(v: Double?) {
+                        downwardBrakingM = v
+                        AppLog.i(TAG, "downward braking distance = $v m")
+                        notifyChanged()
+                    }
+                    override fun onFailure(error: IDJIError) {
+                        AppLog.i(TAG, "downward braking distance unavailable: ${error.description()}")
+                    }
+                })
+        }.onFailure { AppLog.w(TAG, "downward braking distance read threw: ${it.message}") }
 
-                            override fun onFailure(error: IDJIError) {
-                                AppLog.i(TAG, "set obstacleAvoidanceType=$type: ${error.description()}")
-                            }
-                        })
-                }.onFailure { AppLog.w(TAG, "set obstacleAvoidanceType threw: ${it.message}") }
+        // ⚠ RTH avoidance genuinely has no public v5 switch — unlike the rest of the old
+        // claim, this half was true. Its field stays null and the screen says so.
+        AppLog.i(TAG, "rthAvoidance: no public v5 getter — shown as not available")
+    }
+
+    @Volatile private var rereadAttempt = 0
+    private val rereadHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** True once every value the screens report is known, so the retry can stop early. */
+    private fun allKnown(): Boolean =
+        downwardAvoidance != null && visionPositioning != null &&
+            precisionLanding != null && overallAvoidance != null
+
+    private fun scheduleReread() {
+        readSwitches()
+        if (allKnown() || rereadAttempt >= REREAD_DELAYS_MS.size) {
+            if (!allKnown()) {
+                AppLog.i(TAG, "avoidance state still incomplete after $rereadAttempt re-reads " +
+                    "— the unknown values stay \"not available\"")
             }
-        }, APPLY_DELAY_MS)
+            return
+        }
+        val delay = REREAD_DELAYS_MS[rereadAttempt]
+        rereadAttempt++
+        rereadHandler.postDelayed({ scheduleReread() }, delay)
     }
 
-    /**
-     * Reads KeyIsFlying and KeyAreMotorsOn with the two-argument (aircraft-querying) form of
-     * getValue, then calls [onResult] once both have answered. A read that fails or never
-     * answers resolves FAIL-SAFE — as flying/armed — so a dead key can only ever make this
-     * gate MORE cautious, never let a write through it should have blocked.
-     */
-    private fun readFlightState(onResult: (flying: Boolean, motorsOn: Boolean) -> Unit) {
-        var flying = true
-        var motorsOn = true
-        val remaining = java.util.concurrent.atomic.AtomicInteger(2)
-        fun oneDone() { if (remaining.decrementAndGet() == 0) onResult(flying, motorsOn) }
-
+    /** One boolean read, with the same failure doctrine for all of them: log it, leave the
+     *  field null, never guess. */
+    private inline fun readBool(
+        what: String,
+        crossinline call: (CommonCallbacks.CompletionCallbackWithParam<Boolean>) -> Unit,
+        crossinline assign: (Boolean?) -> Unit,
+    ) {
         runCatching {
-            dji.v5.manager.KeyManager.getInstance().getValue(
-                dji.sdk.keyvalue.key.KeyTools.createKey(
-                    dji.sdk.keyvalue.key.FlightControllerKey.KeyIsFlying),
-                object : CommonCallbacks.CompletionCallbackWithParam<Boolean> {
-                    override fun onSuccess(v: Boolean?) { flying = v == true; oneDone() }
-                    override fun onFailure(error: IDJIError) {
-                        AppLog.w(TAG, "KeyIsFlying read failed, assuming flying: ${error.description()}")
-                        oneDone()
-                    }
-                })
-        }.onFailure { AppLog.w(TAG, "KeyIsFlying getValue threw, assuming flying: ${it.message}"); oneDone() }
-
-        runCatching {
-            dji.v5.manager.KeyManager.getInstance().getValue(
-                dji.sdk.keyvalue.key.KeyTools.createKey(
-                    dji.sdk.keyvalue.key.FlightControllerKey.KeyAreMotorsOn),
-                object : CommonCallbacks.CompletionCallbackWithParam<Boolean> {
-                    override fun onSuccess(v: Boolean?) { motorsOn = v == true; oneDone() }
-                    override fun onFailure(error: IDJIError) {
-                        AppLog.w(TAG, "KeyAreMotorsOn read failed, assuming motors on: ${error.description()}")
-                        oneDone()
-                    }
-                })
-        }.onFailure { AppLog.w(TAG, "KeyAreMotorsOn getValue threw, assuming motors on: ${it.message}"); oneDone() }
+            call(object : CommonCallbacks.CompletionCallbackWithParam<Boolean> {
+                override fun onSuccess(v: Boolean?) {
+                    assign(v)
+                    AppLog.i(TAG, "$what = $v")
+                    notifyChanged()
+                }
+                override fun onFailure(error: IDJIError) {
+                    // Common and harmless: an airframe without the feature rejects the getter.
+                    AppLog.i(TAG, "$what unavailable: ${error.description()}")
+                }
+            })
+        }.onFailure { AppLog.w(TAG, "$what read threw: ${it.message}") }
     }
-
-    /** Long enough for the getter to answer before enforcement compares against it. */
-    private const val APPLY_DELAY_MS = 4500L
 }

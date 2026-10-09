@@ -294,6 +294,11 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             handler.postDelayed(this, HUD_INTERVAL_MS)
         }
     }
+    /** A field, not a call-site lambda, so it can be removed again — see the note on
+     *  DjiObstacleState's listener list. */
+    private val obstacleListener: () -> Unit =
+        { runOnUiThread { obstacles.update(DjiObstacleState.faces) } }
+
     private val hideNotice = Runnable { fpvNotice.visibility = View.GONE }
 
     /**
@@ -494,7 +499,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         obstacles = findViewById(R.id.flightObstacles)
         obstacles.update(DjiObstacleState.faces)
-        DjiObstacleState.onChanged = { runOnUiThread { obstacles.update(DjiObstacleState.faces) } }
+        DjiObstacleState.addChangeListener(obstacleListener)
         // Render whatever is ALREADY standing before subscribing — the callback is change-only,
         // so entering the flight screen with a fault already active would otherwise show nothing
         // until the fault happened to change.
@@ -4445,7 +4450,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
         // Same reason as the line above: DjiSdkBridge is a process-wide singleton and would
         // otherwise hold this Activity alive through its diagnostics callback.
         DjiSdkBridge.onDiagnostics = null
-        DjiObstacleState.onChanged = null
+        DjiObstacleState.removeChangeListener(obstacleListener)
         TakDropMarkers.ui = null
         SpeakerTalk.onChanged = null
         SpeakerTalk.stop()

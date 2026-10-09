@@ -254,10 +254,16 @@
              NO AIRFRAME IS NAMED. The MSDKv4 sibling names the Mini 2 here because that is what
              it flies; this SDK does not support that aircraft at all, so the same sentence
              would have been false on every airframe this build can fly. -->
+        <!-- ⚠ THIS SECTION READS THE AIRCRAFT AND CHANGES NOTHING (operator, 2026-10-09).
+             It used to carry three check boxes and write them at every connect. Two of them
+             were wired to nothing, and the one that was wrote a setting this airframe refuses
+             to let the app READ — see DjiObstacleState. These settings belong to the AIRCRAFT,
+             and DJI Pilot 2 on this same controller is where they are set. What stays is the
+             aircraft's own answer, so a pilot can see it before launching. -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Sent at every connect, so you fly these settings and not another app's."
+            android:text="Set these in DJI Pilot 2. This screen shows what the aircraft reports."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="11sp" />
 
@@ -269,69 +275,6 @@
             android:textSize="11sp"
             android:paddingTop="2dp" />
 
-        <!-- One row of columns, not three rows — the sibling's shape. They are read together
-             ("what is the aircraft protecting me from right now") and the labels are short
-             enough that stacking them only cost height. Labels drop the word "obstacle" — the
-             header above them already supplies it. -->
-        <LinearLayout style="@style/takFormRow"
-            android:paddingTop="2dp">
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-                <CheckBox
-                    android:id="@+id/avoidSystem"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/tp_btn_primary" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="System"
-                    android:textColor="@color/tp_text_primary"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-                <CheckBox
-                    android:id="@+id/avoidRth"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/tp_btn_primary" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="During Return to Home"
-                    android:textColor="@color/tp_text_primary"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-                <CheckBox
-                    android:id="@+id/avoidLanding"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/tp_btn_primary" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Landing protection"
-                    android:textColor="@color/tp_text_primary"
-                    android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
 
         <!-- The two battery percentages and their lock, together, directly above Apply.
              They sit here and not with the numeric limits because they are the last thing a
