@@ -82,6 +82,26 @@ Needs: a TAK client signed in as a **basic** user (channel A, no video) and one 
 
 ---
 
+## 7. The SRT advertisement — new in vc155-160, NEVER PLAYED
+
+⚠ **UNPROVEN END TO END.** The url formula and the `ConnectionEntry.path` rule come from
+`UAS_Apps/srt-cot-video-advertising.md` and are pinned by 20 unit tests, but no real ATAK has
+opened a feed from THIS build. Until 7.2 passes, this is "the right XML goes out", not "it
+plays". **Leave the read leg on RTSP for any mixed team** — TAK Aware cannot play SRT at all.
+
+Needs: Pre-Flight → Configure Video Servers, and an ATAK client.
+
+| # | Test | Expected | Result |
+|---|---|---|---|
+| 7.1 | Set TAK Advertisement Protocol to SRT. Read the TAK Advertisement Address. | `srt://<host>:<port>?streamid=read:<path>:<user>:<pass>&passphrase=…`, the passphrase shown as `***`. |  |
+| 7.2 | Stream LIVE and tap the aircraft's video in **ATAK**. | It PLAYS. A failure here with a correct address means `ConnectionEntry.path` — check it carries the whole `?streamid=…` string. |  |
+| 7.3 | Same moment, in **TAK Aware**. | Expected to FAIL — no SRT in its bundled player. Confirms the mixed-team warning, not a regression. |  |
+| 7.4 | Switch back to RTSP with LIVE running. | The link plays again on both clients within one report. |  |
+| 7.5 | SRT read with the path's auth and passphrase both EMPTY. | `…?streamid=read:<path>` and nothing more — no trailing colons, no dangling `&passphrase=`. |  |
+| 7.6 | Set the publish leg to SRT and the read leg to RTSP. | Both work together: the push is `srt://…publish:…`, the CoT is `rtsp://…`. The two legs are independent. |  |
+
+---
+
 ## Known gaps, carried into the release knowingly
 
 - **Phase 0 on a TEST server was never run** (`CHANNELS-FINDINGS.md` §12). Section 1 above is
@@ -185,7 +205,7 @@ flight), all of section 3, 4.5 (needs a real aircraft fault), 5.3, all of sectio
 
 ### Where v2.0.1 stands after this session
 
-Of the 29 lines, **13 are now PASS and 3 PARTIAL.** The release GATE — section 1, the one the
+Of the 35 lines (six added for the SRT advertisement, vc155-160), **13 are now PASS and 3 PARTIAL.** The release GATE — section 1, the one the
 checklist said decides the release — is **closed**: proved on the wire here and confirmed in
 real clients by the operator the same session. The headline regression (5.1) is proved for
 the first time, and 2.5, which the checklist recorded as never tested, passed verbatim.

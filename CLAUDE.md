@@ -717,3 +717,54 @@ Six sections, ordered. ⚠ **Section 1 is the gate**: the video split's two AUDI
 been checked. Everything observed so far proves the app SENDS two connections and strips the
 url from one — not that a basic user sees no link and a video user does. Until that passes,
 the feature is "it compiles and it transmits".
+
+**2026-10-09: the CoT can advertise SRT, and the read leg is its own choice** (operator).
+
+The app has always chosen how video LEAVES the controller. It never chose how the TEAM READS
+it — that was hard-wired to RTSP, on the stated grounds that no TAK client plays SRT. Both
+legs are selectable now: RTSP or SRT each, four combinations, `VideoConfig.transport` for the
+push and `VideoConfig.advertiseTransport` for the read.
+
+⚠ **THE SRT READ FORM IS NOT A SCHEME SWAP.** A reader is told what it wants in the STREAM
+ID, not in a path:
+
+    srt://host:port?streamid=read:<path>[:<user>:<pass>]&passphrase=<secret>
+
+`read:` is MediaMTX's shorthand for a subscriber — the counterpart of the `publish:` that
+`pushUrl` already builds. Emit no dangling `&passphrase=` and no trailing colons: the server
+reads those as an empty key and an empty user and refuses both.
+
+⚠ **AND THE WHOLE QUERY STRING IS REPEATED IN `ConnectionEntry.path`, LEADING `?` INCLUDED.**
+This is the one fact that makes a CoT-advertised SRT feed playable, and it is the thing that
+is impossible to guess. **ATAK does not read `url` for SRT at all** — it rebuilds the
+connection from `ConnectionEntry` and matches on the literal `?streamid=` text. Handed a bare
+stream name, it sends an EMPTY stream id; the server answers `invalid stream ID ''` and the
+open fails instantly, every time, whatever `url` says. `getRawQuery`, not `getQuery`, so the
+id arrives byte for byte.
+
+None of that is inference. `UAS_Apps/srt-cot-video-advertising.md` recorded it against a live
+server and real clients on 2026-10-09, together with the alternatives it ruled out — a bare
+path, a `passphrase=` XML attribute, `protocol="raw"`, and RTSPS, which is dead on both
+clients because VLC 3 never registered the scheme.
+
+⚠ **RTSP IS UNTOUCHED AND REMAINS THE DEFAULT.** The SRT handling is gated on the scheme and
+a test pins the RTSP advertisement byte for byte. **TAK Aware cannot play SRT** — its bundled
+MobileVLCKit has no SRT access module compiled in, which is a vendor build issue no CoT shape
+can work around — so a mixed team moved to SRT would be advertised an address its viewers
+fail to open, and a failed open reads as a DEAD FEED rather than a wrong address. Move the
+read leg when the clients in the fleet can read it, not before.
+
+⚠ The read passphrase is the server's `srtReadPassphrase` and is **not** the publish one;
+crossing them looks exactly like bad credentials. It is the one secret SRT forces into a url,
+so the Pre-Flight preview masks it.
+
+⚠ **NOTHING HERE HAS BEEN PLAYED BY A REAL ATAK AGAINST THIS BUILD.** The formula is pinned
+to the reference document and the XML to 20 tests; the end-to-end claim is still the
+document's. It is section 7 of `FLIGHT-TEST-CHECKLIST.md`.
+
+**Naming, on the Video Servers screen** (operator read it and renamed it): TAK Advertisement
+Server, then Video Publish Protocol, then TAK Advertisement Protocol, then Publish Address
+and TAK Advertisement Address, with a rule between sections. The old "The CoT carries
+host:port" line is gone — it restated the advertisement address, less precisely than the
+address itself, and a card that says one thing twice in two shapes is what made this screen
+blur when read quickly.
