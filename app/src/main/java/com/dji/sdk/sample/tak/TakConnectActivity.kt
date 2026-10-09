@@ -1176,6 +1176,11 @@ class TakConnectActivity : AppCompatActivity() {
         val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
         paintVideoSummary(p)
         mirrorActiveSlot(p)
+        // ⚠ RETRY THE TAK CONNECTION HERE. Before the TAK configuration moved to its own
+        // screen this was Pre-Flight's job and nobody noticed, because the old onCreate did it
+        // on the way past. Pre-Flight is the screen a pilot actually opens before a flight, so
+        // it is the right place for it — see TakAutoConnect.retryIfDown.
+        TakAutoConnect.retryIfDown(applicationContext)
         // Repainted on EVERY resume, not only on create: coming back from TakServerActivity is
         // the one moment the summary is most likely to be wrong, because the pilot just went
         // there to change exactly what it reports.

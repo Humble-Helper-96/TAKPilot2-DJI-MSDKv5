@@ -626,3 +626,31 @@ Two faults of my own, found and fixed in the same change:
   view from it, so a pilot could have reached the flight screen with that display silently
   dead. It is a `CopyOnWriteArrayList` now, both consumers hold their listener in a field so it
   can actually be removed, and both remove it.
+
+**2026-10-09: two operator reports, both fixed.**
+
+⚠ **(a) TAK STOPPED RECONNECTING ON LAUNCH, AND IT WAS MY REGRESSION.** The pilot had to open
+the TAK screen or tap the flight screen's TAK icon to get back online. `attemptOnAppLaunch`
+fires ONCE PER PROCESS from the home screen's `onCreate` — and the retry that actually covered
+a pilot was the one in **Pre-Flight's** `onCreate`, which went to `TakServerActivity` with the
+rest of the TAK configuration. Nothing routine was left.
+
+The operator's own diagnosis ("might have something to do with the server connection being
+placed in a 2nd window") was exactly right.
+
+`TakAutoConnect.retryIfDown` now runs on **RESUME** of both the home screen and Pre-Flight,
+with no once-per-process latch. ⚠ **TIE A RETRY TO A SCREEN BEING SHOWN, NOT TO A PROCESS
+STARTING** — the foreground service keeps this process alive across a swipe-away, so
+"relaunching the app" often is not a new process at all and the latch would still be set.
+`reconnect()`'s existing in-flight guard makes it safe to call as often as you like; verified
+on the controller, where the resume retry was correctly refused with "reconnect already in
+flight".
+
+**(b) The warning banner carried the whole explanation.** It printed `"$title — $description"`,
+and the aircraft's description is a paragraph of advice. A pilot in the air needs "Gimbal Motor
+Overloaded"; what to do about it is a thing to read on the ground. The banner shows the TITLE
+only now, with the description kept as the fallback when a fault has no title so nothing can
+vanish. ⚠ Nothing is lost: the full `title -> description` for every fault is in the DIAG_TAG
+log line. This is the THIRD shortening of this banner — the duplicate-sentence fix (2026-08-19)
+and the worst-plus-a-count collapse both left the advice on screen, which is what was actually
+being complained about each time.

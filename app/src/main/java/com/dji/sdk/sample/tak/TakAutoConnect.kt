@@ -9,10 +9,12 @@ import java.io.File
 import java.util.UUID
 
 /**
- * Silent TAK reconnect from saved enrollment — no UI, no password re-entry. Used two ways:
- *  - [attemptOnAppLaunch]: fired once from the home screen (the launcher activity) so a
+ * Silent TAK reconnect from saved enrollment — no UI, no password re-entry. Used three ways:
+ *  - [attemptOnAppLaunch]: fired once per PROCESS from the home screen's onCreate, so a
  *    configured server is connected, with channels pulled, before the pilot even opens
  *    Pre-Flight Setup.
+ *  - [retryIfDown]: fired whenever the home screen or Pre-Flight is SHOWN. This is the one
+ *    that actually covers a pilot — read its note for why once-per-process is not enough.
  *  - [toggle]: the flight-screen TAK icon's on/off tap (connect if saved creds exist and we're
  *    not connected; disconnect otherwise).
  *
@@ -55,6 +57,35 @@ object TakAutoConnect {
             return
         }
         AppLog.i(TAG, "auto-connecting to saved TAK server on app launch")
+        reconnect(context.applicationContext)
+    }
+
+    /**
+     * Reconnect if TAK is down and we have what we need — WITHOUT the once-per-process latch.
+     *
+     * ⚠ **THIS EXISTS BECAUSE MOVING THE TAK CONFIGURATION OFF PRE-FLIGHT BROKE THE RETRY
+     * (2026-10-09).** [attemptOnAppLaunch] fires once, from the home screen's `onCreate`, and
+     * the home screen is `singleTask` — so coming back to it does not run again, and
+     * `attemptedThisProcess` would block it anyway. The retry that actually covered the pilot
+     * was the one in Pre-Flight's own `onCreate`, and that went to [TakServerActivity] with
+     * the rest of the TAK configuration. The result was an app that would not reconnect unless
+     * the pilot opened a screen they have no other reason to open, or tapped the flight
+     * screen's TAK icon.
+     *
+     * ⚠ A LIVE PROCESS IS THE CASE THAT MATTERS. The foreground service keeps this process
+     * alive across a swipe-away, so "launching the app again" is often not a new process at
+     * all: `attemptedThisProcess` is still true and nothing retries. Tie the retry to a SCREEN
+     * BEING SHOWN, not to a process starting.
+     *
+     * Safe to call as often as you like: [reconnect] refuses when an attempt is already in
+     * flight, so this cannot spawn parallel connects.
+     */
+    fun retryIfDown(context: Context) {
+        if (TakManager.getInstance().isConnected) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_LOGGED_OUT, false)) return
+        if (!hasSavedCerts(prefs)) return
+        AppLog.i(TAG, "TAK is down and an enrollment is saved — retrying the connection")
         reconnect(context.applicationContext)
     }
 

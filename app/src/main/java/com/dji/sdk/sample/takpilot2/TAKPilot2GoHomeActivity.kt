@@ -186,6 +186,11 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         AppLog.v(TAG, "onResume")
+        // ⚠ ON RESUME, NOT ONLY ON CREATE. This screen is singleTask, and the foreground
+        // service keeps the process alive across a swipe-away — so onCreate's one-shot
+        // attempt can be the only one a pilot ever gets, even when they think they have
+        // relaunched the app. See TakAutoConnect.retryIfDown.
+        TakAutoConnect.retryIfDown(applicationContext)
         handler.post(refresh)
     }
 

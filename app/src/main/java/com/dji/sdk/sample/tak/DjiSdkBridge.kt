@@ -309,23 +309,24 @@ object DjiSdkBridge {
             // with a warning they cannot read. The code stays on the line, so the aircraft's
             // own wording is always one lookup away.
             FAULT_ENGLISH[code]?.let { return@mapNotNull "$it ($code)".also { t -> ranks[t] = rank } }
-            humanReason(d.title())?.let { r ->
-                val fix = humanReason(d.description())
-                val text = when {
-                    fix.isNullOrEmpty() -> r
-                    // ⚠ The Matrice 4T puts the SAME SENTENCE in title and description, so
-                    // "$r — $fix" printed everything twice and doubled the length of a banner
-                    // that already covers the video (bench, 2026-08-19). Sometimes the two are
-                    // equal apart from case and punctuation; sometimes the description is the
-                    // title PLUS the fault code in brackets.
-                    //
-                    // Keep the longer of the two when one contains the other, thus the code is
-                    // never lost and the repeat is never printed. This removes repetition only
-                    // — it is not the filtering that §4.8 forbids. When the two really do say
-                    // different things, both still print.
-                    repeats(r, fix) -> if (fix.length >= r.length) fix else r
-                    else -> "$r — $fix"
-                }
+            // ⚠ THE TITLE ONLY — THE EXPLANATION DOES NOT GO ON THE BANNER (operator,
+            // 2026-10-09). The aircraft's description is a paragraph of advice, and the banner
+            // sits over live video while the pilot is flying. "Gimbal Motor Overloaded" is
+            // what they need in the air; what to do about it is a thing to read on the ground.
+            //
+            // This is the THIRD shortening of this banner and the previous two were not
+            // enough: dropping the duplicate sentence (2026-08-19) and the worst-plus-a-count
+            // collapse both left the advice on screen. Cutting the advice is what was actually
+            // asked for each time.
+            //
+            // ⚠ NOTHING IS LOST. The full "title -> description" for every fault, including
+            // the ones hidden here, is in the DIAG_TAG line above — one post-flight read away.
+            // This is shortening, not the filtering §4.8 forbids: no fault stops being shown.
+            //
+            // The description is still the FALLBACK when a fault has no title, so a
+            // description-only fault cannot vanish.
+            (humanReason(d.title()) ?: humanReason(d.description()))?.let { r ->
+                val text = r
                 // Not translated, and not English. Keep the aircraft's own words — that rule
                 // still holds for anything not in the table — but append the code, so an
                 // unreadable warning is at least a warning the pilot can look up.

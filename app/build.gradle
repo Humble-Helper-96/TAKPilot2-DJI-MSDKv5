@@ -269,12 +269,19 @@ android {
         //      APIs that do work and says "set these in DJI Pilot 2".
         //      ⚠ NOT a landing fix: DJI Pilot 2 lands exactly the same way on this airframe,
         //      so the descent behaviour was never this app's doing.
+        // 152: two operator reports. (a) TAK did not reconnect on app launch unless you
+        //      opened the TAK screen or tapped the flight TAK icon — my regression: the retry
+        //      lived in Pre-Flight's onCreate and went to TakServerActivity with the rest of
+        //      the TAK configuration. TakAutoConnect.retryIfDown now runs on RESUME of the
+        //      home screen and Pre-Flight. (b) The warning banner carried the aircraft's whole
+        //      explanation after the fault name; it shows the title only now, and the full
+        //      title -> description stays in the log.
         // 149: ⚠ AN EMERGENCY BROADCAST WITH NO STREAM ADVERTISED NOTHING WHILE THE NOTICE
         //      SAID "video on all channels" (operator, caught on the controller). Starting one
         //      now starts the stream, a refused screen-capture consent takes the override back
         //      down with it, and the notice reads NO VIDEO STREAM in the caution colour
         //      whenever a broadcast is running with nothing going out.
-        versionCode 151
+        versionCode 152
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.
