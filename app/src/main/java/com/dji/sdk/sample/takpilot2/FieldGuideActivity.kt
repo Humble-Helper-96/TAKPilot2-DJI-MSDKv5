@@ -249,8 +249,12 @@ class FieldGuideActivity : AppCompatActivity() {
         body("These settings do not start the video. Use the LIVE button in flight.")
 
         sub("3. TAK Server Connection")
-        body("Type the address of the TAK server, the two ports, your username, your password " +
-            "and the callsign of the aircraft. Then touch Enroll & Connect.")
+        body("Pre-Flight shows who you are connected as, which channels are active, and where " +
+            "the live-video link goes. To change any of it, touch Configure TAK Server. That " +
+            "opens a screen with all the settings on it.")
+        body("On that screen: type the address of the TAK server, the two ports, your " +
+            "username, your password and the callsign of the aircraft. Then touch Enroll & " +
+            "Connect.")
 
         body("My Channels shows the channels of the server, which holds them, not the app. A " +
             "change applies immediately. \"Rx Only\" gives you data but takes none. You can " +
@@ -259,8 +263,14 @@ class FieldGuideActivity : AppCompatActivity() {
             "controllers sign in as the same user, a change on one changes the other.")
         body("Elevated account (optional): the fleet's second TAK account. Only the channel it " +
             "belongs to gets the live-video link. Every other channel still gets the position " +
-            "and the markers. Its channel list here is read-only. After Log Out, enroll the " +
-            "Elevated account again, or the video link goes to every channel.")
+            "and the markers. After Log Out, enroll the Elevated account again, or the video " +
+            "link goes to every channel.")
+        body("You can tick and untick the Elevated account's channels, the same as your own. " +
+            "Untick a channel to stop the aircraft reaching it. That is also how you stop data " +
+            "arriving from it: the server stops sending it. The app cannot ignore data by " +
+            "channel, because a message does not say which channel it came from.")
+        warn("The Elevated account is shared by every controller. If you untick its video " +
+            "channel, no controller sends video to that channel until somebody ticks it again.")
         body("Emergency Broadcast: touch and hold LIVE, then touch Start Emergency Broadcast. " +
             "Every channel gets the live-video link for 15 minutes. The aircraft marker carries " +
             "the link, thus the aircraft must have a GPS position. A notice with a timer shows " +

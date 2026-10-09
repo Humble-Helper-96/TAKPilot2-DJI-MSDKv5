@@ -304,4 +304,29 @@
          about a nominal 12sp. -->
     <dimen name="flight_emergency_notice_text_size">10sp</dimen>
 
+    <!-- THE FLIGHT SCREEN'S TAK CHANNELS DIALOG, scaled down a quarter (operator, 2026-10-09).
+         PER-DEVICE: this dialog opens over live video on a 768dp-wide, 480dp-high screen, and it
+         carries TWO channel lists since the Elevated account joined it. Measured on the RC Plus
+         2 at vc145 with six Standard channels: the dialog reached the full height of the screen
+         and the Elevated section was CUT OFF below the fold — the pilot could see its heading
+         and nothing under it, which is worse than not showing it, because it reads as an empty
+         list rather than as more to scroll to.
+
+         ⚠ THE ROW HEIGHT IS NOT CUT BY A QUARTER, AND THAT IS DELIBERATE. These rows are touch
+         targets over live video, and a miss changes who sees this aircraft. The TEXT comes down
+         13sp -> 10sp and 14sp -> 11sp, and the padding with it; the row goes 32dp -> 30dp, which
+         is hud_column_pill_height, this tree's established minimum for a control the pilot aims
+         at in flight. On this 400dpi panel a dp is about 24 % larger than nominal, so 30dp here
+         is about the physical size of a 37dp target elsewhere. Do not take the row below this
+         to win another line.
+
+         ⚠ 36dp WAS TRIED FIRST AND MADE IT WORSE. The platform's own default for these rows is
+         32dp, so a 36dp "minimum" RAISED them and the dialog grew while the text shrank. Read
+         the default off the device before setting a floor. -->
+    <dimen name="chan_dialog_text_size">10sp</dimen>
+    <dimen name="chan_dialog_row_text_size">11sp</dimen>
+    <dimen name="chan_dialog_row_min_height">30dp</dimen>
+    <dimen name="chan_dialog_pad">14dp</dimen>
+    <dimen name="chan_dialog_gap">6dp</dimen>
+
 </resources>

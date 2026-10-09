@@ -516,3 +516,31 @@ Verified on the controller at vc145: both screens, the summary, the writable Ele
 split still sending on both connections, no exceptions. 163 tests green. **The Elevated channel
 was NOT unticked on the bench** — that is a live server and it would have taken video from the
 fleet; the operator does that when they choose to.
+
+**2026-10-09, the flight screen's TAK Channels dialog, scaled for this panel** (operator).
+With six Standard channels and the Elevated list beneath them it reached the full height of the
+screen and cut the Elevated section off BELOW THE FOLD — the pilot saw its heading with nothing
+under it, which reads as an empty list rather than as more to scroll to. Text 13sp→10sp and
+14sp→11sp, paddings with it, rows 32dp→30dp, and two lines removed at the operator's request:
+"The TAK server holds these channels…" and "— shared by every controller". Both lists now fit
+with room to spare. The numbers are in `dimens.xml`.
+
+⚠ **36dp WAS TRIED AS THE ROW MINIMUM FIRST AND MADE IT WORSE.** The platform's own default for
+these rows is 32dp, so a 36dp "minimum" RAISED them: the dialog grew while the text shrank, and
+the measurement said so immediately. Read a platform default off the device before setting a
+floor against it. 30dp is `hud_column_pill_height`, this tree's established minimum for a
+control a pilot aims at in flight — the rows are touch targets over live video and a miss
+changes who sees this aircraft, so the row is NOT cut by the same quarter as the text.
+
+⚠ **A REMOVED LINE'S FACT MUST SURVIVE SOMEWHERE** (specification §8 rule 6, the same principle).
+"The TAK server holds these channels" is still on the TAK Server screen's own channel section
+and in the Field Guide. It was removed from the in-flight dialog because a pilot does not need
+told where the state lives every time they open it in the air, not because it stopped being
+true.
+
+⚠ **AND THE FIELD GUIDE CARRIED A FALSE LINE FOR ABOUT AN HOUR.** The Elevated account entry
+said "Its channel list here is read-only", written when it was, and left standing when the
+operator made it writable in the same session. Caught before it reached the controller. The
+guide also now describes the Configure TAK Server button, because the screen it described had
+moved. **Re-read the Field Guide's entry for anything you change in the same sitting** — it is
+pilot-facing text in Kotlin, and nothing compiles against whether it is true.

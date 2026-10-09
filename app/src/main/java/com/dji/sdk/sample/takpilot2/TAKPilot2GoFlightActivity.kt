@@ -4508,6 +4508,24 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
             .show()
     }
 
+
+    /**
+     * The compact metrics both channel lists in the flight dialog use (operator, 2026-10-09).
+     *
+     * One function so the Standard and Elevated lists cannot drift apart: they sit one above
+     * the other in the same dialog, and two row heights there read as a fault. The numbers and
+     * the reason they are not cut further live in dimens.xml — the row stays a touch target
+     * over live video.
+     */
+    private fun compactChannelRow(box: android.widget.CheckBox) {
+        box.textSize = resources.getDimension(R.dimen.chan_dialog_row_text_size) /
+            resources.displayMetrics.scaledDensity
+        box.minHeight = resources.getDimensionPixelSize(R.dimen.chan_dialog_row_min_height)
+        box.minimumHeight = resources.getDimensionPixelSize(R.dimen.chan_dialog_row_min_height)
+        val pad = resources.getDimensionPixelSize(R.dimen.chan_dialog_gap) / 2
+        box.setPadding(box.paddingLeft, pad, box.paddingRight, pad)
+    }
+
     private fun onTakChannelsTapped() {
         if (!TakManager.getInstance().isConnected) {
             showNotice("TAK is not connected. The channels are on the server.", refused = true)
@@ -4560,6 +4578,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     buttonTintList = android.content.res.ColorStateList.valueOf(
                         androidx.core.content.ContextCompat.getColor(
                             applicationContext, R.color.tp_accent))
+                    compactChannelRow(this)
                     setOnCheckedChangeListener { _, checked ->
                         if (painting) return@setOnCheckedChangeListener
                         ch.active = checked
@@ -4602,6 +4621,8 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     text = "The server returned no channels for the Elevated account."
                     setTextColor(androidx.core.content.ContextCompat.getColor(
                         applicationContext, R.color.tp_text_secondary))
+                    textSize = resources.getDimension(R.dimen.chan_dialog_text_size) /
+                        resources.displayMetrics.scaledDensity
                 })
             } else for (ch in chans) {
                 elevatedList.addView(android.widget.CheckBox(themed).apply {
@@ -4616,6 +4637,7 @@ class TAKPilot2GoFlightActivity : AppCompatActivity() {
                     buttonTintList = android.content.res.ColorStateList.valueOf(
                         androidx.core.content.ContextCompat.getColor(
                             applicationContext, R.color.tp_accent))
+                    compactChannelRow(this)
                     setOnCheckedChangeListener { _, checked ->
                         if (paintingElevated) return@setOnCheckedChangeListener
                         ch.active = checked
