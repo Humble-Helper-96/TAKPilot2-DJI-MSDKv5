@@ -1975,16 +1975,29 @@ class TakConnectActivity : AppCompatActivity() {
         val enabled = prefs.getBoolean(KEY_CHB_ENABLED, false)
         enabledSwitch.isChecked = enabled
         paintEnabled(enabled)
-        // ⚠ NOT when it is already connected (review, 2026-10-08). This runs on every onCreate,
-        // and a reconnect tears the Elevated socket down and re-dials it — and until that
-        // review it also ended a running Emergency Broadcast. A pilot opening this screen to
-        // read a channel must change nothing on the wire.
-        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)
-            && !TakManager.getInstance().isVideoChannelConnected
-        ) {
-            setVideoChannelStatus("Reconnecting the Elevated account …",
-                ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            reconnectVideoFromSaved(prefs)
+        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)) {
+            // ⚠ DO NOT RE-DIAL A CONNECTION THAT IS ALREADY UP (review, 2026-10-08). This runs
+            // on every onCreate, and a reconnect tears the Elevated socket down and re-dials
+            // it — and until that review it also ended a running Emergency Broadcast. A pilot
+            // opening this screen to read a channel must change nothing on the wire.
+            if (TakManager.getInstance().isVideoChannelConnected) {
+                // ⚠ BUT THE LIST STILL HAS TO BE READ (bench, 2026-10-09, the DJIv5 port).
+                // refreshVideoChannels() used to be reachable only THROUGH the reconnect, so
+                // the one path a pilot is most likely to be on — coming back to Pre-Flight with
+                // the Elevated account already up — left the read-only list empty and the
+                // status line blank under a heading that promised both. Worse, the overlap
+                // check needs this list: with it unread, the one server mistake this screen can
+                // see (a channel ACTIVE on both accounts, which fails the split OPEN) went
+                // unreported on exactly that path. Reading is an HTTPS GET on a worker; it
+                // touches no socket of ours. The Autel sibling has the same defect.
+                setVideoChannelStatus("Elevated account connected.",
+                    ContextCompat.getColor(applicationContext, R.color.tp_state_go))
+                refreshVideoChannels()
+            } else {
+                setVideoChannelStatus("Reconnecting the Elevated account …",
+                    ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+                reconnectVideoFromSaved(prefs)
+            }
         }
 
         enabledSwitch.setOnCheckedChangeListener { _, isOn ->
