@@ -327,7 +327,20 @@ android {
         //      Format Card — run for real on the M4TD); UP/DOWN obstacle bands, near only;
         //      0x1A420BC6 hidden; the limits read-back and the gimbal speeds verified on the
         //      M4TD. Flown on vc136/vc137 of this source at dusk; this build is the name moved.
-        versionName "2.0.1"
+        // 2.4.0 (2026-10-09): THE VERSION NUMBER JUMPS 2.0.1 -> 2.4.0 TO MATCH THE AUTEL
+        //      SIBLING (operator). Nothing is missing between the two: the DJI tree simply
+        //      counted on its own until the two trees carried the same features, and from
+        //      here one number means one feature set across both airframes. The content is
+        //      the `uasvideo-split` branch: the two-account video split, Emergency Broadcast,
+        //      the Elevated account on Pre-Flight, the read-only avoidance section, the TAK
+        //      reconnect fix, the four home-screen status rows, the AR pose filter and the
+        //      SRT advertisement.
+        //      ⚠ MOST OF THIS HAS NOT FLOWN. The video split's two audiences were proved on
+        //      the bench and in real clients on 2026-10-09, and 13 lines of
+        //      FLIGHT-TEST-CHECKLIST.md pass — but 2.7, 2.8, 4.5, section 3 and the whole of
+        //      section 6 are still open, the AR pose filter is unverified in the air, and no
+        //      real ATAK has played the SRT advertisement. The checklist is the record.
+        versionName "2.4.0"
         buildConfigField "String", "BUILD_TIME",
                 "\"${new Date().format('yyyy-MM-dd HH:mm', TimeZone.getTimeZone('UTC'))} UTC\""
         manifestPlaceholders["API_KEY"] = djiApiKey
