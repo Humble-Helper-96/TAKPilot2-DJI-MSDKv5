@@ -616,6 +616,29 @@ public class CotBuilder {
             if (u.getHost() != null) host = u.getHost();
             port = u.getPort();
             if (u.getPath() != null) path = u.getPath();
+            // ⚠ SRT PUTS THE WHOLE QUERY STRING IN `path`, LEADING "?" INCLUDED. This is the
+            // one fact that makes a CoT-advertised SRT feed playable, and it is not a guess:
+            // see UAS_Apps/srt-cot-video-advertising.md, which recorded it against a live
+            // server and real clients on 2026-10-09.
+            //
+            // ATAK does NOT read `url` for SRT. It rebuilds the connection from this
+            // ConnectionEntry, and its parser matches on the literal "?streamid=" text. Given
+            // a bare stream name, or the streamid without that prefix, it hands an EMPTY
+            // stream id to its native SRT call; the server answers `invalid stream ID ''` and
+            // the open fails instantly, every time, whatever `url` says.
+            //
+            // ⚠ RTSP IS DELIBERATELY LEFT ALONE. Its advertised url carries a "?tcp" query
+            // that has never been part of its path, it is the form both clients have played
+            // for years, and widening this to every scheme would change the one case that is
+            // known to work in order to fix one that does not.
+            // getRawQuery, not getQuery: the stream id must reach ATAK byte for byte as it
+            // was built, and getQuery percent-DECODES. Nothing in the SRT url is encoded (the
+            // stream id is opaque and must not be), so decoding could only corrupt a literal
+            // "%" in a passphrase.
+            if ("srt".equalsIgnoreCase(protocol) && u.getRawQuery() != null
+                    && !u.getRawQuery().isEmpty()) {
+                path = "?" + u.getRawQuery();
+            }
         } catch (IllegalArgumentException e) {
             // An unparseable url is still worth advertising: `url` carries the whole thing, and
             // `address` falling back to it matches how ATAK advertises non-host feeds.

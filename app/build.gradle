@@ -291,7 +291,32 @@ android {
         //      now starts the stream, a refused screen-capture consent takes the override back
         //      down with it, and the notice reads NO VIDEO STREAM in the caution colour
         //      whenever a broadcast is running with nothing going out.
-        versionCode 154
+        // 155-160: THE CoT CAN ADVERTISE SRT NOW (operator, 2026-10-09) — forward compatibility
+        //      for the day TAK Aware ships an SRT reader. The read leg is a SEPARATE choice
+        //      from the push leg: RTSP or SRT for each, four combinations, and the read leg
+        //      DEFAULTS TO RTSP and must stay there until the fleet's clients can read SRT.
+        //      ⚠ The SRT read form is not a scheme swap. A reader is told what it wants in
+        //      the STREAM ID — `?streamid=read:<path>[:<user>:<pass>]&passphrase=<secret>` —
+        //      and the whole query string must be repeated in `ConnectionEntry.path`, leading
+        //      "?" included, because ATAK rebuilds the connection from THAT and never reads
+        //      `url` for SRT. Given a bare name it sends an empty stream id and the open fails
+        //      instantly. The formula and the ruled-out alternatives are recorded in
+        //      UAS_Apps/srt-cot-video-advertising.md, tested against a live server and real
+        //      clients; it is not inference.
+        //      ⚠ TAK Aware CANNOT play SRT at all — its bundled MobileVLCKit has no SRT
+        //      access module compiled in. That is a vendor build issue and no CoT shape fixes
+        //      it. RTSP stays byte-for-byte unchanged and is still the only protocol both
+        //      clients play.
+        //      156-160 are the operator reading the screen and naming it properly: the two
+        //      legs are "Video Publish Protocol" and "TAK Advertisement Protocol" now, the
+        //      server picker above them is "TAK Advertisement Server", the two previews are
+        //      "Publish Address" and "TAK Advertisement Address" in that order, and there is
+        //      a rule between the sections. The "The CoT carries host:port" line went: it
+        //      restated the advertisement address less precisely than the address itself.
+        //      ⚠ NOT FLOWN, and NOT YET PLAYED BY A REAL ATAK against this build. The
+        //      formula is pinned to the reference document and the XML to tests; the
+        //      end-to-end claim is still the document's, not this application's.
+        versionCode 160
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.

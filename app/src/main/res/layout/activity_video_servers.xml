@@ -148,7 +148,24 @@
                 android:paddingTop="2dp"
                 android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
 
-            <TextView style="@style/takLabelStyle" android:text="Connection" android:paddingTop="8dp" />
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="TAK Advertisement Server" android:paddingTop="8dp" />
+            <RadioGroup android:id="@+id/vs1AdvGroup"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <RadioButton android:id="@+id/vs1AdvSelf" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="This server" />
+                <RadioButton android:id="@+id/vs1AdvOther" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Other" />
+                <RadioButton android:id="@+id/vs1AdvOff" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Off" />
+            </RadioGroup>
+
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="Video Publish Protocol" android:paddingTop="8dp" />
             <RadioGroup android:id="@+id/vs1TransportGroup"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
@@ -162,8 +179,10 @@
                 android:paddingTop="2dp"
                 android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
 
-            <!-- ⚠ The RTSP port is used while SRT is selected — it is the port in the CoT
-                 address. Its field is hidden then; toggle back to RTSP to change it. -->
+            <!-- ⚠ This is the PUSH protocol's RTSP port, and it is also the default READ
+                 port — so it is in use while SRT is selected for the push. Its field is
+                 hidden then; toggle back to RTSP to change it. The read leg has its own
+                 protocol and its own SRT port under "TAK Advertisement Protocol" below. -->
             <LinearLayout android:id="@+id/vs1RtspBlock"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="vertical">
@@ -194,24 +213,59 @@
                     android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
             </LinearLayout>
 
-            <TextView style="@style/takLabelStyle" android:text="Team plays from" android:paddingTop="8dp" />
-            <RadioGroup android:id="@+id/vs1AdvGroup"
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="TAK Advertisement Protocol" android:paddingTop="8dp" />
+            <RadioGroup android:id="@+id/vs1AdvProtoGroup"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
-                <RadioButton android:id="@+id/vs1AdvSelf" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="This server" />
-                <RadioButton android:id="@+id/vs1AdvOther" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Other" />
-                <RadioButton android:id="@+id/vs1AdvOff" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Off" />
+                <RadioButton android:id="@+id/vs1AdvProtoRtsp" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="RTSP" />
+                <RadioButton android:id="@+id/vs1AdvProtoSrt" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="SRT" />
             </RadioGroup>
-            <TextView android:id="@+id/vs1AdvHint"
+            <TextView android:id="@+id/vs1AdvProtoHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="2dp"
                 android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
 
-            <TextView style="@style/takLabelStyle" android:text="Push address" android:paddingTop="8dp" />
+            <LinearLayout android:id="@+id/vs1AdvSrtBlock"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:visibility="gone">
+                <LinearLayout style="@style/takFormRow">
+                    <LinearLayout style="@style/takColumn">
+                        <TextView style="@style/takLabelStyle" android:text="Read SRT port" />
+                        <EditText android:id="@+id/vs1AdvSrtPort" style="@style/takFieldStyle"
+                            android:text="8890" android:inputType="number" />
+                    </LinearLayout>
+                    <LinearLayout style="@style/takColumn">
+                        <TextView style="@style/takLabelStyle" android:text="Read passphrase" />
+                        <EditText android:id="@+id/vs1AdvPassphrase" style="@style/takFieldStyle"
+                            android:inputType="textPassword" />
+                    </LinearLayout>
+                </LinearLayout>
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingTop="2dp"
+                    android:text="The server's READ passphrase, which is not always the publish one. Leave it empty if the read path has none."
+                    android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="Publish Address" android:paddingTop="8dp" />
             <TextView android:id="@+id/vs1PushUrl"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@color/tp_bg_screen"
+                android:padding="8dp"
+                android:textColor="@color/tp_state_go" android:textSize="11sp"
+                android:textIsSelectable="true" android:fontFamily="monospace"
+                android:text="rtsp://…" />
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="TAK Advertisement Address" android:paddingTop="8dp" />
+            <TextView android:id="@+id/vs1AdvUrl"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:background="@color/tp_bg_screen"
                 android:padding="8dp"
@@ -320,7 +374,24 @@
                 android:paddingTop="2dp"
                 android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
 
-            <TextView style="@style/takLabelStyle" android:text="Connection" android:paddingTop="8dp" />
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="TAK Advertisement Server" android:paddingTop="8dp" />
+            <RadioGroup android:id="@+id/vs2AdvGroup"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <RadioButton android:id="@+id/vs2AdvSelf" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="This server" />
+                <RadioButton android:id="@+id/vs2AdvOther" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Other" />
+                <RadioButton android:id="@+id/vs2AdvOff" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Off" />
+            </RadioGroup>
+
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="Video Publish Protocol" android:paddingTop="8dp" />
             <RadioGroup android:id="@+id/vs2TransportGroup"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
@@ -334,8 +405,10 @@
                 android:paddingTop="2dp"
                 android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
 
-            <!-- ⚠ The RTSP port is used while SRT is selected — it is the port in the CoT
-                 address. Its field is hidden then; toggle back to RTSP to change it. -->
+            <!-- ⚠ This is the PUSH protocol's RTSP port, and it is also the default READ
+                 port — so it is in use while SRT is selected for the push. Its field is
+                 hidden then; toggle back to RTSP to change it. The read leg has its own
+                 protocol and its own SRT port under "TAK Advertisement Protocol" below. -->
             <LinearLayout android:id="@+id/vs2RtspBlock"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="vertical">
@@ -366,24 +439,59 @@
                     android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
             </LinearLayout>
 
-            <TextView style="@style/takLabelStyle" android:text="Team plays from" android:paddingTop="8dp" />
-            <RadioGroup android:id="@+id/vs2AdvGroup"
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="TAK Advertisement Protocol" android:paddingTop="8dp" />
+            <RadioGroup android:id="@+id/vs2AdvProtoGroup"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
-                <RadioButton android:id="@+id/vs2AdvSelf" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="This server" />
-                <RadioButton android:id="@+id/vs2AdvOther" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Other" />
-                <RadioButton android:id="@+id/vs2AdvOff" style="@style/takColumnRadio"
-                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="Off" />
+                <RadioButton android:id="@+id/vs2AdvProtoRtsp" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="RTSP" />
+                <RadioButton android:id="@+id/vs2AdvProtoSrt" style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info" android:textSize="11sp" android:text="SRT" />
             </RadioGroup>
-            <TextView android:id="@+id/vs2AdvHint"
+            <TextView android:id="@+id/vs2AdvProtoHint"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="2dp"
                 android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
 
-            <TextView style="@style/takLabelStyle" android:text="Push address" android:paddingTop="8dp" />
+            <LinearLayout android:id="@+id/vs2AdvSrtBlock"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:visibility="gone">
+                <LinearLayout style="@style/takFormRow">
+                    <LinearLayout style="@style/takColumn">
+                        <TextView style="@style/takLabelStyle" android:text="Read SRT port" />
+                        <EditText android:id="@+id/vs2AdvSrtPort" style="@style/takFieldStyle"
+                            android:text="8890" android:inputType="number" />
+                    </LinearLayout>
+                    <LinearLayout style="@style/takColumn">
+                        <TextView style="@style/takLabelStyle" android:text="Read passphrase" />
+                        <EditText android:id="@+id/vs2AdvPassphrase" style="@style/takFieldStyle"
+                            android:inputType="textPassword" />
+                    </LinearLayout>
+                </LinearLayout>
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingTop="2dp"
+                    android:text="The server's READ passphrase, which is not always the publish one. Leave it empty if the read path has none."
+                    android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="Publish Address" android:paddingTop="8dp" />
             <TextView android:id="@+id/vs2PushUrl"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@color/tp_bg_screen"
+                android:padding="8dp"
+                android:textColor="@color/tp_state_go" android:textSize="11sp"
+                android:textIsSelectable="true" android:fontFamily="monospace"
+                android:text="rtsp://…" />
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:layout_marginTop="14dp" android:background="@color/tp_border" />
+            <TextView style="@style/takLabelStyle" android:text="TAK Advertisement Address" android:paddingTop="8dp" />
+            <TextView android:id="@+id/vs2AdvUrl"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:background="@color/tp_bg_screen"
                 android:padding="8dp"
