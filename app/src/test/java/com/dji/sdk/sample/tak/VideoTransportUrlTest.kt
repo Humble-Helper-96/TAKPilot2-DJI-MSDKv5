@@ -268,11 +268,23 @@ class VideoTransportUrlTest {
     }
 
     @Test
-    fun theDefaultIsFiveHundredMilliseconds() {
-        // Three to four times the 116 ms RTT measured on the ground path, conservative end.
-        // A change here is a change to what every pilot flies — see the class doc on the
-        // constant for the evidence and for how to tell whether it is still right.
-        assertEquals(500, VideoTransport.SRT_LATENCY_DEFAULT_MS)
+    fun theDefaultIsOneThousandMilliseconds() {
+        // Raised from 500 by the operator on 2026-10-09: an aircraft at range on a congested
+        // tower sees a worse RTT than the 116 ms ground path the original number was scaled
+        // to, never a better one. A change here is a change to what every pilot flies, and
+        // to how far behind the aircraft the team is watching — see the class doc on the
+        // constant for the measurement, the trade and how to tell whether it is still right.
+        assertEquals(1_000, VideoTransport.SRT_LATENCY_DEFAULT_MS)
+    }
+
+    /** The default has to survive its own clamp, or every stream silently flies something
+     *  else. Cheap guard against a future edit that puts it outside the bounds. */
+    @Test
+    fun theDefaultIsInsideItsOwnBounds() {
+        assertEquals(VideoTransport.SRT_LATENCY_DEFAULT_MS,
+            VideoTransport.clampLatencyMs(VideoTransport.SRT_LATENCY_DEFAULT_MS))
+        assertTrue(VideoTransport.SRT_LATENCY_DEFAULT_MS in
+            VideoTransport.SRT_LATENCY_MIN_MS..VideoTransport.SRT_LATENCY_MAX_MS)
     }
 
     @Test

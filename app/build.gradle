@@ -316,7 +316,17 @@ android {
         //      ⚠ NOT FLOWN, and NOT YET PLAYED BY A REAL ATAK against this build. The
         //      formula is pinned to the reference document and the XML to tests; the
         //      end-to-end claim is still the document's, not this application's.
-        versionCode 162
+        // 163: SRT PUBLISH LATENCY DEFAULT 500 -> 1000 ms (operator, 2026-10-09). Half a
+        //      second was 3-4x a 116 ms RTT measured ON THE GROUND; an aircraft at range on
+        //      a congested tower sees worse than that every time and never better. The team
+        //      now watches a full second behind the aircraft, which is the trade.
+        //      ⚠ A CONTROLLER WHOSE DEBUG FIELD HAS EVER BEEN TOUCHED KEEPS ITS OWN VALUE —
+        //      that screen writes the pref on focus loss, pre-filled, so tabbing through the
+        //      box persists what was showing. This moves fleet installs where the pref was
+        //      never written, not existing ones. The bench controller was set to 1000 by hand.
+        //      ⚠ BUILT, NOT INSTALLED: no controller was attached. Unlike every other entry
+        //      here this versionCode has never run on hardware.
+        versionCode 163
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.

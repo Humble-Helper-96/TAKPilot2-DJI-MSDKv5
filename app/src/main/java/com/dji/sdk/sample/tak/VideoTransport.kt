@@ -93,7 +93,27 @@ enum class VideoTransport(val label: String, val scheme: String, val defaultPort
          * it is the whole time budget the repair has to complete in. A packet repaired after
          * the deadline is thrown away, and the bandwidth spent repairing it is wasted.
          *
-         * ## Why 500 and not 250 (ground test, MediaMTX v1.20.0, 2026-08-29)
+         * ## 1000 ms, raised from 500 (operator, 2026-10-09)
+         *
+         * ⚠ **THE 500 BELOW IS STILL THE MEASUREMENT; IT IS NO LONGER THE DEFAULT.** The
+         * ground test that produced it is kept in full because it is the only hard data on
+         * this path and it says HOW to judge the number — not because 500 is still the
+         * answer. 500 was the conservative end of 3–4x a 116 ms ground RTT. An aircraft at
+         * range, on a congested tower, sees worse than a ground test every time and never
+         * better, so the budget was doubled.
+         *
+         * The cost is paid by the viewers: the team now watches a full second behind the
+         * aircraft instead of half a second. That is a deliberate trade of latency for a
+         * picture that degrades instead of stalling, and it is stated in the Field Guide
+         * because it is better read than discovered.
+         *
+         * ⚠ **A CONTROLLER THAT HAS EVER HAD THIS FIELD TOUCHED KEEPS ITS OWN VALUE.** The
+         * Debug screen writes the pref on focus loss, pre-filled with the value in use — so
+         * tabbing through that box without typing persists what was showing. Changing this
+         * constant moves only the controllers where the pref was never written. Clearing it
+         * is a Debug-screen edit, not an upgrade.
+         *
+         * ## Why not 250 — the ground test that set the scale (MediaMTX v1.20.0, 2026-08-29)
          *
          * Over laptop → WiFi → CradlePoint → LTE → WireGuard → server, RTT 116 ms, with 250 ms
          * negotiated, the server counted:
@@ -130,11 +150,11 @@ enum class VideoTransport(val label: String, val scheme: String, val defaultPort
          *
          * ## The cost
          *
-         * The team watches half a second behind the aircraft. That is acceptable for situation
-         * awareness and it is stated in the Field Guide, because it is better read than
-         * discovered.
+         * The team watches the latency budget behind the aircraft — a full second at the
+         * current default. That is acceptable for situation awareness and it is stated in the
+         * Field Guide, because it is better read than discovered.
          */
-        const val SRT_LATENCY_DEFAULT_MS = 500
+        const val SRT_LATENCY_DEFAULT_MS = 1_000
 
         /**
          * ⚠ **The wire field is 16 bits of milliseconds**, and the writer keeps the low 16 bits
