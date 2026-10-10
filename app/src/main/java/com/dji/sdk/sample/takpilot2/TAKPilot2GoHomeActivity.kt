@@ -86,6 +86,10 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     private lateinit var mediaStatus: TextView
     private lateinit var mediaDot: android.view.View
 
+    /** When the aircraft became reachable, for the "READING AIRCRAFT…" deadline. 0 = not
+     *  connected. Elapsed-realtime, so a clock change cannot extend or end the hold. */
+    private var connectedAtMs = 0L
+
     private val refresh = object : Runnable {
         override fun run() {
             updateStatus()
@@ -211,6 +215,11 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         // attempt can be the only one a pilot ever gets, even when they think they have
         // relaunched the app. See TakAutoConnect.retryIfDown.
         TakAutoConnect.retryIfDown(applicationContext)
+        // Same reasoning, same trap, a different reader: the avoidance read is bounded and
+        // gives up, so a pilot looking at this card is the moment to ask again. No-op when
+        // the aircraft is absent or everything is already known. See
+        // DjiObstacleState.refreshIfIncomplete.
+        DjiObstacleState.refreshIfIncomplete()
         handler.post(refresh)
     }
 
@@ -391,6 +400,10 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** How long "READING AIRCRAFT…" may claim values are still arriving. Comfortably
+         *  past DjiObstacleState's own re-read ladder (about 29 s), so the hold outlives the
+         *  slowest honest read and ends soon after it gives up. */
+        private const val HOLD_TIMEOUT_MS = 35_000L
         /** How often the media-server probe is allowed to run again. Long enough that the
          *  home screen's refresh tick does not hammer the server, short enough that a pilot
          *  who fixes the network sees it go green without leaving the screen. */
@@ -584,10 +597,26 @@ class TAKPilot2GoHomeActivity : AppCompatActivity() {
         }
         controlResponse.setTextColor(if (mode == null) unknown else info)
 
-        // The hold: visible while any row is still waiting on the aircraft.
-        val waiting = connected && (avoid == null || fs == null || stick == null ||
+        // The hold: visible while any row is still waiting on the aircraft — BUT NOT FOR EVER.
+        //
+        // ⚠ THIS USED TO HAVE NO DEADLINE AND COULD HANG FOR THE WHOLE SESSION. Every term
+        // below can legitimately stay null: each read is bounded, gives up, and leaves its
+        // value unknown. The hold then went on promising values that had stopped coming, with
+        // the rows beneath it showing "—" — "it is arriving" where the truth was "it did not
+        // arrive". Caught on the controller 2026-10-09, with obstacle avoidance actually ON.
+        //
+        // A hold that cannot end is worse than no hold: it teaches a pilot to wait for a
+        // number instead of reading the dash and asking why. After the deadline the card
+        // shows what it knows and says "—" for the rest, which is honest and actionable.
+        if (!connected) connectedAtMs = 0L
+        else if (connectedAtMs == 0L) connectedAtMs = android.os.SystemClock.elapsedRealtime()
+
+        val missing = avoid == null || fs == null || stick == null ||
             mode == null || AircraftStorage.location == null ||
-            (warnPctHere ?: FlightLimitsController.aircraftWarningPct) == null)
+            (warnPctHere ?: FlightLimitsController.aircraftWarningPct) == null
+        val withinHold = connectedAtMs != 0L &&
+            android.os.SystemClock.elapsedRealtime() - connectedAtMs < HOLD_TIMEOUT_MS
+        val waiting = connected && missing && withinHold
         initializing.visibility = if (waiting) android.view.View.VISIBLE else android.view.View.GONE
     }
 }

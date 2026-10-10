@@ -137,13 +137,7 @@ object DjiObstacleState {
 
     /** Wired from [DjiSdkBridge] on every (re)connect. */
     fun onProductConnected(@Suppress("UNUSED_PARAMETER") context: Context) {
-        runCatching {
-            if (!listenerArmed) {
-                listenerArmed = true
-                PerceptionManager.getInstance().addObstacleDataListener(obstacleListener)
-            }
-            AppLog.i(TAG, "obstacle-data listener armed")
-        }.onFailure { AppLog.w(TAG, "obstacle-data listener failed: ${it.message}") }
+        armListener()
 
         // ⚠ READ AGAIN, BOUNDED. Measured 2026-10-09: this fires at `onProductConnect: 0`,
         // about 400 ms BEFORE SDK registration completes, and four of the five getters answer
@@ -156,12 +150,60 @@ object DjiObstacleState {
         scheduleReread()
     }
 
+    /** Subscribes to the obstacle feed, once. Separated from [onProductConnected] so a
+     *  resume can re-arm it without pretending the product just connected. */
+    private fun armListener() {
+        runCatching {
+            if (!listenerArmed) {
+                listenerArmed = true
+                PerceptionManager.getInstance().addObstacleDataListener(obstacleListener)
+            }
+            AppLog.i(TAG, "obstacle-data listener armed")
+        }.onFailure { AppLog.w(TAG, "obstacle-data listener failed: ${it.message}") }
+    }
+
+    /**
+     * Re-read when a SCREEN IS SHOWN, not only when the product connects.
+     *
+     * ⚠ **THE CONNECT-TIME RETRY IS BOUNDED AND GIVES UP, AND IT LEFT NO WAY BACK.**
+     * [scheduleReread] tries four times across about 29 seconds and then stops, which is
+     * correct on its own — an airframe without a sensor must not be polled for ever. But a
+     * session where the values did not arrive inside that window was then stuck: every screen
+     * showed "not available", the home card showed OBSTACLE AVOIDANCE "—" in amber, and its
+     * "READING AIRCRAFT…" hold could never clear, for as long as the aircraft stayed
+     * connected. Found on the controller 2026-10-09 with avoidance actually **ON** and every
+     * screen saying otherwise — the exact false reading this whole honest-status design
+     * exists to prevent.
+     *
+     * ⚠ **THIS IS THE SAME FIX, AND THE SAME REASONING, AS `TakAutoConnect.retryIfDown`:**
+     * tie the retry to a SCREEN BEING SHOWN, not to a one-off event. A pilot looking at the
+     * card is exactly the moment a fresh answer is worth asking for, and it costs nothing
+     * when everything is already known.
+     *
+     * ⚠ **READS ONLY.** Safety rule 3 forbids a TIMED WRITE; nothing on this path writes.
+     */
+    fun refreshIfIncomplete() {
+        if (!DjiSdkBridge.isProductConnected) return
+        if (allKnown()) return
+        // A cycle already running would have its handler stacked by a second one, and two
+        // ladders interleaving would burn the budget in a fraction of the intended time.
+        if (rereadInFlight) return
+        AppLog.i(TAG, "avoidance state incomplete on resume — re-reading")
+        armListener()
+        rereadAttempt = 0
+        scheduleReread()
+    }
+
     fun onProductDisconnected() {
         faces = emptyMap()
         sensingAircraft = false
         rthAvoidance = null
         downwardAvoidance = null; visionPositioning = null; precisionLanding = null
         overallAvoidance = null; downwardBrakingM = null
+        // The ladder belongs to the connection that is going away. Leaving the flag set would
+        // make the next refreshIfIncomplete() decline to run, believing a cycle was trying.
+        rereadHandler.removeCallbacksAndMessages(null)
+        rereadInFlight = false
         lastLoggedNear = -1f
         notifyChanged()
     }
@@ -314,6 +356,8 @@ object DjiObstacleState {
     }
 
     @Volatile private var rereadAttempt = 0
+    /** True while a re-read ladder is still scheduling itself. See [refreshIfIncomplete]. */
+    @Volatile private var rereadInFlight = false
     private val rereadHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** True once every value the screens report is known, so the retry can stop early. */
@@ -326,12 +370,14 @@ object DjiObstacleState {
         if (allKnown() || rereadAttempt >= REREAD_DELAYS_MS.size) {
             if (!allKnown()) {
                 AppLog.i(TAG, "avoidance state still incomplete after $rereadAttempt re-reads " +
-                    "— the unknown values stay \"not available\"")
+                    "— the unknown values stay \"not available\" until a screen asks again")
             }
+            rereadInFlight = false
             return
         }
         val delay = REREAD_DELAYS_MS[rereadAttempt]
         rereadAttempt++
+        rereadInFlight = true
         rereadHandler.postDelayed({ scheduleReread() }, delay)
     }
 

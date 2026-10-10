@@ -1173,6 +1173,10 @@ class TakConnectActivity : AppCompatActivity() {
      */
     override fun onResume() {
         super.onResume()
+        // The avoidance section's values come from a bounded read that gives up. Opening
+        // this screen is a pilot asking for them, so ask the aircraft again if any are still
+        // unknown — reads only. See DjiObstacleState.refreshIfIncomplete.
+        DjiObstacleState.refreshIfIncomplete()
         val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
         paintVideoSummary(p)
         mirrorActiveSlot(p)
