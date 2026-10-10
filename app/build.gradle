@@ -326,7 +326,21 @@ android {
         //      never written, not existing ones. The bench controller was set to 1000 by hand.
         //      ⚠ BUILT, NOT INSTALLED: no controller was attached. Unlike every other entry
         //      here this versionCode has never run on hardware.
-        versionCode 163
+        // 164: the DTED importer accepts .dt3 to .dt5 (operator, 2026-10-10). Nothing else
+        //      changed — DtedTile.open takes the post spacing, the grid size and the origin
+        //      from the UHL HEADER and never looks at the filename, so a finer tile was
+        //      always readable, and DtedIndex already sorts finest-first. The importer was
+        //      the only thing refusing it. NGA defines levels past 2.
+        //      ⚠ THE FAULT IT FIXES WAS SILENT: a zip of ONLY unaccepted tiles fails loudly,
+        //      but a MIXED zip imported the accepted entries, showed a region with a tile
+        //      count and dropped the rest with no mention. "loaded N/M" could not reveal it
+        //      either — M counts files already in the pool and a refused tile never gets
+        //      there. isTileName (the R38 single-file guard) reads TILE_EXTENSIONS and picked
+        //      the new levels up with no change.
+        //      Taken in both live trees the same day; the Autel sibling is versionCode 111.
+        //      ⚠ A tile finer than DTED2 is UNTESTED — nobody has flown one, on either tree.
+        //      The contract is UAS_Apps/TERRAIN-FILE-SPEC.md, shared by all three.
+        versionCode 164
         // 2.0.0 (2026-10-07): the Autel v2.3.1 flight screen, measured on the RC Plus 2 —
         //      the actions column, the media switch, REC from any mode, the shoulders and C1,
         //      the gradient obstacle wash, the fill-crop, every screen scaled to the panel.
